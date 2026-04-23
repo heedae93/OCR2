@@ -291,6 +291,21 @@ def update_job_ocr_results(
             if settings.extract_word_count:
                 job.word_count = meta["word_count"]
 
+            # LLM 요약 및 인용문 출처 추출
+            from config import Config
+            if getattr(Config, "LLM_ENABLED", False):
+                try:
+                    from utils.llm_client import process_document_with_llm
+                    logger.info(f"[{job_id}] LLM 문서 분석 시작...")
+                    summary, citations = process_document_with_llm(meta["full_text"])
+                    if summary:
+                        job.summary = summary
+                    if citations and citations != "[]":
+                        job.citations = citations
+                    logger.info(f"[{job_id}] LLM 분석 완료 (요약 및 인용문 저장)")
+                except Exception as llm_err:
+                    logger.error(f"[{job_id}] LLM 처리 실패: {llm_err}")
+
             # 청크 저장
             if settings.extract_chunks:
                 db.query(DocumentChunk).filter_by(job_id=job_id).delete()

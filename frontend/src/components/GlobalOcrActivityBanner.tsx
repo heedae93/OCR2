@@ -15,6 +15,7 @@ import { useOcrActivity } from '@/contexts/OcrActivityContext'
 import type { TrackedJob } from '@/contexts/OcrActivityContext'
 
 const STORAGE_KEY = 'ocr-activity-banner-ui'
+const QUEUED_PROGRESS = 12
 
 function getStatusText(status: 'queued' | 'processing' | 'completed' | 'failed') {
   switch (status) {
@@ -27,6 +28,12 @@ function getStatusText(status: 'queued' | 'processing' | 'completed' | 'failed')
     case 'failed':
       return '실패'
   }
+}
+
+function getDisplayProgress(status: 'queued' | 'processing' | 'completed' | 'failed', progress: number) {
+  if (status === 'queued') return QUEUED_PROGRESS
+  if (status === 'processing') return Math.max(QUEUED_PROGRESS, Math.min(progress, 100))
+  return Math.min(progress, 100)
 }
 
 export default function GlobalOcrActivityBanner() {
@@ -177,7 +184,7 @@ export default function GlobalOcrActivityBanner() {
                         <div className="h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700">
                           <div
                             className="h-1.5 rounded-full bg-primary transition-all duration-300"
-                            style={{ width: `${Math.max(8, Math.min(job.progressPercent, 100))}%` }}
+                            style={{ width: `${getDisplayProgress(job.status, job.progressPercent)}%` }}
                           />
                         </div>
                       </div>

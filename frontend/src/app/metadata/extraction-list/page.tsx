@@ -30,6 +30,12 @@ interface Document {
     entity_type: string
     entity_type_ko: string
   }>
+  summary?: string
+  citations?: Array<{
+    quote: string
+    source: string
+    web_links: string[]
+  }>
 }
 
 export default function ExtractionListPage() {
@@ -154,6 +160,7 @@ export default function ExtractionListPage() {
                     <th className="px-6 py-4 w-1/3">문서 정보</th>
                     <th className="px-6 py-4 w-48">문서 유형</th>
                     <th className="px-6 py-4">추출된 메타데이터</th>
+                    <th className="px-6 py-4">AI 분석 (요약/출처)</th>
                     <th className="px-6 py-4 w-32">처리 일시</th>
                     <th className="px-6 py-4 w-16"></th>
                   </tr>
@@ -221,6 +228,54 @@ export default function ExtractionListPage() {
                                 <span className="text-[10px] font-bold text-text-secondary-light bg-black/5 dark:bg-white/5 px-2 py-1.5 rounded-lg">
                                   +{doc.extracted_fields.length - 5}
                                 </span>
+                              )}
+                           </div>
+                        </td>
+                        <td className="px-6 py-5">
+                           <div className="flex flex-col gap-3 max-w-md">
+                              {doc.summary ? (
+                                <div className="p-3 rounded-xl bg-primary/5 border border-primary/10">
+                                  <div className="flex items-center gap-1.5 mb-1 text-[10px] font-black text-primary uppercase tracking-wider">
+                                    <FileText size={12} /> 문서 요약
+                                  </div>
+                                  <p className="text-xs font-medium text-text-primary-light dark:text-text-primary-dark leading-relaxed line-clamp-3">
+                                    {doc.summary}
+                                  </p>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-text-secondary-light italic font-medium">요약 정보 없음</span>
+                              )}
+
+                              {doc.citations && doc.citations.length > 0 && (
+                                <div className="flex flex-col gap-2">
+                                  <div className="flex items-center gap-1.5 text-[10px] font-black text-blue-500 uppercase tracking-wider">
+                                    <ExternalLink size={12} /> 인용구 및 외부 출처 ({doc.citations.length})
+                                  </div>
+                                  <div className="flex flex-col gap-2">
+                                    {doc.citations.slice(0, 2).map((cite, idx) => (
+                                      <div key={idx} className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50">
+                                        <p className="text-[11px] font-bold text-text-primary-light dark:text-text-primary-dark italic mb-1">
+                                          "{cite.quote.length > 50 ? cite.quote.substring(0, 50) + '...' : cite.quote}"
+                                        </p>
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-[10px] font-black text-blue-600 dark:text-blue-400">
+                                            출처: {cite.source}
+                                          </span>
+                                          {cite.web_links && cite.web_links.length > 0 && (
+                                            <a 
+                                              href={cite.web_links[0]} 
+                                              target="_blank" 
+                                              rel="noopener noreferrer"
+                                              className="text-[9px] font-bold text-blue-500 hover:underline"
+                                            >
+                                              링크 보기
+                                            </a>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
                               )}
                            </div>
                         </td>

@@ -62,6 +62,8 @@ class DocumentMeta(BaseModel):
     tags: Optional[List[str]]
     notes: Optional[str]
     chunk_count: int
+    summary: Optional[str]
+    citations: Optional[List[dict]]
     created_at: str
     completed_at: Optional[str]
 
@@ -206,6 +208,8 @@ def _job_to_meta(job: Job, chunk_count: int, db: Optional[Session] = None,
         "notes": job.notes,
         "chunk_count": chunk_count,
         "extracted_fields": raw_fields,
+        "summary": job.summary,
+        "citations": _parse_extracted_fields(getattr(job, "citations", None)),
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
     }

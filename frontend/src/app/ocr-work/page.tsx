@@ -427,7 +427,7 @@ export default function OcrWorkPage() {
 
                           {file.status === 'queued' && (
                             <div className="mt-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                              <div className="h-1.5 rounded-full bg-blue-600 w-full" />
+                              <div className="h-1.5 rounded-full bg-blue-600 transition-all duration-500 animate-pulse" style={{ width: '12%' }} />
                             </div>
                           )}
 

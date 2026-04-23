@@ -7,7 +7,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-PYTHON_BIN="/c/Users/glgld/.conda/envs/bbocr/python.exe"
+PYTHON_BIN="python"
 
 # ── config.yaml에서 설정 읽기 ──────────────────────────────
 read_config() {

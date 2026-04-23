@@ -83,6 +83,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"Incoming request: {request.method} {request.url}")
+    response = await call_next(request)
+    logger.info(f"Response status: {response.status_code}")
+    return response
+
+
 # DB 연결 오류를 HTTP 503으로 변환 (CORS 헤더가 포함된 응답 반환)
 @app.exception_handler(OperationalError)
 async def db_operational_error_handler(request: Request, exc: OperationalError):
@@ -138,26 +146,26 @@ async def startup_event():
     logger.info("Data directories verified")
 
     # Initialize database
-    # try:
-    #     init_db()
-    #     logger.info("Database initialized successfully")
-    # except Exception as e:
-    #     logger.error(f"Failed to initialize database: {e}")
+    try:
+        init_db()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
 
     # Reset orphaned 'processing' jobs left from previous crash/restart
-    # try:
-    #     from database import SessionLocal, Job as DBJob
-    #     db = SessionLocal()
-    #     orphaned = db.query(DBJob).filter(DBJob.status.in_(["processing", "queued"])).all()
-    #     for job in orphaned:
-    #         job.status = "failed"
-    #         job.error_message = "서버 재시작으로 인해 중단됨"
-    #     db.commit()
-    #     db.close()
-    #     if orphaned:
-    #         logger.warning(f"Reset {len(orphaned)} orphaned processing/queued jobs to failed")
-    # except Exception as e:
-    #     logger.error(f"Failed to reset orphaned jobs: {e}")
+    try:
+        from database import SessionLocal, Job as DBJob
+        db = SessionLocal()
+        orphaned = db.query(DBJob).filter(DBJob.status.in_(["processing", "queued"])).all()
+        for job in orphaned:
+            job.status = "failed"
+            job.error_message = "서버 재시작으로 인해 중단됨"
+        db.commit()
+        db.close()
+        if orphaned:
+            logger.warning(f"Reset {len(orphaned)} orphaned processing/queued jobs to failed")
+    except Exception as e:
+        logger.error(f"Failed to reset orphaned jobs: {e}")
 
     # Pre-load OCR models for all GPUs at startup
     logger.info("=" * 60)

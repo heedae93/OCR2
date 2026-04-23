@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # ── config.yaml에서 포트 읽기 ─────────────────────────────
-PYTHON_BIN="/c/Users/glgld/.conda/envs/bbocr/python.exe"
+PYTHON_BIN="python"
 
 read_ports() {
     "$PYTHON_BIN" -c "

@@ -35,8 +35,12 @@ interface Statistics {
   storage_used_mb: number
 }
 
+const QUEUED_PROGRESS = 12
+
 function JobsPageInner() {
   const router = useRouter()
+  console.log('API_BASE_URL:', API_BASE_URL)
+
   const [groups, setGroups] = useState<SessionGroup[]>([])
   const [statistics, setStatistics] = useState<Statistics | null>(null)
   const [loading, setLoading] = useState(true)
@@ -253,6 +257,12 @@ function JobsPageInner() {
     }
   }
 
+  const getDisplayProgress = (status: string, progress: number) => {
+    if (status === 'queued') return QUEUED_PROGRESS
+    if (status === 'processing') return Math.max(QUEUED_PROGRESS, Math.min(progress, 100))
+    return Math.min(progress, 100)
+  }
+
   // 필터링
   const filteredGroups = groups.map(g => ({
     ...g,
@@ -461,7 +471,7 @@ function JobsPageInner() {
                             <div className="mt-2 h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700">
                               <div
                                 className="h-1.5 rounded-full bg-primary transition-all duration-300"
-                                style={{ width: `${Math.max(8, Math.min(job.progress_percent || (job.status === 'queued' ? 8 : 0), 100))}%` }}
+                                style={{ width: `${getDisplayProgress(job.status, job.progress_percent || 0)}%` }}
                               />
                             </div>
                           </div>

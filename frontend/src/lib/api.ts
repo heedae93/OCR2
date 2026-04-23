@@ -1,8 +1,17 @@
 import axios from 'axios'
 import { Job, OCRResult, SmartToolLayer } from '@/types'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5015'
-export const API_BASE_URL = API_URL
+const getApiUrl = () => {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL
+  if (typeof window !== 'undefined') {
+    const { hostname } = window.location
+    return `http://${hostname}:6015`
+  }
+  return 'http://localhost:6015'
+}
+
+export const API_BASE_URL = getApiUrl()
+const API_URL = API_BASE_URL
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,

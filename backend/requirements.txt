@@ -61,3 +61,4 @@ pymysql==1.1.2
 
 # ── KoBERT NER ──
 sentencepiece>=0.1.96
+duckduckgo-search>=6.0.0

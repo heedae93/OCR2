@@ -107,6 +107,8 @@ class Job(Base):
     char_count = Column(Integer, nullable=True)
     word_count = Column(Integer, nullable=True)
     extracted_fields = Column(Text, nullable=True)   # JSON: NER 추출 KV 쌍 목록
+    summary = Column(Text, nullable=True)            # JSON/Text: LLM 요약본
+    citations = Column(Text, nullable=True)          # JSON: 추출된 인용문 및 웹 검색 출처 결과
 
     # Relationships
     user = relationship("User", back_populates="jobs")
@@ -316,17 +318,18 @@ def init_db():
         logger.info(f"Database initialized at {DATABASE_URL}")
 
         # 기존 DB에 새 컬럼 추가 (없는 경우에만)
-        # with engine.connect() as conn:
-        #     for col_sql, col_name in [
-        #         ("ALTER TABLE jobs ADD COLUMN extracted_fields TEXT", "jobs.extracted_fields"),
-        #         ("ALTER TABLE metadata_settings ADD COLUMN extract_ner BOOLEAN DEFAULT 0", "metadata_settings.extract_ner"),
-        #     ]:
-        #         try:
-        #             conn.execute(text(col_sql))
-        #             conn.commit()
-        #             logger.info(f"DB migration: {col_name} 컬럼 추가 완료")
-        #         except Exception:
-        #             pass  # 이미 존재하면 무시
+        with engine.connect() as conn:
+            for col_sql, col_name in [
+                ("ALTER TABLE jobs ADD COLUMN extracted_fields TEXT", "jobs.extracted_fields"),
+                ("ALTER TABLE jobs ADD COLUMN summary TEXT", "jobs.summary"),
+                ("ALTER TABLE jobs ADD COLUMN citations TEXT", "jobs.citations"),
+            ]:
+                try:
+                    conn.execute(text(col_sql))
+                    conn.commit()
+                    logger.info(f"DB migration: {col_name} 컬럼 추가 완료")
+                except Exception:
+                    pass  # 이미 존재하면 무시
 
         # Create default user if not exists
         db = SessionLocal()

@@ -114,6 +114,12 @@ class Config:
     COLUMN_CONFIDENCE_THRESHOLD = 0.05
     COLUMN_MIN_BLOCKS = 4
 
+    # LLM & Web Search (EXAONE)
+    LLM_ENABLED = True
+    LLM_API_URL = "http://211.233.58.220:8079"
+    LLM_MODEL_NAME = "exaone3.5:latest"
+    LLM_ENABLE_WEB_SEARCH = True
+
     # Redis settings (Celery broker)
     REDIS_URL = "redis://localhost:6379/0"
 
@@ -279,6 +285,14 @@ class Config:
             cls.DEFAULT_USER_ID = user.get("default_id", cls.DEFAULT_USER_ID)
             cls.DEFAULT_USER_NAME = user.get("default_name", cls.DEFAULT_USER_NAME)
             cls.DEFAULT_USER_EMAIL = user.get("default_email", cls.DEFAULT_USER_EMAIL)
+
+        # Update LLM settings
+        if "llm_integration" in config_data:
+            llm = config_data["llm_integration"]
+            cls.LLM_ENABLED = llm.get("enabled", cls.LLM_ENABLED)
+            cls.LLM_API_URL = llm.get("api_url", cls.LLM_API_URL)
+            cls.LLM_MODEL_NAME = llm.get("model_name", cls.LLM_MODEL_NAME)
+            cls.LLM_ENABLE_WEB_SEARCH = llm.get("enable_web_search", cls.LLM_ENABLE_WEB_SEARCH)
 
         # Update database settings
         if "database" in config_data:
