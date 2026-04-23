@@ -22,8 +22,8 @@ if DATABASE_URL.startswith("sqlite"):
 else:
     # PostgreSQL: 커넥션 풀 제한 (too many clients 방지)
     engine_args["pool_recycle"] = 1800   # 30분마다 커넥션 갱신
-    engine_args["pool_size"] = 5         # 최대 풀 크기
-    engine_args["max_overflow"] = 5      # 초과 허용 커넥션 수
+    engine_args["pool_size"] = 20        # 최대 풀 크기
+    engine_args["max_overflow"] = 20     # 초과 허용 커넥션 수
     engine_args["pool_timeout"] = 30     # 커넥션 대기 타임아웃(초)
 
 engine = create_engine(DATABASE_URL, **engine_args)
@@ -317,19 +317,8 @@ def init_db():
         Base.metadata.create_all(bind=engine)
         logger.info(f"Database initialized at {DATABASE_URL}")
 
-        # 기존 DB에 새 컬럼 추가 (없는 경우에만)
-        with engine.connect() as conn:
-            for col_sql, col_name in [
-                ("ALTER TABLE jobs ADD COLUMN extracted_fields TEXT", "jobs.extracted_fields"),
-                ("ALTER TABLE jobs ADD COLUMN summary TEXT", "jobs.summary"),
-                ("ALTER TABLE jobs ADD COLUMN citations TEXT", "jobs.citations"),
-            ]:
-                try:
-                    conn.execute(text(col_sql))
-                    conn.commit()
-                    logger.info(f"DB migration: {col_name} 컬럼 추가 완료")
-                except Exception:
-                    pass  # 이미 존재하면 무시
+        # Migration handled manually to prevent startup deadlocks
+        pass
 
         # Create default user if not exists
         db = SessionLocal()

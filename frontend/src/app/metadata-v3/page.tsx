@@ -124,7 +124,10 @@ export default function MetadataV3Page() {
     } catch (e) {}
   }
 
-  const allDocTypes = [...DEFAULT_DOC_TYPES, ...categories.map(c => c.name)]
+  const allDocTypes = [
+    ...DEFAULT_DOC_TYPES,
+    ...categories.map(c => c.name).filter(name => !DEFAULT_DOC_TYPES.includes(name)),
+  ]
   const currentPiiTypes = rules[selectedDocType] ?? []
 
   const togglePii = (piiKey: string) => {

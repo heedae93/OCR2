@@ -22,6 +22,9 @@ import {
 // API_BASE configuration matching current project
 const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/api`
 
+const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타', '미분류']
+
+
 // --- Types ---
 type FileStatus = 'pending' | 'uploading' | 'processing' | 'completed' | 'failed'
 
@@ -60,6 +63,8 @@ export default function OcrFilezillaPage() {
   const [queue, setQueue] = useState<QueueFile[]>([])
   const [isRunning, setIsRunning] = useState(false)
   const [isDone, setIsDone] = useState(false)
+  const [selectedDocType, setSelectedDocType] = useState(DEFAULT_DOC_TYPES[0])
+  const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
   
   // Browser Support Check
   const [isSupported, setIsSupported] = useState(true)
@@ -69,6 +74,22 @@ export default function OcrFilezillaPage() {
     if (typeof window !== 'undefined' && !('showDirectoryPicker' in window)) {
       setIsSupported(false)
     }
+
+    // Fetch categories
+    const fetchCategories = async () => {
+      try {
+        const user = JSON.parse(localStorage.getItem('user') || '{}')
+        const userId = user.user_id || 'default'
+        const res = await fetch(`${API_BASE}/metadata-v3/categories?user_id=${encodeURIComponent(userId)}`)
+        if (res.ok) {
+          const data = await res.json()
+          setCategories(data)
+        }
+      } catch (e) {
+        console.error('Failed to fetch categories', e)
+      }
+    }
+    fetchCategories()
   }, [])
 
   // --- Local Explorer Functions ---
@@ -160,7 +181,13 @@ export default function OcrFilezillaPage() {
     setQueue(prev => [...prev, ...newItems])
   }
 
-  // --- Processing Functions ---
+  const allDocTypes = useCallback(() => {
+    const dbTypeNames = categories.map(c => c.name)
+    return [
+      ...DEFAULT_DOC_TYPES,
+      ...dbTypeNames.filter(name => !DEFAULT_DOC_TYPES.includes(name))
+    ]
+  }, [categories])()
 
   const updateQueueFile = (id: string, patch: Partial<QueueFile>) =>
     setQueue(prev => prev.map(f => (f.id === id ? { ...f, ...patch } : f)))
@@ -226,7 +253,11 @@ export default function OcrFilezillaPage() {
         // 1. Upload File via XHR for progress tracking
         const jobId = await new Promise<string>((resolve, reject) => {
           const xhr = new XMLHttpRequest()
-          xhr.open('POST', `${API_BASE}/upload`)
+          const params = new URLSearchParams()
+          if (selectedDocType && selectedDocType !== '미분류') {
+            params.set('doc_type', selectedDocType)
+          }
+          xhr.open('POST', `${API_BASE}/upload?${params.toString()}`)
           xhr.upload.onprogress = e => {
             if (e.lengthComputable)
               updateQueueFile(qf.id, { progress: Math.round((e.loaded / e.total) * 50) })
@@ -452,6 +483,21 @@ export default function OcrFilezillaPage() {
                     disabled={isRunning}
                     className="w-full px-4 py-2.5 rounded-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark text-sm focus:ring-2 focus:ring-primary focus:outline-none transition-all"
                   />
+                </div>
+                <div className="w-48">
+                  <label className="block text-[10px] font-bold text-primary mb-1.5 uppercase tracking-widest px-1">문서 유형</label>
+                  <select
+                    value={selectedDocType}
+                    onChange={e => setSelectedDocType(e.target.value)}
+                    disabled={isRunning}
+                    className="w-full px-4 py-2.5 rounded-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark text-sm focus:ring-2 focus:ring-primary focus:outline-none transition-all"
+                  >
+                    {allDocTypes.map(type => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <button 
                   onClick={startOcr}

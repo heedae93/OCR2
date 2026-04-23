@@ -414,6 +414,26 @@ def _ensure_default_fields(user_id: str, db: Session):
     db.commit()
 
 
+def _ensure_default_categories(user_id: str, db: Session):
+    """Ensure default categories exist"""
+    defaults = ["공문서", "계약서", "보고서", "학술논문", "법령문서", "회의록", "영수증", "신분증", "기타", "미분류"]
+    for name in defaults:
+        exists = db.query(DocumentCategory).filter_by(user_id=user_id, name=name).first()
+        if not exists:
+            db.add(DocumentCategory(user_id=user_id, name=name))
+    db.commit()
+
+
+def _is_korean_doc_category(name: str) -> bool:
+    """한글/숫자/공백/일부 구분자만 허용하고 영문 카테고리는 제외"""
+    if not name:
+        return False
+    # ASCII 알파벳 포함 시 영어 카테고리로 간주
+    if any(('a' <= ch.lower() <= 'z') for ch in name):
+        return False
+    return True
+
+
 @router.get("/metadata-v3/masking-rules")
 def get_masking_rules(
     user_id: str = Query(...),
@@ -487,13 +507,18 @@ class CustomFieldCreate(BaseModel):
 @router.get("/metadata-v3/categories")
 def get_categories(user_id: str = Query(...), db: Session = Depends(get_db)):
     """사용자가 추가한 커스텀 카테고리 목록 조회"""
+    _ensure_default_categories(user_id, db)
     cats = db.query(DocumentCategory).filter_by(user_id=user_id).order_by(DocumentCategory.created_at).all()
+    cats = [c for c in cats if _is_korean_doc_category(c.name)]
     return [{"id": c.id, "name": c.name} for c in cats]
 
 @router.post("/metadata-v3/categories")
 def create_category(body: CategoryCreate, user_id: str = Query(...), db: Session = Depends(get_db)):
     """커스텀 카테고리 추가"""
-    cat = DocumentCategory(user_id=user_id, name=body.name)
+    normalized_name = (body.name or "").strip()
+    if not _is_korean_doc_category(normalized_name):
+        raise HTTPException(status_code=400, detail="문서 카테고리는 한글로 입력해주세요.")
+    cat = DocumentCategory(user_id=user_id, name=normalized_name)
     db.add(cat)
     db.commit()
     db.refresh(cat)

@@ -209,7 +209,7 @@ performance:
 # ──────────────────────────────────────────────────────────────────────────────
 user:
   default_id: "user001"
-  default_name: "사용자"
+  default_name: "Admin"
   default_email: "user@email.com"
 
 
@@ -217,7 +217,7 @@ user:
 #  14. 데이터베이스 설정
 # ──────────────────────────────────────────────────────────────────────────────
 database:
-  url: "postgresql+psycopg2://ocr_user:1234@192.168.0.231:3306/ocr_db"
+  url: "postgresql+psycopg2://ocr_user:1234@192.168.0.231:3306/ocr_db?client_encoding=utf8"
 
 
 # ──────────────────────────────────────────────────────────────────────────────

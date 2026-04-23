@@ -1,8 +1,10 @@
 'use client'
 
-import { ChangeEvent, useCallback, useMemo, useRef, useState } from 'react'
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
 import { useDropzone } from 'react-dropzone'
 import Sidebar from '@/components/Sidebar'
+import ThemeToggle from '@/components/ThemeToggle'
 import { useOcrActivity } from '@/contexts/OcrActivityContext'
 import {
   AlertCircle,
@@ -19,6 +21,8 @@ import {
 
 const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5015'}/api`
 
+const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타', '미분류']
+
 type FileStatus = 'pending' | 'uploading' | 'queued' | 'failed'
 type SourceType = 'file' | 'folder'
 
@@ -26,6 +30,7 @@ interface QueueFile {
   id: string
   file: File
   displayName: string
+  docType: string
   status: FileStatus
   progress: number
   error?: string
@@ -42,9 +47,33 @@ function formatBytes(bytes: number): string {
 export default function OcrWorkPage() {
   const { addTrackedJobs } = useOcrActivity()
   const [sessionName, setSessionName] = useState('')
+  const [defaultDocType, setDefaultDocType] = useState('미분류')
+  const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
   const [queue, setQueue] = useState<QueueFile[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitMessage, setSubmitMessage] = useState('')
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const stored = typeof window !== 'undefined' ? localStorage.getItem('user') : null
+        const user = stored ? JSON.parse(stored) : {}
+        const userId = user?.user_id || 'default'
+        const res = await fetch(`${API_BASE}/metadata-v3/categories?user_id=${encodeURIComponent(userId)}`)
+        if (res.ok) {
+          const data = await res.json()
+          const defaultSet = new Set(DEFAULT_DOC_TYPES)
+          const uniqueKoreanCats = (Array.isArray(data) ? data : []).filter(
+            (cat: { id: number; name: string }) => cat?.name && !defaultSet.has(cat.name),
+          )
+          setCategories(uniqueKoreanCats)
+        }
+      } catch (e) {
+        console.error('Failed to fetch categories', e)
+      }
+    }
+    fetchCategories()
+  }, [])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
 
@@ -60,11 +89,12 @@ export default function OcrWorkPage() {
           id: `${Date.now()}-${Math.random()}`,
           file,
           displayName: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
+          docType: defaultDocType,
           status: 'pending' as const,
           progress: 0,
           sourceType,
         })),
-    [],
+    [defaultDocType],
   )
 
   const addFiles = useCallback(
@@ -153,6 +183,10 @@ export default function OcrWorkPage() {
           const xhr = new XMLHttpRequest()
           const params = new URLSearchParams()
           if (userId) params.set('user_id', userId)
+          const normalizedDocType = queueFile.docType.trim()
+          if (normalizedDocType) {
+            params.set('doc_type', normalizedDocType)
+          }
           xhr.open('POST', `${API_BASE}/upload?${params.toString()}`)
 
           xhr.upload.onprogress = event => {
@@ -185,7 +219,7 @@ export default function OcrWorkPage() {
         const documentResponse = await fetch(`${API_BASE}/sessions/${sessionId}/documents`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ job_id: jobId }),
+          body: JSON.stringify({ job_id: jobId, doc_type: queueFile.docType }),
         })
 
         if (!documentResponse.ok) {
@@ -227,18 +261,30 @@ export default function OcrWorkPage() {
   const pendingCount = useMemo(() => queue.filter(file => file.status === 'pending').length, [queue])
   const queuedCount = useMemo(() => queue.filter(file => file.status === 'queued').length, [queue])
   const failedCount = useMemo(() => queue.filter(file => file.status === 'failed').length, [queue])
+
+  const allDocTypes = useMemo(() => {
+    const dbTypeNames = categories.map(c => c.name)
+    return [
+      ...DEFAULT_DOC_TYPES,
+      ...dbTypeNames.filter(name => !DEFAULT_DOC_TYPES.includes(name))
+    ]
+  }, [categories])
+
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen">
       <Sidebar />
       <main className="flex-1 ml-64 flex flex-col p-6 lg:p-10 min-w-0">
         <div className="w-full max-w-7xl mx-auto flex flex-col gap-6">
-          <div>
-            <h1 className="text-text-primary-light dark:text-text-primary-dark text-3xl font-bold leading-tight tracking-tight">
-              OCR 작업하기
-            </h1>
-            <p className="text-text-secondary-light dark:text-text-secondary-dark text-base mt-1">
-              파일 또는 폴더를 선택하고 OCR 작업을 Redis 큐에 등록합니다.
-            </p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-text-primary-light dark:text-text-primary-dark text-3xl font-bold leading-tight tracking-tight">
+                OCR 작업하기
+              </h1>
+              <p className="text-text-secondary-light dark:text-text-secondary-dark text-base mt-1">
+                파일 또는 폴더를 선택하고 OCR 작업을 Redis 큐에 등록합니다.
+              </p>
+            </div>
+            <ThemeToggle />
           </div>
 
           <div className="flex flex-col lg:flex-row gap-6">
@@ -259,6 +305,35 @@ export default function OcrWorkPage() {
                       : 'border-border-light dark:border-border-dark'
                   }`}
                 />
+              </div>
+              <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-4">
+                <label className="block text-sm font-semibold text-text-primary-light dark:text-text-primary-dark mb-2">
+                  문서 유형 일괄 선택
+                </label>
+                <div className="relative">
+                  <select
+                    value={defaultDocType}
+                    onChange={event => {
+                      const nextDocType = event.target.value
+                      setDefaultDocType(nextDocType)
+                      // 일괄 선택 변경 시 현재 리스트의 모든 파일에 즉시 반영
+                      setQueue(prev =>
+                        prev.map(file => ({ ...file, docType: nextDocType })),
+                      )
+                    }}
+                    disabled={isSubmitting}
+                    className="w-full appearance-none px-3 pr-10 py-2 text-sm border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60 transition-colors"
+                  >
+                    {allDocTypes.map(type => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-lg text-text-secondary-light dark:text-text-secondary-dark">
+                    expand_more
+                  </span>
+                </div>
               </div>
 
               <div
@@ -394,6 +469,28 @@ export default function OcrWorkPage() {
                               <p className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark truncate">
                                 {file.displayName}
                               </p>
+                              <div className="mt-1 flex items-center gap-2">
+                                <label className="text-[11px] text-text-secondary-light dark:text-text-secondary-dark">
+                                  문서유형
+                                </label>
+                                <div className="relative w-[170px]">
+                                  <select
+                                    value={file.docType}
+                                    disabled={isSubmitting}
+                                    onChange={event => updateFile(file.id, { docType: event.target.value })}
+                                    className="w-full appearance-none px-2 py-1 pr-7 text-xs border border-border-light dark:border-border-dark rounded-md bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 transition-colors"
+                                  >
+                                    {allDocTypes.map(type => (
+                                      <option key={type} value={type}>
+                                        {type}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <span className="material-symbols-outlined pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                                    expand_more
+                                  </span>
+                                </div>
+                              </div>
                               <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark mt-0.5">
                                 {formatBytes(file.file.size)} · {file.sourceType === 'folder' ? '폴더 업로드' : '파일 업로드'}
                               </p>
