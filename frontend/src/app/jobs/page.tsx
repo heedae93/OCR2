@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense, useMemo } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useRouter } from 'next/navigation'
 import { API_BASE_URL } from '@/lib/api'

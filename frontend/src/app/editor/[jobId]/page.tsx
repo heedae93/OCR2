@@ -236,12 +236,12 @@ export default function EditorPage() {
   // 브라우저 탭 타이틀을 파일명으로 업데이트
   useEffect(() => {
     if (job?.filename) {
-      document.title = `${job.filename} — Futurenuri PDFix`;
+      document.title = `${job.filename} — AI Doc Intelligence`;
     } else {
-      document.title = "Futurenuri PDFix";
+      document.title = "AI Doc Intelligence";
     }
     return () => {
-      document.title = "Futurenuri PDFix";
+      document.title = "AI Doc Intelligence";
     };
   }, [job?.filename]);
 
@@ -714,7 +714,7 @@ export default function EditorPage() {
                 document_scanner
               </span>
               <h1 className="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">
-                Futurenuri PDFix
+                AI Doc Intelligence
               </h1>
             </button>
             <div className="hidden md:flex items-center gap-2 max-w-xs">

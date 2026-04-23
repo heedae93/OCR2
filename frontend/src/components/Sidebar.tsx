@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useRef, useEffect } from 'react'
@@ -108,17 +109,19 @@ export default function Sidebar() {
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark fixed top-0 left-0 z-[300] pointer-events-auto overflow-y-auto">
       <div className="flex flex-col gap-4 p-4 min-h-full">
         {/* Logo */}
-        <Link href="/" className="flex gap-3 items-center px-2 py-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all duration-200 group">
-          <div className="bg-gradient-to-br from-primary to-primary/70 rounded-xl size-10 flex items-center justify-center shadow-lg shadow-primary/20 group-hover:shadow-primary/30 transition-shadow duration-200">
-            <span className="material-symbols-outlined text-white !text-xl">document_scanner</span>
+        <Link href="/" className="flex items-center gap-3 px-2 py-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all duration-200 group">
+          <div className="relative h-12 w-16 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-primary/10 to-primary/5">
+            <Image
+              src="/futurenuri.png"
+              alt="FutureNuri"
+              fill
+              className="object-contain object-[center_72%] scale-[4.2]"
+            />
           </div>
-          <div className="flex flex-col">
-            <h1 className="text-text-primary-light dark:text-text-primary-dark text-base font-bold leading-tight tracking-tight">
-              Futurenuri
+          <div className="min-w-0 flex flex-col">
+            <h1 className="whitespace-nowrap text-text-primary-light dark:text-text-primary-dark text-base font-bold leading-tight tracking-tight">
+              AI Doc Intelligence
             </h1>
-            <p className="text-primary text-xs font-semibold tracking-wider uppercase">
-              PDFix
-            </p>
           </div>
         </Link>
 

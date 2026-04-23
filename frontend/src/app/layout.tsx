@@ -5,7 +5,7 @@ import { OcrActivityProvider } from '@/contexts/OcrActivityContext'
 import GlobalOcrActivityBanner from '@/components/GlobalOcrActivityBanner'
 
 export const metadata: Metadata = {
-  title: 'Futurenuri PDFix',
+  title: 'AI Doc Intelligence',
   description: 'Powerful multilingual OCR with searchable PDF generation',
 }
 

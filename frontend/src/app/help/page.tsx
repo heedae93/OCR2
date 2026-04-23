@@ -13,7 +13,7 @@ export default function HelpPage() {
                 도움말
               </h1>
               <p className="text-text-secondary-light dark:text-text-secondary-dark text-base font-normal leading-normal">
-                Futurenuri PDFix 사용 가이드
+                AI Doc Intelligence 사용 가이드
               </p>
             </div>
           </div>
@@ -25,7 +25,7 @@ export default function HelpPage() {
               </h2>
               <div className="space-y-4 text-text-secondary-light dark:text-text-secondary-dark">
                 <p>
-                  Futurenuri PDFix는 강력한 다국어 OCR을 사용하여 이미지나 PDF 파일을 검색 가능한 PDF로 변환합니다.
+                  AI Doc Intelligence는 강력한 다국어 OCR을 사용하여 이미지나 PDF 파일을 검색 가능한 PDF로 변환합니다.
                 </p>
                 <ol className="list-decimal list-inside space-y-2">
                   <li>대시보드에서 파일을 드래그 앤 드롭하거나 찾아보기로 업로드하세요.</li>

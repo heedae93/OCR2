@@ -76,7 +76,7 @@ export default function JoinPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">          
-          <h1 className="text-text-primary-light dark:text-text-primary-dark text-2xl font-bold">Futurenuri PDFix</h1>          
+          <h1 className="text-text-primary-light dark:text-text-primary-dark text-2xl font-bold">AI Doc Intelligence</h1>          
         </div>
 
         {/* Form Card */}
