@@ -72,6 +72,16 @@ export default function EditorPage() {
   const [showAccuracy, setShowAccuracy] = useState(false);
   const [showMasking, setShowMasking] = useState(false);
   const [maskingData, setMaskingData] = useState<any[]>([]);
+  const PII_LABELS: Record<string, string> = {
+    PHONE: "전화번호", EMAIL: "이메일", RRN: "주민등록번호",
+    FOREIGNER_REG_NO: "외국인등록번호", BUSINESS_REG_NO: "사업자등록번호",
+    ACCOUNT_NO: "계좌번호", HEALTH_INSURANCE_NO: "건강보험번호",
+    CREDIT_CARD: "신용카드", PASSPORT_NO: "여권번호",
+    IP_ADDRESS: "IP주소", CAR_NO: "차량번호",
+    ROAD_ADDRESS: "도로명주소", NAME: "이름",
+  };
+  const maskingSuccess = maskingData.filter(b => b.bbox && b.masked_value && b.masked_value !== b.value);
+  const maskingFail = maskingData.filter(b => !b.bbox || !b.masked_value || b.masked_value === b.value);
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrCurrentPage, setOcrCurrentPage] = useState(0);
@@ -1142,6 +1152,60 @@ export default function EditorPage() {
                         </span>
                       </button>
                     </div>
+                  )}
+
+                  {/* Masking Results Section */}
+                  {maskingData.length > 0 && (
+                    <>
+                      <div className="h-px bg-border-light dark:bg-border-dark"></div>
+                      <div>
+                        <h3 className="font-medium mb-3 text-text-primary-light dark:text-text-primary-dark flex items-center gap-2">
+                          <span className="material-symbols-outlined text-base">shield_person</span>
+                          개인정보 마스킹 결과
+                        </h3>
+                        <div className="grid grid-cols-3 gap-2 mb-3">
+                          <div className="flex flex-col items-center p-2 rounded-lg bg-gray-100 dark:bg-white/5">
+                            <span className="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">{maskingData.length}</span>
+                            <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">전체</span>
+                          </div>
+                          <div className="flex flex-col items-center p-2 rounded-lg bg-green-50 dark:bg-green-900/20">
+                            <span className="text-lg font-bold text-green-600 dark:text-green-400">{maskingSuccess.length}</span>
+                            <span className="text-xs text-green-600 dark:text-green-400">성공</span>
+                          </div>
+                          <div className="flex flex-col items-center p-2 rounded-lg bg-red-50 dark:bg-red-900/20">
+                            <span className="text-lg font-bold text-red-500 dark:text-red-400">{maskingFail.length}</span>
+                            <span className="text-xs text-red-500 dark:text-red-400">실패</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
+                          {maskingData.map((box, idx) => {
+                            const isSuccess = !!(box.bbox && box.masked_value && box.masked_value !== box.value);
+                            return (
+                              <div key={idx} className={`flex flex-col gap-0.5 p-2 rounded-md border text-xs ${isSuccess ? "border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10" : "border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10"}`}>
+                                <div className="flex items-center justify-between">
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${isSuccess ? "bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300" : "bg-red-100 dark:bg-red-800 text-red-600 dark:text-red-300"}`}>
+                                    {PII_LABELS[box.type] ?? box.type}
+                                  </span>
+                                  <span className={`text-[10px] ${isSuccess ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}>
+                                    {isSuccess ? "✓ 성공" : "✗ 실패"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1 mt-0.5 text-text-primary-light dark:text-text-primary-dark">
+                                  <span className="truncate max-w-[80px]">{box.value}</span>
+                                  {box.masked_value && box.masked_value !== box.value && (
+                                    <>
+                                      <span className="text-text-secondary-light dark:text-text-secondary-dark">→</span>
+                                      <span className="truncate max-w-[80px] font-medium">{box.masked_value}</span>
+                                    </>
+                                  )}
+                                </div>
+                                {box.page && <span className="text-[10px] text-text-secondary-light dark:text-text-secondary-dark">{box.page}페이지</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
                   )}
 
                   <div className="h-px bg-border-light dark:border-border-dark"></div>

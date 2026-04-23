@@ -61,12 +61,16 @@ PII_PATTERNS = {
         r"\b[가-힣]{1,2}\s?\d{2,3}\s?[가-힣]\s?\d{4}\b",
     ],
     "ROAD_ADDRESS": [
+        # 레이블 뒤 주소 캡처 (회사주소, 자택주소, 현주소, 주소 등 레이블 다음에 오는 주소)
+        r"(?:회사\s*주소|자택\s*주소|주거\s*지|현\s*주소|거주\s*지|주소지|주\s*소)[\s:：]+([가-힣\d][가-힣0-9·()\-\s]{5,}(?:시|구|군|동|읍|면|로|길|가|번지|호|층)[가-힣0-9()\-\s]{0,40})",
         # 도로명 주소: xxx로/길 번지 (동/층/호 선택)
         r"\b[가-힣0-9·\- \t]+(?:로|길)\s?\d+(?:-\d+)?(?:\s?\d+[동층호실]*)?\b",
         # 지번 주소: 시/도 + 구/군 + 동/읍/면 + 번지
         r"\b[가-힣]+(?:특별시|광역시|특별자치시|특별자치도|시|도)\s*[가-힣]+(?:구|군)\s*[가-힣]+(?:읍|면|동|가)\s*\d+(?:-\d+)?\b",
         # 지번 주소 (시/구 없이 동/읍/면 + 번지만)
         r"\b[가-힣]{2,}(?:읍|면|동|가)\s+\d+(?:-\d+)?\b",
+        # 지번 주소 2: 시/도 + 구/군/시 까지만 있고 이후 도로명이 오는 경우
+        r"\b[가-힣]+(?:특별시|광역시|특별자치시|특별자치도|시|도)\s+[가-힣]+(?:구|군|시)\s+[가-힣0-9·\- \t]+(?:로|길)\s?\d+(?:-\d+)?\b",
     ],
     "NAME": [
         # 일반 레이블 뒤 이름
@@ -128,7 +132,7 @@ NAME_BLACKLIST = {
 _kobert_ner_model = None
 _kobert_ner_tokenizer = None
 
-KOBERT_NAME_CONFIDENCE_MIN = 0.60
+KOBERT_NAME_CONFIDENCE_MIN = 0.80  # NER 신뢰도 하한선 상향 (불확실한 단어 오탐 방지)
 
 
 def _is_valid_kobert_name(value: str, score: float) -> bool:
@@ -143,6 +147,12 @@ def _is_valid_kobert_name(value: str, score: float) -> bool:
         return False
     if len(collapsed) == 2 and re.search(r'[하되어이의을를은는가나]$', collapsed):
         return False
+    # '하기', '가기' 등 동사형이나 UI 버튼명 패턴 일괄 제거
+    if re.search(r'(하기|가기|보기|도움말)$', collapsed):
+        return False
+    # 행정구역 접미사로 끝나는 단어는 인명이 아님 (서울시, 중구, 강원도 등)
+    if re.search(r'[시구군도읍면동]$', collapsed):
+        return False
     return True
 
 
@@ -154,11 +164,10 @@ def _init_kobert_ner():
     
     if _kobert_ner_model is None:
         try:
-            # 한국어 NER fine-tuned 모델 사용 (KLUE 데이터셋 기반)
             model_name = "bespin-global/klue-roberta-base-ner"
             _kobert_ner_tokenizer = AutoTokenizer.from_pretrained(model_name)
             _kobert_ner_model = AutoModelForTokenClassification.from_pretrained(model_name)
-            logger.info("KoBERT NER 모델 로드 완료")
+            logger.info("KoBERT NER 모델 로드 완료 (bespin-global/klue-roberta-base-ner)")
         except Exception as e:
             logger.error(f"KoBERT NER 모델 로드 실패: {e}")
             return False
@@ -197,8 +206,9 @@ def _extract_with_kobert_ner(text: str) -> List[Dict[str, Any]]:
                         "confidence": entity['score']
                     })
             elif entity_type in ['LOC', 'LOCATION', 'LC']:  # 장소
-                # 주소 접미사가 있는 경우만 주소로 판정 (len >= 3 조건 제거 — 오탐 방지)
-                if re.search(r'(?:로|길|동|읍|면|시|구|군|도|가)\s*\d*$', value):
+                # 도로명+번지 또는 지번 숫자가 있는 경우만 주소로 판정
+                # "서울시", "중구" 등 행정구역 단독명은 번지 없으므로 제외
+                if re.search(r'(?:로|길|동|읍|면)\s*\d+', value) or re.search(r'\d+\s*번지', value):
                     pii_items.append({
                         "type": "ROAD_ADDRESS",
                         "value": value,
@@ -252,12 +262,14 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
                         # NAME 블랙리스트: 라벨/업무용어 오탐 방지 (확장 블랙리스트 사용)
                         if pii_type == "NAME" and re.sub(r'\s+', '', value) in _STANDALONE_NAME_BLACKLIST:
                             continue
-                        sub_bbox = _estimate_sub_bbox(value, text, bbox)
+                            
+                        # 추출된 값(value) 부분만의 정밀한 sub-bbox를 추정 (실패 시 원본 라인 bbox 사용)
+                        sub_bbox = _estimate_sub_bbox(value, text, bbox) or bbox
                         results.append({
                             "type": pii_type,
                             "value": value,
                             "page": page_num,
-                            "bbox": sub_bbox or bbox,
+                            "bbox": sub_bbox,
                             "_context": text,
                         })
 
@@ -384,9 +396,11 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
 
     logger.info(f"[3차 KoBERT NER 보조] 최종 {len(results)}개: {results}")
 
-    # ── 4차: 독립 라인 이름 감지 (LLM 없이 fallback) ─────────
-    results = _detect_standalone_names(ocr_pages, results)
-    logger.info(f"[4차 독립라인 이름 감지] 최종 {len(results)}개")
+    # ── 4차: 독립 라인 이름 감지 (비활성화) ─────────
+    # NER(3차) 도입으로 인해 오탐(False Positive)이 잦고, 
+    # 허공에 뜬 텍스트는 향후 OCR 레이아웃 분석을 통해 보완할 예정이므로 비활성화합니다.
+    # results = _detect_standalone_names(ocr_pages, results)
+    # logger.info(f"[4차 독립라인 이름 감지] 최종 {len(results)}개")
 
     return results
 
@@ -411,18 +425,32 @@ _STANDALONE_NAME_BLACKLIST = NAME_BLACKLIST | {
     "출장", "교육", "훈련", "평가", "승진", "전보", "파견", "겸직", "해임",
     "임명", "위촉", "해촉", "임기", "기간", "날짜", "제목", "내용", "비고",
     "합계", "소계", "금액", "단위", "수량", "단가", "총액", "부가세",
+    # 빈출 비즈니스 서식 용어 및 OCR 오인식 단어 추가
+    "사업자", "상호", "주업태명", "주종목명", "업태명", "종목명", "업태", "종목", "여두", "훈개발봉", "소재지", "사업장",
+    # 서비스, 결제 관련 빈출 단어
+    "월납", "서비스", "포인트", "마일리지", "할인", "결제", "납부", "청구", "조회",
     # 문서 섹션 표제어 합성어 (개별 단어는 있지만 합성어는 없었음)
     "인사공고", "인적사항", "발령사항", "기존이사", "변경사항", "해당사항",
     "현황사항", "처리사항", "확인사항", "결과사항", "인사발령", "인사현황",
     "발령현황", "직급현황", "직책현황", "인사내역", "발령내역", "직급변경",
     "직책변경", "현직현황", "현직이사", "신규이사", "기존직급", "변경직급",
     "사항없음", "해당없음", "내용없음", "비고없음",
+    # 이력서/개인정보 양식 레이블 (직접 등재)
+    "현주소", "자택주소", "회사주소", "재직기간", "근무기간", "재직회사",
+    "신원확인", "신원조회", "제출처", "발급처", "수령처", "접수처",
+    "작성일", "발급일", "유효기간", "서명란", "확인란", "날인란",
+    "병역사항", "병역구분", "학력사항", "경력사항", "자격사항", "수상내역",
+    "희망연봉", "희망직종", "희망부서", "지원부서", "지원동기",
+    "보훈번호", "장애등급", "긴급연락", "비상연락",
 }
 
 # 이름이 아닌 단어의 접미사 (이 접미사로 끝나는 합성어는 무조건 이름 아님)
 _NON_NAME_SUFFIXES = {
     "공고", "사항", "현황", "결과", "내역", "명단", "목록", "기준",
     "방법", "절차", "양식", "서식", "기록", "현황표", "명세", "내용",
+    # 문서 레이블 접미사 (현주소·재직기간·신원확인·제출처 등 오탐 방지)
+    "주소", "기간", "확인", "처", "지", "란", "일자", "날짜", "번호", "종류",
+    "금액", "직종", "업종", "학교", "학과", "전공", "계열", "등급", "자격",
 }
 
 
@@ -450,6 +478,15 @@ def _detect_standalone_names(ocr_pages: list, existing_results: list) -> list:
             # 예: 인사공고(→공고), 인적사항(→사항), 발령사항(→사항)
             if any(collapsed.endswith(s) for s in _NON_NAME_SUFFIXES):
                 continue
+            # 행정구역 접미사로 끝나는 단어는 인명이 아님
+            if re.search(r'[시구군도읍면동]$', collapsed):
+                continue
+                
+            # 조사/어미 및 버튼/동사형 패턴 제거 (4차에도 적용)
+            if len(collapsed) == 2 and re.search(r'[하되어이의을를은는가나]$', collapsed):
+                continue
+            if re.search(r'(하기|가기|보기|도움말)$', collapsed):
+                continue
 
             # 인접 라인(앞뒤 2줄) 중 직급/레이블이 있으면 이름으로 판단
             context_lines = lines[max(0, i-2):i] + lines[i+1:min(len(lines), i+3)]
@@ -457,13 +494,25 @@ def _detect_standalone_names(ocr_pages: list, existing_results: list) -> list:
             context_collapsed = re.sub(r'\s+', '', context_text)
 
             is_name_context = any(kw in context_collapsed for kw in _JOB_TITLE_WORDS)
-            # 또는 인접 라인이 숫자(사번)인 경우도 이름 가능성 있음
+            # 인접 라인이 숫자(사번)인 경우도 이름 가능성 있음
             if not is_name_context:
                 for cl in context_lines:
                     ct = cl.get("text", "").strip()
                     if re.fullmatch(r'\d{4,6}', re.sub(r'\s+', '', ct)):
                         is_name_context = True
                         break
+            # 같은 페이지에 이미 다른 PII(전화·주민번호 등)가 감지된 경우 → 개인정보 양식 가능성 높음
+            if not is_name_context:
+                non_name_types = {"PHONE", "RRN", "FOREIGNER_REG_NO", "ACCOUNT_NO",
+                                  "CREDIT_CARD", "BUSINESS_REG_NO", "EMAIL", "CAR_NO"}
+                if any(r.get("page") == page_num and r.get("type") in non_name_types
+                       for r in results):
+                    is_name_context = True
+            
+            # [수정] 이 규칙이 "월납", "서비스" 등 문서 내 모든 2~4글자 단어를 이름으로 오탐하게 만드는 주범이므로 비활성화합니다.
+            # (페이지에 다른 PII가 있다고 해서 무조건 이름으로 간주하지 않음)
+            # if not is_name_context:
+            #     ...
 
             if not is_name_context:
                 continue
@@ -540,11 +589,12 @@ def _find_all_value_bboxes(value: str, lines: list) -> list:
     norm_val = normalize(value)
     found = []
     for line in lines:
-        norm_line = normalize(line.get("text", ""))
+        orig_text = line.get("text", "")
+        norm_line = normalize(orig_text)
         bbox = line.get("bbox")
         if bbox and norm_val in norm_line:
-            sub_bbox = _estimate_sub_bbox(value, line.get("text", ""), bbox)
-            found.append(sub_bbox or bbox)
+                sub_bbox = _estimate_sub_bbox(value, orig_text, bbox) or bbox
+                found.append(sub_bbox)
     return found
 
 
@@ -599,6 +649,16 @@ def _validate_regex_names(results: list) -> list:
         # 2글자이고 조사/어미로 끝나면 제거
         if len(collapsed) == 2 and re.search(r'[하되어이의을를은는가나]$', collapsed):
             logger.debug(f"[NAME 규칙 검증] 조사/어미 패턴 제거: {r['value']}")
+            continue
+
+        # 동사형/버튼명 패턴 일괄 제거 (조회하기, 인쇄하기 등)
+        if re.search(r'(하기|가기|보기|도움말)$', collapsed):
+            logger.debug(f"[NAME 규칙 검증] 버튼/동사형 패턴 제거: {r['value']}")
+            continue
+
+        # 행정구역 접미사로 끝나는 단어는 인명이 아님
+        if re.search(r'[시구군도읍면동]$', collapsed):
+            logger.debug(f"[NAME 규칙 검증] 행정구역 접미사 제거: {r['value']}")
             continue
 
         filtered.append(r)
@@ -833,9 +893,8 @@ def mask_value(pii_type: str, value: str) -> str:
         return v
 
     elif pii_type == "CAR_NO":
-        return re.sub(r'(\d{2,3})\s?[가-힣]\s?\d{4}', lambda m: m.group(1) + '*****', v)
+        # "12가3456" → "12가****"  길이를 value와 동일하게 유지해야 partial_bbox가 올바르게 계산됨
+        return re.sub(r'(\d{2,3}\s?[가-힣])\s?\d{4}', lambda m: m.group(1) + '****', v)
 
     half = max(1, len(v) // 2)
     return v[:half] + '*' * (len(v) - half)
-
-
