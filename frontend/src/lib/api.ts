@@ -60,8 +60,9 @@ export const getOCRResults = async (jobId: string): Promise<OCRResult> => {
   return response.data
 }
 
-export const listJobs = async (): Promise<Job[]> => {
-  const response = await api.get('/jobs')
+export const listJobs = async (userId?: string): Promise<Job[]> => {
+  const params = userId ? { user_id: userId } : {}
+  const response = await api.get('/jobs', { params })
   return response.data
 }
 

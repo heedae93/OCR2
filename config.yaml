@@ -50,13 +50,13 @@ ocr:
   # 커스텀 인식 모델 경로 (상대경로 가능)
   recognition_model_dir: data/models/best_0828
   ppstructure_layout_model: "PP-DocLayout-L"
-  ppstructure_recognition_model: "PP-OCRv5_server_rec"
+  ppstructure_recognition_model: "korean_PP-OCRv5_mobile_rec"
   use_table_recognition: true
   table_model_name: "SLANet_plus"
   wireless_table_model_name: "SLANet"
 
   # ── Table Transformer (Microsoft DETR 기반) ──
-  table_recognition_backend: "hybrid"
+  table_recognition_backend: "slanet"
   table_transformer:
     detection_model: "microsoft/table-transformer-detection"
     structure_model: "microsoft/table-transformer-structure-recognition-v1.1-all"
@@ -225,6 +225,8 @@ database:
 # ──────────────────────────────────────────────────────────────────────────────
 redis:
   url: "redis://localhost:6379/0"
+  # OCR 작업 최대 처리 시간 (초). 이 시간 초과 시 failed 처리
+  job_timeout_seconds: 1800
 
 
 # ──────────────────────────────────────────────────────────────────────────────

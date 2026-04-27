@@ -600,6 +600,42 @@ def cancel_job(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/cancel-all")
+def cancel_all_jobs():
+    """Cancel all processing and queued jobs"""
+    try:
+        db = SessionLocal()
+        try:
+            # Find all active jobs
+            active_jobs = db.query(DBJob).filter(
+                DBJob.status.in_(['processing', 'queued'])
+            ).all()
+            
+            count = 0
+            for db_job in active_jobs:
+                job_id = db_job.job_id
+                # Set cancel flag
+                _set_cancel_flag(job_id)
+                # Update memory
+                if job_id in job_manager.jobs:
+                    job_manager.cancelled_jobs.add(job_id)
+                    job_manager.update_job(job_id, status=JobStatus.CANCELLED, message="모두 중단됨")
+                
+                # Update DB
+                db_job.status = 'cancelled'
+                db_job.message = '모두 중단됨'
+                count += 1
+            
+            db.commit()
+            logger.info(f"Batch cancelled {count} jobs")
+            return {"status": "success", "cancelled_count": count, "message": f"{count}개의 작업이 중단되었습니다."}
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Failed to cancel all jobs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 def process_job_task(job_id: str):
     """
     Background task for OCR processing with improved text scaling
@@ -775,6 +811,10 @@ def process_job_task(job_id: str):
                     ocr_results = []
                 else:
                     logger.info(f"[Page {page_num}] OCR completed in {ocr_elapsed:.2f}s ({len(ocr_results)} text blocks)")
+                
+                # Progress update: OCR done
+                if total_pages == 1:
+                    job_manager.update_job(job_id, progress_percent=40.0, sub_stage=f"Page {page_num}: OCR completed, starting layout analysis...")
 
                 layout_regions = structured_result.get('layout_info', {}).get('regions', []) or []
                 table_regions = structured_result.get('layout_info', {}).get('tables', []) or []
@@ -815,6 +855,10 @@ def process_job_task(job_id: str):
                             except Exception as layout_exc:
                                 logger.warning(f"Layout detection failed on page {page_num}: {layout_exc}")
                                 layout_regions = []
+                        
+                        # Progress update: Layout done
+                        if total_pages == 1:
+                            job_manager.update_job(job_id, progress_percent=70.0, sub_stage=f"Page {page_num}: Layout analysis completed, finalizing results...")
 
                     sorter = get_reading_order_sorter()
 
@@ -1124,11 +1168,18 @@ def process_job_task(job_id: str):
 
     except Exception as e:
         logger.error(f"Job {job_id} failed: {e}", exc_info=True)
+        # Update file-based status
         job_manager.update_job(
             job_id,
             status=JobStatus.FAILED,
             message=str(e)
         )
+        # Update database status
+        try:
+            from utils.db_helper import update_job_status
+            update_job_status(job_id, "failed", error_message=str(e))
+        except Exception as db_err:
+            logger.error(f"Failed to update DB status for failed job {job_id}: {db_err}")
     finally:
         cleanup_temp_files(temp_files)
 
@@ -1412,18 +1463,28 @@ async def get_job_status(job_id: str):
 
     # Prefer file-based status when worker is actively updating progress.
     file_status = JobManager.read_status_from_file(job_id)
-    if file_status and file_status.get("status") == "processing":
-        return build_response(
-            job_id_value=file_status["job_id"],
-            filename=file_status.get("filename"),
-            status=file_status.get("status", "unknown"),
-            progress_percent=file_status.get("progress_percent", 0),
-            current_page=file_status.get("current_page", 0),
-            total_pages=file_status.get("total_pages", 0),
-            message=file_status.get("message"),
-            sub_stage=file_status.get("sub_stage"),
-            pdf_url=file_status.get("pdf_url"),
-        )
+    if file_status:
+        # Check if DB has completed/failed state (which might have more info like processing_time)
+        db = SessionLocal()
+        try:
+            db_job = db.query(DBJob).filter_by(job_id=job_id).first()
+            if db_job and db_job.status in {"completed", "failed", "cancelled"} and file_status.get("status") != "failed":
+                # Fall through to DB check if DB is already finished and file isn't failed
+                pass
+            else:
+                return build_response(
+                    job_id_value=file_status["job_id"],
+                    filename=file_status.get("filename"),
+                    status=file_status.get("status", "unknown"),
+                    progress_percent=file_status.get("progress_percent", 0),
+                    current_page=file_status.get("current_page", 0),
+                    total_pages=file_status.get("total_pages", 0),
+                    message=file_status.get("message"),
+                    sub_stage=file_status.get("sub_stage"),
+                    pdf_url=file_status.get("pdf_url"),
+                )
+        finally:
+            db.close()
 
     db = SessionLocal()
     try:

@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from 'react'
 
-const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5015'}/api`
+const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/api`
 const STORAGE_KEY = 'ocr-activity-tracker'
 
 export type TrackedJobStatus = 'queued' | 'processing' | 'completed' | 'failed'
@@ -43,6 +43,7 @@ interface OcrActivityContextValue {
   addTrackedJobs: (jobs: AddTrackedJobInput[]) => void
   dismissFinishedJobs: () => void
   clearAllTrackedJobs: () => void
+  cancelAllJobs: () => Promise<void>
 }
 
 const OcrActivityContext = createContext<OcrActivityContextValue | undefined>(undefined)
@@ -107,6 +108,15 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
     setTrackedJobs([])
   }, [])
 
+  const cancelAllJobs = useCallback(async () => {
+    try {
+      await fetch(`${API_BASE}/cancel-all`, { method: 'POST' })
+      clearAllTrackedJobs()
+    } catch (error) {
+      console.error('Failed to cancel all jobs:', error)
+    }
+  }, [clearAllTrackedJobs])
+
   useEffect(() => {
     if (!isReady) return
 
@@ -116,16 +126,30 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
 
       const results = await Promise.allSettled(
         activeJobsSnapshot.map(async trackedJob => {
-          const response = await fetch(`${API_BASE}/status/${trackedJob.jobId}`)
-          if (!response.ok) {
-            throw new Error(`status request failed: ${response.status}`)
-          }
-          const data = await response.json()
-          return {
-            jobId: trackedJob.jobId,
-            status: data.status as TrackedJobStatus,
-            progressPercent: Number(data.progress_percent ?? 0),
-            error: data.error_message as string | undefined,
+          try {
+            const response = await fetch(`${API_BASE}/status/${trackedJob.jobId}`)
+            if (!response.ok) {
+              return {
+                jobId: trackedJob.jobId,
+                status: 'failed' as TrackedJobStatus,
+                progressPercent: trackedJob.progressPercent,
+                error: `서버 오류 (${response.status})`,
+              }
+            }
+            const data = await response.json()
+            return {
+              jobId: trackedJob.jobId,
+              status: data.status as TrackedJobStatus,
+              progressPercent: Number(data.progress_percent ?? 0),
+              error: data.message as string | undefined,
+            }
+          } catch (error) {
+            return {
+              jobId: trackedJob.jobId,
+              status: trackedJob.status, // Keep current status on network error
+              progressPercent: trackedJob.progressPercent,
+              error: '연결 오류',
+            }
           }
         }),
       )
@@ -189,8 +213,9 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
       addTrackedJobs,
       dismissFinishedJobs,
       clearAllTrackedJobs,
+      cancelAllJobs,
     }),
-    [activeJobs, addTrackedJobs, clearAllTrackedJobs, dismissFinishedJobs, trackedJobs],
+    [activeJobs, addTrackedJobs, clearAllTrackedJobs, cancelAllJobs, dismissFinishedJobs, trackedJobs],
   )
 
   return <OcrActivityContext.Provider value={value}>{children}</OcrActivityContext.Provider>

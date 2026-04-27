@@ -22,10 +22,18 @@ def call_ollama(prompt: str, json_format: bool = False) -> str:
         payload["format"] = "json"
         
     try:
+        logger.info(f"Calling Ollama API (model: {Config.LLM_MODEL_NAME})...")
         response = requests.post(url, json=payload, timeout=120)
-        response.raise_for_status()
+        
+        if response.status_code != 200:
+            logger.error(f"Ollama API error: Status {response.status_code}, Body: {response.text[:200]}")
+            return ""
+            
         result = response.json()
-        return result.get("response", "")
+        resp_text = result.get("response", "")
+        if not resp_text:
+            logger.warning(f"Ollama API returned empty response: {result}")
+        return resp_text
     except Exception as e:
         logger.error(f"Ollama API request failed: {e}")
         return ""
@@ -110,3 +118,54 @@ def process_document_with_llm(full_text: str) -> Tuple[str, str]:
                 })
 
     return summary, json.dumps(final_citations, ensure_ascii=False)
+
+def process_metadata_with_llm(full_text: str, fields_to_extract: Dict[str, str]) -> Dict[str, str]:
+    """
+    Extracts specific metadata fields from the document text using LLM.
+    fields_to_extract: dictionary mapping field_key to field_label (e.g., {"title": "문서 제목"})
+    """
+    if not Config.LLM_ENABLED or not full_text or not fields_to_extract:
+        return {}
+
+    logger.info(f"Extracting {len(fields_to_extract)} metadata fields via LLM...")
+    
+    fields_description = "\n".join([f'- "{k}": {v} 값을 추출하세요.' for k, v in fields_to_extract.items()])
+    schema_example = "{\n" + ",\n".join([f'  "{k}": "추출된 값 또는 찾을 수 없는 경우 빈 문자열"' for k in fields_to_extract.keys()]) + "\n}"
+    
+    prompt = f"""다음 문서 내용을 분석하여 요청된 항목들을 추출해주세요.
+반드시 아래의 JSON 형식으로만 응답해야 하며, 부가적인 설명이나 마크다운 백틱(```)은 포함하지 마세요.
+
+[추출 대상 항목]
+{fields_description}
+
+[응답 JSON 구조 예시]
+{schema_example}
+
+[문서 내용]
+{full_text}"""
+
+    json_str = call_ollama(prompt, json_format=True)
+    
+    if not json_str:
+        return {}
+        
+    try:
+        clean_str = json_str.strip()
+        if clean_str.startswith("```json"):
+            clean_str = clean_str[7:]
+        if clean_str.endswith("```"):
+            clean_str = clean_str[:-3]
+        clean_str = clean_str.strip()
+        
+        extracted = json.loads(clean_str)
+        if isinstance(extracted, dict):
+            # Ensure only requested fields are returned and mapped cleanly
+            result = {}
+            for k in fields_to_extract.keys():
+                val = extracted.get(k, "")
+                result[k] = str(val).strip() if val else ""
+            return result
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse metadata JSON from LLM: {e} | Raw: {json_str}")
+        
+    return {}

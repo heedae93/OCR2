@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
 import json
-from database import SessionLocal, Job, OCRPage, DocumentChunk, User, Session, SessionDocument, DocumentMetadataValue
+from database import SessionLocal, Job, OCRPage, DocumentChunk, User, Session, SessionDocument, DocumentMetadataValue, ExtractionRule, MetadataFieldDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -280,8 +280,11 @@ def update_job_ocr_results(
                 job.full_text = meta["full_text"]
             if settings.extract_language:
                 job.detected_language = meta["detected_language"]
-            if settings.extract_doc_type:
+            if settings.extract_doc_type and not job.doc_type:
                 job.doc_type = meta["doc_type"]
+                logger.info(f"[{job_id}] Auto-detected doc_type: {job.doc_type}")
+            elif settings.extract_doc_type and job.doc_type:
+                logger.info(f"[{job_id}] Keeping existing doc_type: {job.doc_type} (auto-detected: {meta['doc_type']})")
             if settings.extract_keywords:
                 job.keywords = json.dumps(meta["keywords"], ensure_ascii=False)
             if settings.extract_dates:
@@ -300,6 +303,9 @@ def update_job_ocr_results(
                     summary, citations = process_document_with_llm(meta["full_text"])
                     if summary:
                         job.summary = summary
+                        logger.info(f"[{job_id}] LLM summary generated ({len(summary)} chars)")
+                    else:
+                        logger.warning(f"[{job_id}] LLM summary is empty")
                     if citations and citations != "[]":
                         job.citations = citations
                     logger.info(f"[{job_id}] LLM 분석 완료 (요약 및 인용문 저장)")
@@ -319,20 +325,59 @@ def update_job_ocr_results(
                         char_end=chunk["char_end"],
                     ))
 
-            # NER Key-Value 추출
-            if getattr(settings, "extract_ner", False):
-                try:
+            # Rule-based dynamic LLM extraction
+            try:
+                # 1. 문서 유형에 맞는 추출 규칙(ExtractionRule) 찾기
+                current_doc_type = job.doc_type or ""
+                rules = db.query(ExtractionRule).filter_by(user_id=job.user_id, doc_type=current_doc_type, is_active=True).all()
+                
+                if not rules:
+                    logger.info(f"[{job_id}] No extraction rules found for user {job.user_id} and doc_type '{current_doc_type}'")
+                
+                if rules and getattr(Config, "LLM_ENABLED", False) and meta.get("full_text"):
+                    fields_to_extract = {}
+                    for rule in rules:
+                        if rule.field:
+                            fields_to_extract[rule.field.field_key] = rule.field.label
+                            
+                    if fields_to_extract:
+                        from utils.llm_client import process_metadata_with_llm
+                        logger.info(f"[{job_id}] LLM 기반 동적 메타데이터 추출 시작 (항목: {list(fields_to_extract.values())})")
+                        
+                        extracted_data = process_metadata_with_llm(meta["full_text"], fields_to_extract)
+                        
+                        # JSON 형태를 그대로 호환되도록 job.extracted_fields 에도 저장
+                        legacy_format = []
+                        for k, v in extracted_data.items():
+                            if v:  # 빈 값은 저장 제외
+                                label = fields_to_extract.get(k, k)
+                                legacy_format.append({
+                                    "key": k,
+                                    "value": v,
+                                    "entity_type": k,
+                                    "entity_type_ko": label
+                                })
+                                # 전용 테이블에 저장
+                                db.add(DocumentMetadataValue(
+                                    job_id=job_id,
+                                    field_key=k,
+                                    label=label,
+                                    field_value=v,
+                                    confidence=1.0,
+                                    page_number=1
+                                ))
+                        
+                        job.extracted_fields = json.dumps(legacy_format, ensure_ascii=False)
+                        logger.info(f"[{job_id}] LLM 동적 메타데이터 추출 성공: {len(legacy_format)} 항목 저장됨")
+                elif getattr(settings, "extract_ner", False):
+                    # 규칙이 없거나 LLM이 비활성화되어 있고, 기존 NER 설정이 켜져있을 경우의 폴백
                     from utils.ner_extractor import get_ner_extractor
                     extractor = get_ner_extractor()
                     if extractor.is_available:
                         kv_items = extractor.extract_from_ocr_pages(ocr_data.get("pages", []))
-                        # bbox는 JSON 직렬화 가능하도록 정리
                         for item in kv_items:
                             item.pop("raw_entities", None)
                         job.extracted_fields = json.dumps(kv_items, ensure_ascii=False)
-                        logger.info(f"[NER] job {job_id}: {len(kv_items)}개 KV 쌍 저장")
-                        
-                        # 전용 테이블에도 개별 저장
                         for item in kv_items:
                             db.add(DocumentMetadataValue(
                                 job_id=job_id,
@@ -342,8 +387,8 @@ def update_job_ocr_results(
                                 confidence=item.get("score"),
                                 page_number=item.get("page_number")
                             ))
-                except Exception as ner_err:
-                    logger.error(f"[NER] 추출 실패 job {job_id}: {ner_err}")
+            except Exception as extract_err:
+                logger.error(f"[{job_id}] 동적 메타데이터 추출 실패: {extract_err}")
 
             db.commit()
             logger.info(

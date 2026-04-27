@@ -109,8 +109,6 @@ def _patch_paddlex_layout_pipeline() -> None:
         logger.debug("Failed to import PaddleX layout pipeline for patching: %s", exc)
         return
 
-    original_init_predictor = _LayoutParsingPipelineV2.inintial_predictor
-
     def patched_init_predictor(self, config: dict) -> None:
         if (
             config.get("use_doc_preprocessor", True)
@@ -293,13 +291,40 @@ class PPStructureEngine:
                     self.config.OCR_PPSTRUCTURE_WIRELESS_TABLE_MODEL,
                 )
 
-            pipeline = PPStructureV3(**pipeline_params)
-            logger.info("PP-StructureV3 pipeline initialized")
-
-            return pipeline
+            try:
+                pipeline = PPStructureV3(**pipeline_params)
+                logger.info("PP-StructureV3 pipeline initialized with primary config")
+                return pipeline
+            except Exception as inner_e:
+                logger.warning(f"PPStructureV3 primary initialization failed: {inner_e}")
+                logger.info("Attempting fallback to standard models...")
+                
+                # Try again with safe defaults (no custom model, valid v5 model names)
+                fallback_params = {
+                    "device": "gpu" if self.config.OCR_USE_GPU else "cpu",
+                    "use_table_recognition": False,
+                    "text_detection_model_name": "PP-OCRv5_server_det",
+                    "text_recognition_model_name": self.config.OCR_PPSTRUCTURE_REC_MODEL,
+                    "cpu_threads": self.config.OCR_CPU_THREADS,
+                    "use_doc_orientation_classify": False,
+                    "use_doc_unwarping": False,
+                    "use_textline_orientation": False,
+                    "use_formula_recognition": False,
+                    "use_chart_recognition": False,
+                    "use_seal_recognition": False,
+                }
+                
+                try:
+                    pipeline = PPStructureV3(**fallback_params)
+                    logger.info("PP-StructureV3 pipeline initialized with fallback models")
+                    return pipeline
+                except Exception as final_e:
+                    logger.error(f"PPStructureV3 fallback initialization also failed: {final_e}")
+                    raise
 
         except Exception as e:
-            logger.error(f"Failed to initialize PP-Structure pipeline: {e}")
+            import traceback
+            logger.error(f"Failed to initialize PP-Structure pipeline: {e}\n{traceback.format_exc()}")
             raise
 
     def _initialize_table_transformer(self) -> "Optional[TableTransformerEngine]":

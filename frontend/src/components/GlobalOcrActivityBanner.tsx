@@ -10,6 +10,7 @@ import {
   Clock3,
   ExternalLink,
   Loader2,
+  StopCircle,
 } from 'lucide-react'
 import { useOcrActivity } from '@/contexts/OcrActivityContext'
 import type { TrackedJob } from '@/contexts/OcrActivityContext'
@@ -37,7 +38,7 @@ function getDisplayProgress(status: 'queued' | 'processing' | 'completed' | 'fai
 }
 
 export default function GlobalOcrActivityBanner() {
-  const { trackedJobs, activeJobs, dismissFinishedJobs } = useOcrActivity()
+  const { trackedJobs, activeJobs, dismissFinishedJobs, clearAllTrackedJobs, cancelAllJobs } = useOcrActivity()
   const [collapsed, setCollapsed] = useState(true)
 
   const completedCount = trackedJobs.filter(job => job.status === 'completed').length
@@ -117,17 +118,38 @@ export default function GlobalOcrActivityBanner() {
         </button>
       </div>
 
-      {(completedCount > 0 || failedCount > 0) && (
+      {(completedCount > 0 || failedCount > 0 || activeJobs.length > 0) && (
         <div className="flex items-center justify-between gap-3 border-b border-border-light dark:border-border-dark px-4 py-2.5">
           <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-            완료 {completedCount} · 실패 {failedCount}
+            완료 {completedCount} · 실패 {failedCount} · 진행 {activeJobs.length}
           </p>
-          <button
-            onClick={dismissFinishedJobs}
-            className="text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark hover:text-primary"
-          >
-            완료/실패 항목 지우기
-          </button>
+          <div className="flex gap-3">
+            {activeJobs.length > 0 && (
+              <button
+                onClick={() => {
+                  if (confirm('진행 중인 모든 작업을 중지하시겠습니까?')) {
+                    cancelAllJobs()
+                  }
+                }}
+                className="text-xs font-medium text-red-500 hover:text-red-600 flex items-center gap-1"
+              >
+                <StopCircle className="w-3 h-3" />
+                모든 작업 중지
+              </button>
+            )}
+            <button
+              onClick={dismissFinishedJobs}
+              className="text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark hover:text-primary"
+            >
+              완료/실패 지우기
+            </button>
+            <button
+              onClick={clearAllTrackedJobs}
+              className="text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark hover:text-red-500"
+            >
+              모두 지우기
+            </button>
+          </div>
         </div>
       )}
 

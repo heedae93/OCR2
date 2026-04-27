@@ -36,8 +36,12 @@ async def list_jobs(
         offset: Offset for pagination
     """
     logger.info(f"list_jobs called: user_id={user_id}, status={status}, search={search}")
+    print(f"\n[DEBUG] list_jobs called with user_id: '{user_id}'")
     try:
         query = db.query(Job).filter(Job.user_id == user_id)
+        total_in_db = db.query(Job).count()
+        count_for_user = query.count()
+        print(f"[DEBUG] Total jobs in DB: {total_in_db}, Jobs for user '{user_id}': {count_for_user}")
         logger.info(f"Created query for user_id={user_id}")
 
         # Filter by status
@@ -57,17 +61,37 @@ async def list_jobs(
 
         # Convert to response format
         job_responses = []
+        from utils.job_manager import JobManager
         for job in jobs:
+            status = job.status
+            progress_percent = job.progress_percent or 0
+            current_page = job.current_page or 0
+            total_pages = job.total_pages or 0
+            message = job.error_message if job.status == "failed" else None
+
+            # Prefer file-based status for active jobs (and check for recent failures/completions)
+            file_status = JobManager.read_status_from_file(job.job_id)
+            if file_status:
+                file_state = file_status.get("status")
+                # If file status is different from DB, or if it's currently active, use file status
+                if job.status in ("processing", "queued", "pending") or file_state in ("failed", "completed"):
+                    status = file_state or status
+                    progress_percent = file_status.get("progress_percent", progress_percent)
+                    current_page = file_status.get("current_page", current_page)
+                    total_pages = file_status.get("total_pages", total_pages)
+                    if status == "failed":
+                        message = file_status.get("message", message)
+
             job_responses.append(JobResponse(
                 job_id=job.job_id,
                 filename=job.original_filename,
-                status=job.status,
-                progress_percent=job.progress_percent,
-                current_page=job.current_page,
-                total_pages=job.total_pages,
-                message=job.error_message if job.status == "failed" else None,
+                status=status,
+                progress_percent=progress_percent,
+                current_page=current_page,
+                total_pages=total_pages,
+                message=message,
                 pdf_url=f"/files/processed/{job.job_id}.pdf" if job.pdf_file_path else None,
-                raw_file_url=None,  # Can be added if needed
+                raw_file_url=None,
                 created_at=job.created_at.isoformat() if job.created_at else None,
                 completed_at=job.completed_at.isoformat() if job.completed_at else None,
                 processing_time_seconds=job.processing_time_seconds,
@@ -93,14 +117,33 @@ async def get_job(job_id: str, db: Session = Depends(get_db)):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
 
+        from utils.job_manager import JobManager
+        status = job.status
+        progress_percent = job.progress_percent or 0
+        current_page = job.current_page or 0
+        total_pages = job.total_pages or 0
+        message = job.error_message if job.status == "failed" else None
+
+        # Prefer file-based status for active jobs (and check for recent failures/completions)
+        file_status = JobManager.read_status_from_file(job.job_id)
+        if file_status:
+            file_state = file_status.get("status")
+            if job.status in ("processing", "queued", "pending") or file_state in ("failed", "completed"):
+                status = file_state or status
+                progress_percent = file_status.get("progress_percent", progress_percent)
+                current_page = file_status.get("current_page", current_page)
+                total_pages = file_status.get("total_pages", total_pages)
+                if status == "failed":
+                    message = file_status.get("message", message)
+
         return JobResponse(
             job_id=job.job_id,
             filename=job.original_filename,
-            status=job.status,
-            progress_percent=job.progress_percent,
-            current_page=job.current_page,
-            total_pages=job.total_pages,
-            message=job.error_message if job.status == "failed" else None,
+            status=status,
+            progress_percent=progress_percent,
+            current_page=current_page,
+            total_pages=total_pages,
+            message=message,
             pdf_url=f"/files/processed/{job.job_id}.pdf" if job.pdf_file_path else None,
             created_at=job.created_at.isoformat() if job.created_at else None,
             completed_at=job.completed_at.isoformat() if job.completed_at else None,

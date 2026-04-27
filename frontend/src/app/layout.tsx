@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { OcrActivityProvider } from '@/contexts/OcrActivityContext'
-import GlobalOcrActivityBanner from '@/components/GlobalOcrActivityBanner'
 
 export const metadata: Metadata = {
   title: 'AI Doc Intelligence',
@@ -30,7 +29,6 @@ export default function RootLayout({
         <ThemeProvider>
           <OcrActivityProvider>
             {children}
-            <GlobalOcrActivityBanner />
           </OcrActivityProvider>
         </ThemeProvider>
       </body>

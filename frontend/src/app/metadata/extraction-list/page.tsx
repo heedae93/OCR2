@@ -87,6 +87,30 @@ export default function ExtractionListPage() {
 
   const totalPages = Math.ceil(total / pageSize)
 
+  const DEFAULT_FIELDS = [
+    { key: 'title',   label: '문서 제목' },
+    { key: 'date',    label: '발행 날짜' },
+    { key: 'amount',  label: '금액 / 수치' },
+    { key: 'vendor',  label: '업체 / 기관명' },
+    { key: 'address', label: '주소 / 위치' },
+    { key: 'person',  label: '인명 / 담당자' },
+  ]
+  
+  // Extract all unique fields found in the current documents
+  const allExtractedKeys = Array.from(
+    new Set(
+      docs.flatMap(doc => (doc.extracted_fields || []).map(f => f.key || f.entity_type_ko || ''))
+    )
+  ).filter(Boolean) as string[]
+
+  const mainKeys = DEFAULT_FIELDS.map(f => f.key)
+  const extraKeys = allExtractedKeys.filter(k => !mainKeys.includes(k) && !['문서유형', '언어', '날짜', '키워드', 'DOC_TYPE', 'LANGUAGE', 'DATE', 'KEYWORD'].includes(k))
+
+  const dynamicFields = [
+    ...DEFAULT_FIELDS,
+    ...extraKeys.map(k => ({ key: k, label: k }))
+  ]
+
   return (
     <div className="flex h-screen bg-bg-light dark:bg-bg-dark">
       <Sidebar />
@@ -154,15 +178,22 @@ export default function ExtractionListPage() {
         {/* Content Table Area */}
         <div className="flex-1 overflow-auto bg-bg-light dark:bg-bg-dark p-8">
            <div className="rounded-2xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-black/5 dark:bg-white/5 text-[11px] font-black uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark border-b border-border-light dark:border-border-dark">
-                    <th className="px-6 py-4 w-1/3">문서 정보</th>
-                    <th className="px-6 py-4 w-48">문서 유형</th>
-                    <th className="px-6 py-4">추출된 메타데이터</th>
-                    <th className="px-6 py-4">AI 분석 (요약/출처)</th>
-                    <th className="px-6 py-4 w-32">처리 일시</th>
-                    <th className="px-6 py-4 w-16"></th>
+                    <th className="px-6 py-4 w-1/3 min-w-[200px]">문서 정보</th>
+                    <th className="px-6 py-4 w-32 shrink-0">문서 유형</th>
+                    {dynamicFields.length > 0 ? (
+                       dynamicFields.map(field => (
+                          <th key={field.key} className="px-6 py-4 whitespace-nowrap min-w-[100px] text-primary">{field.label}</th>
+                       ))
+                    ) : (
+                       <th className="px-6 py-4 min-w-[200px]">추출된 메타데이터</th>
+                    )}
+                    <th className="px-6 py-4 min-w-[300px]">AI 분석 (요약/출처)</th>
+                    <th className="px-6 py-4 w-32 shrink-0">처리 일시</th>
+                    <th className="px-6 py-4 w-16 shrink-0"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-light dark:divide-border-dark">
@@ -171,14 +202,20 @@ export default function ExtractionListPage() {
                       <tr key={i} className="animate-pulse">
                         <td className="px-6 py-6"><div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-4/5 mb-2"></div><div className="h-3 bg-gray-100 dark:bg-gray-900 rounded w-1/2"></div></td>
                         <td className="px-6 py-6"><div className="h-6 bg-gray-200 dark:bg-gray-800 rounded-full w-20"></div></td>
-                        <td className="px-6 py-6"><div className="flex gap-2"><div className="h-6 bg-gray-100 dark:bg-gray-900 rounded-lg w-24"></div><div className="h-6 bg-gray-100 dark:bg-gray-900 rounded-lg w-32"></div></div></td>
+                        {dynamicFields.length > 0 ? (
+                           dynamicFields.map(f => (
+                              <td key={f.key} className="px-6 py-6"><div className="h-5 bg-gray-100 dark:bg-gray-900 rounded-lg w-16"></div></td>
+                           ))
+                        ) : (
+                           <td className="px-6 py-6"><div className="flex gap-2"><div className="h-6 bg-gray-100 dark:bg-gray-900 rounded-lg w-24"></div></div></td>
+                        )}
                         <td className="px-6 py-6"><div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-full"></div></td>
                         <td className="px-6 py-6"></td>
                       </tr>
                     ))
                   ) : docs.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-20 text-center">
+                      <td colSpan={5 + Math.max(0, dynamicFields.length - 1)} className="px-6 py-20 text-center">
                          <div className="flex flex-col items-center gap-3 text-text-secondary-light">
                             <InfoIcon size={48} className="opacity-20" />
                             <p className="font-bold">추출된 데이터가 없습니다.</p>
@@ -207,30 +244,29 @@ export default function ExtractionListPage() {
                              </div>
                           </div>
                         </td>
-                        <td className="px-6 py-5">
+                        <td className="px-6 py-5 whitespace-nowrap">
                            <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300 text-[11px] font-black uppercase tracking-tighter border border-blue-200 dark:border-blue-800">
                               {doc.doc_type || '미분류'}
                            </span>
                         </td>
-                        <td className="px-6 py-5">
-                           <div className="flex flex-wrap gap-2">
-                              {doc.extracted_fields && doc.extracted_fields.length > 0 ? (
-                                doc.extracted_fields.slice(0, 5).map((field, idx) => (
-                                  <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark shadow-sm">
-                                     <span className="text-[10px] font-black text-primary/70 uppercase">{field.key || field.entity_type_ko}</span>
-                                     <span className="text-xs font-bold text-text-primary-light dark:text-text-primary-dark line-clamp-1">{field.value}</span>
-                                  </div>
-                                ))
-                              ) : (
-                                <span className="text-xs text-text-secondary-light italic font-medium">추출된 항목 없음</span>
-                              )}
-                              {doc.extracted_fields && doc.extracted_fields.length > 5 && (
-                                <span className="text-[10px] font-bold text-text-secondary-light bg-black/5 dark:bg-white/5 px-2 py-1.5 rounded-lg">
-                                  +{doc.extracted_fields.length - 5}
-                                </span>
-                              )}
-                           </div>
-                        </td>
+                        {dynamicFields.length > 0 ? (
+                           dynamicFields.map(field => {
+                              const fieldInfo = doc.extracted_fields?.find(f => f.key === field.key || f.entity_type_ko === field.label || f.entity_type_ko === field.key)
+                              return (
+                                 <td key={field.key} className="px-6 py-5 whitespace-nowrap">
+                                    {fieldInfo ? (
+                                      <span className="text-[13px] font-bold text-text-primary-light dark:text-text-primary-dark">{fieldInfo.value}</span>
+                                    ) : (
+                                      <span className="text-[13px] text-text-secondary-light opacity-50">-</span>
+                                    )}
+                                 </td>
+                              )
+                           })
+                        ) : (
+                           <td className="px-6 py-5">
+                              <span className="text-[13px] text-text-secondary-light italic font-medium">추출된 항목 없음</span>
+                           </td>
+                        )}
                         <td className="px-6 py-5">
                            <div className="flex flex-col gap-3 max-w-md">
                               {doc.summary ? (
@@ -299,6 +335,7 @@ export default function ExtractionListPage() {
                   )}
                 </tbody>
               </table>
+              </div>
            </div>
 
            {/* Pagination */}

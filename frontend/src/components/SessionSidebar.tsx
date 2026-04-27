@@ -100,7 +100,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId }: Sessi
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportSessionInfo, setExportSessionInfo] = useState<{sessionId: string, sessionName: string} | null>(null)
 
-  const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5015'}/api`
+  const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/api`
   const router = useRouter()
 
   // Initial fetch

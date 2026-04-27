@@ -81,6 +81,7 @@ function JobsPageInner() {
       if (showLoading) setLoading(true)
       const user = JSON.parse(localStorage.getItem('user') || '{}')
       const userId = user.user_id || ''
+      console.log('[DEBUG] Requesting data for userId:', userId)
 
       // 세션 목록과 작업 목록 동시 로드
       const [sessionsRes, jobsRes] = await Promise.all([

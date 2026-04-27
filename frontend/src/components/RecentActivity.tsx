@@ -11,7 +11,11 @@ export default function RecentActivity() {
 
   const fetchJobs = async () => {
     try {
-      const data = await listJobs()
+      const user = JSON.parse(localStorage.getItem('user') || '{}')
+      const userId = user.user_id || ''
+      if (!userId) return
+
+      const data = await listJobs(userId)
       setJobs(data.slice(0, 10)) // Show only recent 10
     } catch (error) {
       console.error('Failed to fetch jobs:', error)

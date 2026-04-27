@@ -206,6 +206,17 @@ async def health_check():
     }
 
 
+@app.get("/api/debug")
+async def debug_identity():
+    import datetime
+    return {
+        "identity": "Antigravity Debug System",
+        "timestamp": str(datetime.datetime.now()),
+        "status": "active",
+        "db_url": "postgresql+psycopg2://ocr_user:***@192.168.0.231:3306/ocr_db"
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 

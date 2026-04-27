@@ -23,12 +23,12 @@ class Config:
 
     # Server settings
     BACKEND_HOST = os.getenv("BACKEND_HOST", "0.0.0.0")
-    BACKEND_PORT = int(os.getenv("BACKEND_PORT", "5015"))
+    BACKEND_PORT = int(os.getenv("BACKEND_PORT", "6015"))
     FRONTEND_HOST = "0.0.0.0"
-    FRONTEND_PORT = 5017
+    FRONTEND_PORT = 6017
     CORS_ORIGINS = [
-        "http://localhost:5017",
-        "http://127.0.0.1:5017",
+        "http://localhost:6017",
+        "http://127.0.0.1:6017",
     ]
 
     # Database settings
@@ -54,7 +54,7 @@ class Config:
     OCR_ENABLE_LINE_MERGE = False
     OCR_ENGINE = "pp_structure"
     OCR_PPSTRUCTURE_LAYOUT_MODEL = "PP-DocLayout-L"
-    OCR_PPSTRUCTURE_REC_MODEL = "PP-OCRv5_server_rec"
+    OCR_PPSTRUCTURE_REC_MODEL = "korean_PP-OCRv5_mobile_rec"
     OCR_PPSTRUCTURE_TABLE_MODEL = "SLANet_plus"
     OCR_PPSTRUCTURE_WIRELESS_TABLE_MODEL = "SLANet"
     OCR_PPSTRUCTURE_USE_TABLE_RECOGNITION = True
@@ -67,7 +67,7 @@ class Config:
 
     # Table Transformer settings
     # backend: slanet | table_transformer | hybrid
-    OCR_TABLE_BACKEND = "hybrid"
+    OCR_TABLE_BACKEND = "slanet"
     TABLE_TRANSFORMER_DET_MODEL = "microsoft/table-transformer-detection"
     TABLE_TRANSFORMER_STR_MODEL = (
         "microsoft/table-transformer-structure-recognition-v1.1-all"
@@ -122,6 +122,9 @@ class Config:
 
     # Redis settings (Celery broker)
     REDIS_URL = "redis://localhost:6379/0"
+
+    # Job timeout (seconds) — worker가 이 시간 안에 완료 못 하면 failed 처리
+    JOB_TIMEOUT_SECONDS = 1800  # 30분
 
     # User settings
     DEFAULT_USER_ID = "user001"
@@ -302,6 +305,7 @@ class Config:
         # Update Redis settings
         if "redis" in config_data:
             cls.REDIS_URL = config_data["redis"].get("url", cls.REDIS_URL)
+            cls.JOB_TIMEOUT_SECONDS = int(config_data["redis"].get("job_timeout_seconds", cls.JOB_TIMEOUT_SECONDS))
 
         # Update server settings
         if "server" in config_data:
