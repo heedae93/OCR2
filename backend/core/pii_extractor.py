@@ -291,6 +291,11 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
     results = _validate_regex_names(results)
     logger.info(f"[NAME 규칙 검증] 완료 후 {len(results)}개")
 
+    # ── 2.5차: 공간 근접성 기반 추출 (표 구조 대응) ────────────────
+    # KoBERT NER가 없거나 표 형식으로 라벨과 값이 떨어진 경우 보완
+    results = _extract_pii_by_proximity(ocr_pages, results)
+    logger.info(f"[2.5차 공간 근접성] 누적 {len(results)}개")
+
     # ── 3차: KoBERT NER 보조 (NAME, ROAD_ADDRESS) ────────────────────────────────
     print("\n[진행] KoBERT NER (이름/주소) 분석을 시작합니다...")
     if _init_kobert_ner():
@@ -500,13 +505,109 @@ def _validate_regex_names(results: list) -> list:
                 continue
                 
             # 규칙 B: 2글자 이하 단어는 정규식에서 과감히 버림 ("확인", "서명", "없음" 등 2글자 일반명사 오탐 원천 차단)
-            # -> 진짜 2글자 이름(예: 허재)은 뒤이어 실행되는 3차 KoBERT NER가 문맥으로 파악하여 살려냄
+            # -> 공간 근접성(Table)이나 3차 KoBERT NER가 문맥으로 파악하여 살려냄
             if len(val_clean) < 3:
                 continue
 
         filtered.append(r)
 
     return filtered
+
+
+def _extract_pii_by_proximity(ocr_pages: list, results: list) -> list:
+    """
+    라벨(성명, 주민번호 등)과 값이 표 형식으로 떨어져 있는 경우 공간적 근접성을 이용해 추출.
+    """
+    LABEL_MAP = {
+        "NAME": ["성명", "이름", "성 명", "이 름", "대표이사", "대표자", "성  명"],
+        "RRN": ["주민등록번호", "주민번호", "주민등록", "RRN"],
+        "PHONE": ["전화번호", "휴대폰", "연락처", "H.P", "연 락 처"],
+        "ACCOUNT_NO": ["계좌번호", "계좌", "입금계좌", "계 좌 번 호"]
+    }
+    # 이름 탐지에서 제외할 일반적인 명사/직급
+    EXCLUDE_NAME_WORDS = {
+        "과장", "차장", "팀장", "사원", "대리", "부장", "이사", "대표", "지원", "영업", "개발", "인사",
+        "팀", "부서", "본부", "실", "센터", "공고", "결과", "아래", "사항", "내용", "확인", "서명", "날인",
+        "성명", "이름", "본인", "대표자", "대표이사", "신청인", "보호자", "환자", "예금주", "입금", "계좌",
+        "합계", "금액", "비고", "순위", "번호", "일자", "날짜", "시간", "장소", "주소", "연락처", "전화",
+        "문의", "안내", "참조", "비고", "파일", "첨부", "제출", "작성", "승인", "검토", "완료", "진행"
+    }
+
+    def _is_overlap(b1, b2):
+        if not b1 or not b2: return False
+        return not (b1[2] < b2[0] or b1[0] > b2[2] or b1[3] < b2[1] or b1[1] > b2[3])
+
+    def _get_overlap_x(b1, b2):
+        overlap = min(b1[2], b2[2]) - max(b1[0], b2[0])
+        return max(0, overlap)
+
+    new_results = list(results)
+    
+    for page in ocr_pages:
+        page_num = page["page_number"]
+        lines = [l for l in page.get("lines", []) if l.get("text") and l.get("bbox")]
+        if not lines: continue
+
+        # 1. 라벨 헤더 식별
+        headers = []
+        for l in lines:
+            txt = re.sub(r'\s+', '', l["text"])
+            for p_type, keywords in LABEL_MAP.items():
+                if any(kw.replace(' ', '') == txt or (len(txt) < 10 and kw.replace(' ', '') in txt) for kw in keywords):
+                    headers.append({"type": p_type, "bbox": l["bbox"], "text": l["text"]})
+
+        # 2. 근접 라인 탐색
+        for header in headers:
+            pii_type = header["type"]
+            hx1, hy1, hx2, hy2 = header["bbox"]
+            h_width = hx2 - hx1
+            h_height = hy2 - hy1
+
+            for line in lines:
+                text = line["text"].strip()
+                if not text or line["bbox"] == header["bbox"]:
+                    continue
+
+                # 이미 추출된 항목인지 확인
+                if any(r["page"] == page_num and _is_overlap(r["bbox"], line["bbox"]) for r in new_results):
+                    continue
+
+                cx1, cy1, cx2, cy2 = line["bbox"]
+                
+                # 가로(우측) 근접: Y축 겹치고 X축이 라벨 우측에 있음
+                y_overlap = min(hy2, cy2) - max(hy1, cy1)
+                is_horiz = y_overlap > (min(h_height, cy2-cy1) * 0.5)
+                dist_h = cx1 - hx2
+                
+                # 세로(하단) 근접: X축 겹치고 Y축이 라벨 하단에 있음
+                x_overlap = _get_overlap_x(header["bbox"], line["bbox"])
+                is_vert = x_overlap > (min(h_width, cx2-cx1) * 0.5)
+                dist_v = cy1 - hy2
+
+                match_found = False
+                # 이름(NAME) 특화 로직
+                if pii_type == "NAME":
+                    # 한글 2~4자 (공백 허용)
+                    clean_text = re.sub(r'\s+', '', text)
+                    if 2 <= len(clean_text) <= 4 and re.match(r'^[가-힣]+$', clean_text):
+                        if not any(w in clean_text for w in EXCLUDE_NAME_WORDS):
+                            # 거리 조건: 가로는 라벨 3배 이내, 세로는 라벨 15배 이내 (표가 길 수 있음)
+                            if (is_horiz and 0 < dist_h < h_width * 3) or (is_vert and 0 < dist_v < h_height * 15):
+                                match_found = True
+                
+                # 주민번호(RRN) 등 다른 타입은 이미 1차 정규식에서 (라벨 없이도) 잡혔을 가능성이 큼
+                # 만약 안 잡혔다면 여기서 추가 가능 (필요 시)
+
+                if match_found:
+                    new_results.append({
+                        "type": pii_type,
+                        "value": text,
+                        "page": page_num,
+                        "bbox": line["bbox"],
+                        "source": "공간 근접성 (Table)"
+                    })
+
+    return _deduplicate(new_results)
 
 
 

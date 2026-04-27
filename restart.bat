@@ -17,6 +17,6 @@ start "OCR Worker" "%PYTHON%" -m celery -A ocr_worker worker -Q ocr --loglevel=i
 
 echo Starting frontend...
 cd ..\frontend
-start "OCR Frontend" npm run start
+start "OCR Frontend" npm run dev
 
 echo Done.

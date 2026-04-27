@@ -188,8 +188,8 @@ async def create_session(
             session_id=new_session.session_id,
             session_name=new_session.session_name,
             description=new_session.description,
-            created_at=new_session.created_at.isoformat(),
-            updated_at=new_session.updated_at.isoformat(),
+            created_at=new_session.created_at.strftime("%Y-%m-%d %H:%M:%S") if new_session.created_at else None,
+            updated_at=new_session.updated_at.strftime("%Y-%m-%d %H:%M:%S") if new_session.updated_at else None,
             total_documents=0,
             completed_documents=0,
             documents=[]
@@ -258,15 +258,15 @@ async def list_sessions(
                     order=sess_doc.order,
                     is_selected=sess_doc.is_selected,
                     pdf_url=pdf_url,
-                    added_at=sess_doc.added_at.isoformat()
+                    added_at=sess_doc.added_at.strftime("%Y-%m-%d %H:%M:%S") if sess_doc.added_at else None
                 ))
 
             result.append(SessionResponse(
                 session_id=session.session_id,
                 session_name=session.session_name,
                 description=session.description,
-                created_at=session.created_at.isoformat(),
-                updated_at=session.updated_at.isoformat(),
+                created_at=session.created_at.strftime("%Y-%m-%d %H:%M:%S") if session.created_at else None,
+                updated_at=session.updated_at.strftime("%Y-%m-%d %H:%M:%S") if session.updated_at else None,
                 total_documents=len(documents),
                 completed_documents=completed_count,
                 documents=documents
@@ -321,15 +321,15 @@ async def get_session(
                 order=sess_doc.order,
                 is_selected=sess_doc.is_selected,
                 pdf_url=pdf_url,
-                added_at=sess_doc.added_at.isoformat()
+                added_at=sess_doc.added_at.strftime("%Y-%m-%d %H:%M:%S") if sess_doc.added_at else None
             ))
 
         return SessionResponse(
             session_id=session.session_id,
             session_name=session.session_name,
             description=session.description,
-            created_at=session.created_at.isoformat(),
-            updated_at=session.updated_at.isoformat(),
+            created_at=session.created_at.strftime("%Y-%m-%d %H:%M:%S") if session.created_at else None,
+            updated_at=session.updated_at.strftime("%Y-%m-%d %H:%M:%S") if session.updated_at else None,
             total_documents=len(documents),
             completed_documents=completed_count,
             documents=documents

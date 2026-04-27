@@ -92,8 +92,8 @@ async def list_jobs(
                 message=message,
                 pdf_url=f"/files/processed/{job.job_id}.pdf" if job.pdf_file_path else None,
                 raw_file_url=None,
-                created_at=job.created_at.isoformat() if job.created_at else None,
-                completed_at=job.completed_at.isoformat() if job.completed_at else None,
+                created_at=job.created_at.strftime("%Y-%m-%d %H:%M:%S") if job.created_at else None,
+                completed_at=job.completed_at.strftime("%Y-%m-%d %H:%M:%S") if job.completed_at else None,
                 processing_time_seconds=job.processing_time_seconds,
                 total_text_blocks=job.total_text_blocks,
                 average_confidence=job.average_confidence,
@@ -145,8 +145,8 @@ async def get_job(job_id: str, db: Session = Depends(get_db)):
             total_pages=total_pages,
             message=message,
             pdf_url=f"/files/processed/{job.job_id}.pdf" if job.pdf_file_path else None,
-            created_at=job.created_at.isoformat() if job.created_at else None,
-            completed_at=job.completed_at.isoformat() if job.completed_at else None,
+            created_at=job.created_at.strftime("%Y-%m-%d %H:%M:%S") if job.created_at else None,
+            completed_at=job.completed_at.strftime("%Y-%m-%d %H:%M:%S") if job.completed_at else None,
             processing_time_seconds=job.processing_time_seconds,
             total_text_blocks=job.total_text_blocks,
             average_confidence=job.average_confidence,
@@ -555,7 +555,7 @@ async def get_session_statistics(user_id: str = "default", db: Session = Depends
                 "completed": completed,
                 "failed": failed,
                 "completion_rate": round(completed / total * 100, 1) if total else 0,
-                "last_activity": last_job.isoformat() if last_job else None
+                "last_activity": last_job.strftime("%Y-%m-%d %H:%M:%S") if last_job else None
             })
 
         result.sort(key=lambda x: x["last_activity"] or "", reverse=True)

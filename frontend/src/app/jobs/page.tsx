@@ -38,6 +38,8 @@ interface Statistics {
 }
 
 
+const QUEUED_PROGRESS = 5
+
 function JobsPageInner() {
   const router = useRouter()
   console.log('API_BASE_URL:', API_BASE_URL)
@@ -115,12 +117,21 @@ function JobsPageInner() {
         groupMap[key].jobs.push(job)
       }
 
-      // 세션 순서 맞춤 (세션 목록 순서 → 미지정 마지막)
+      // 세션 순서 맞춤 (최신 작업 포함 세션이 먼저 오도록 정렬, 미지정은 마지막)
       const ordered: SessionGroup[] = []
       for (const session of sessions) {
         if (groupMap[session.session_id]) ordered.push(groupMap[session.session_id])
       }
       if (groupMap['__unassigned__']) ordered.push(groupMap['__unassigned__'])
+
+      ordered.sort((a, b) => {
+        if (a.session_id === '__unassigned__') return 1;
+        if (b.session_id === '__unassigned__') return -1;
+        
+        const latestA = Math.max(...a.jobs.map(j => new Date(j.created_at || 0).getTime()));
+        const latestB = Math.max(...b.jobs.map(j => new Date(j.created_at || 0).getTime()));
+        return latestB - latestA;
+      });
 
       setGroups(ordered)
     } catch (error) {
@@ -273,12 +284,6 @@ function JobsPageInner() {
     }
   }
 
-<<<<<<< HEAD
-  // 필터링
-  const filteredGroups = groups.map(g => ({
-    ...g,
-    jobs: g.jobs.filter(job => {
-=======
   const getDisplayProgress = (status: string, progress: number) => {
     if (status === 'queued') return QUEUED_PROGRESS
     if (status === 'processing') return Math.max(QUEUED_PROGRESS, Math.min(progress, 100))
@@ -292,7 +297,6 @@ function JobsPageInner() {
   const filteredGroups = groups.map(g => {
     const sessionMatches = !searchQuery || g.session_name.toLowerCase().includes(searchQuery.toLowerCase())
     const jobs = g.jobs.filter(job => {
->>>>>>> d1f734558269f4e4444892b84d1cde2d428d0bac
       const matchStatus = statusFilter === 'all' || job.status === statusFilter
       const matchSearch = sessionMatches || job.filename.toLowerCase().includes(searchQuery.toLowerCase())
       return matchStatus && matchSearch

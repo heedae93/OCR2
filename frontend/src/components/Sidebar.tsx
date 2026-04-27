@@ -3,13 +3,10 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-<<<<<<< HEAD
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useOcrActivity } from '@/contexts/OcrActivityContext'
-=======
-import { useEffect, useRef, useState } from 'react'
->>>>>>> d1f734558269f4e4444892b84d1cde2d428d0bac
+
 
 interface NavItem {
   href: string

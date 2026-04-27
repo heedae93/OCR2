@@ -112,8 +112,8 @@ def serialize_group(group: PermissionGroup, user_count: int) -> dict:
         "masking_field_keys": masking_field_keys,
         "is_system": bool(group.is_system),
         "user_count": user_count,
-        "created_at": group.created_at.isoformat() if group.created_at else None,
-        "updated_at": group.updated_at.isoformat() if group.updated_at else None,
+        "created_at": group.created_at.strftime("%Y-%m-%d %H:%M:%S") if group.created_at else None,
+        "updated_at": group.updated_at.strftime("%Y-%m-%d %H:%M:%S") if group.updated_at else None,
     }
 
 
@@ -136,8 +136,8 @@ def serialize_user(user: User, group: Optional[PermissionGroup]) -> dict:
         "masking_access_level": masking_access_level,
         "masking_field_keys": masking_field_keys,
         "total_jobs": user.total_jobs,
-        "created_at": user.created_at.isoformat() if user.created_at else None,
-        "last_login": user.last_login.isoformat() if user.last_login else None,
+        "created_at": user.created_at.strftime("%Y-%m-%d %H:%M:%S") if user.created_at else None,
+        "last_login": user.last_login.strftime("%Y-%m-%d %H:%M:%S") if user.last_login else None,
         "permissions": {
             "group": resolved_group,
             "group_name": resolved_group_name,
