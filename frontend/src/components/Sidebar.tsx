@@ -34,12 +34,12 @@ const baseNavItems: NavItem[] = [
       },
     ],
   },
-  { href: "/ocr-work", icon: "document_scanner", label: "OCR 작업하기" },
-  { href: "/jobs", icon: "history", label: "작업내역" },
-  { href: "/history", icon: "manage_history", label: "이력관리" },
-  { href: "/statistics", icon: "bar_chart", label: "통계" },
-  { href: "/metadata", icon: "settings_suggest", label: "추출 엔진 설정" },
-];
+  { href: '/ocr-work', icon: 'document_scanner', label: '문서 작업하기' },
+  { href: '/jobs', icon: 'history', label: '작업내역' },
+  { href: '/history', icon: 'manage_history', label: '이력관리' },
+  { href: '/statistics', icon: 'bar_chart', label: '통계' },
+  { href: '/metadata', icon: 'settings_suggest', label: '추출 엔진 설정' },
+ ]
 
 const adminNavItems: NavItem[] = [
   {

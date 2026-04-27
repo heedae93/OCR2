@@ -337,10 +337,10 @@ export default function OcrWorkPage() {
           <div className="flex items-start justify-between">
             <div>
               <h1 className="text-text-primary-light dark:text-text-primary-dark text-3xl font-bold leading-tight tracking-tight">
-                OCR 작업하기
+                문서 작업하기
               </h1>
               <p className="text-text-secondary-light dark:text-text-secondary-dark text-base mt-1">
-                파일 또는 폴더를 선택하고 OCR 작업을 Redis 큐에 등록합니다.
+                파일 또는 폴더를 선택하고 문서 작업을 Redis 큐에 등록합니다.
               </p>
             </div>
             <ThemeToggle />
@@ -356,7 +356,7 @@ export default function OcrWorkPage() {
                   type="text"
                   value={sessionName}
                   onChange={event => setSessionName(event.target.value)}
-                  placeholder="예: 2026년 OCR 배치 작업"
+                  placeholder="예: 2026년 문서 배치 작업"
                   disabled={isSubmitting}
                   className={`w-full px-3 py-2 text-sm border rounded-lg bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60 transition-colors ${
                     !sessionName.trim() && pendingCount > 0
@@ -477,7 +477,7 @@ export default function OcrWorkPage() {
                   ) : (
                     <>
                       <Zap className="w-4 h-4" />
-                      OCR 시작하기
+                      문서 작업 시작하기
                     </>
                   )}
                 </button>
