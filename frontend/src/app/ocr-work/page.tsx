@@ -1,8 +1,9 @@
-'use client'
+﻿'use client'
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useDropzone } from 'react-dropzone'
+import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import ThemeToggle from '@/components/ThemeToggle'
 import { useOcrActivity } from '@/contexts/OcrActivityContext'
@@ -28,11 +29,12 @@ type SourceType = 'file' | 'folder'
 
 interface QueueFile {
   id: string
-  file: File
+  file?: File
   displayName: string
   docType: string
   status: FileStatus
   progress: number
+  fileSize: number
   error?: string
   jobId?: string
   sourceType: SourceType
@@ -44,8 +46,11 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+import PipelineProgress from '@/components/PipelineProgress'
+
+
 export default function OcrWorkPage() {
-  const { addTrackedJobs } = useOcrActivity()
+  const { addTrackedJobs, trackedJobs } = useOcrActivity()
   const [sessionName, setSessionName] = useState('')
   const [defaultDocType, setDefaultDocType] = useState('미분류')
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
@@ -73,7 +78,42 @@ export default function OcrWorkPage() {
       }
     }
     fetchCategories()
+
+    // Restore state from localStorage
+    const savedQueue = localStorage.getItem('ocr_work_queue')
+    if (savedQueue) {
+      try {
+        setQueue(JSON.parse(savedQueue))
+      } catch (e) {
+        console.error('Failed to restore queue', e)
+      }
+    }
+    const savedSessionName = localStorage.getItem('ocr_work_session_name')
+    if (savedSessionName) {
+      setSessionName(savedSessionName)
+    }
   }, [])
+
+  // Persist state to localStorage
+  useEffect(() => {
+    if (queue.length > 0) {
+      // Only save queued or failed items for persistence across page navigation
+      // Pending/Uploading items are lost anyway as we don't have the File object
+      const serializableQueue = queue.map(item => ({
+        ...item,
+        file: undefined // Cannot serialize File object
+      }))
+      localStorage.setItem('ocr_work_queue', JSON.stringify(serializableQueue))
+    } else {
+      localStorage.removeItem('ocr_work_queue')
+    }
+  }, [queue])
+
+  useEffect(() => {
+    if (sessionName) {
+      localStorage.setItem('ocr_work_session_name', sessionName)
+    }
+  }, [sessionName])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
 
@@ -92,6 +132,7 @@ export default function OcrWorkPage() {
           docType: defaultDocType,
           status: 'pending' as const,
           progress: 0,
+          fileSize: file.size,
           sourceType,
         })),
     [defaultDocType],
@@ -211,6 +252,10 @@ export default function OcrWorkPage() {
 
           xhr.onerror = () => reject(new Error('네트워크 오류'))
 
+          if (!queueFile.file) {
+            reject(new Error('파일 객체가 없습니다.'))
+            return
+          }
           const formData = new FormData()
           formData.append('file', queueFile.file)
           xhr.send(formData)
@@ -258,9 +303,23 @@ export default function OcrWorkPage() {
     )
   }, [addTrackedJobs, queue, sessionName, updateFile])
 
-  const pendingCount = useMemo(() => queue.filter(file => file.status === 'pending').length, [queue])
-  const queuedCount = useMemo(() => queue.filter(file => file.status === 'queued').length, [queue])
-  const failedCount = useMemo(() => queue.filter(file => file.status === 'failed').length, [queue])
+  const pendingCount = useMemo(() => queue.filter(file => {
+    const tracked = trackedJobs.find(tj => tj.jobId === file.jobId)
+    const effectiveStatus = tracked ? tracked.status : file.status
+    return effectiveStatus === 'pending'
+  }).length, [queue, trackedJobs])
+
+  const queuedCount = useMemo(() => queue.filter(file => {
+    const tracked = trackedJobs.find(tj => tj.jobId === file.jobId)
+    const effectiveStatus = tracked ? tracked.status : file.status
+    return effectiveStatus === 'queued' || effectiveStatus === 'processing'
+  }).length, [queue, trackedJobs])
+
+  const failedCount = useMemo(() => queue.filter(file => {
+    const tracked = trackedJobs.find(tj => tj.jobId === file.jobId)
+    const effectiveStatus = tracked ? tracked.status : file.status
+    return effectiveStatus === 'failed'
+  }).length, [queue, trackedJobs])
 
   const allDocTypes = useMemo(() => {
     const dbTypeNames = categories.map(c => c.name)
@@ -452,68 +511,85 @@ export default function OcrWorkPage() {
                   <p className="text-sm">선택한 파일 목록이 여기에 표시됩니다</p>
                 </div>
               ) : (
-                <ul className="divide-y divide-border-light dark:divide-border-dark overflow-y-auto max-h-[70vh]">
-                  {queue.map(file => (
+                <ul className="divide-y divide-border-light dark:divide-border-dark">
+                  {queue.map(file => {
+                    const tracked = trackedJobs.find(tj => tj.jobId === file.jobId)
+                    const effectiveStatus = tracked ? tracked.status : file.status
+                    const errorMessage = tracked?.message || file.error
+                    
+                    return (
                     <li key={file.id} className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <div className="flex-shrink-0">
-                          {file.status === 'pending' && <Clock className="w-4 h-4 text-gray-400" />}
-                          {file.status === 'uploading' && <Upload className="w-4 h-4 text-blue-500 animate-pulse" />}
-                          {file.status === 'queued' && <CheckCircle className="w-4 h-4 text-blue-600" />}
-                          {file.status === 'failed' && <AlertCircle className="w-4 h-4 text-red-500" />}
+                          {effectiveStatus === 'pending' && <Clock className="w-4 h-4 text-gray-400" />}
+                          {effectiveStatus === 'uploading' && <Upload className="w-4 h-4 text-blue-500 animate-pulse" />}
+                          {effectiveStatus === 'processing' && <Loader2 className="w-4 h-4 text-orange-500 animate-spin" />}
+                          {effectiveStatus === 'queued' && <Clock className="w-4 h-4 text-blue-600 animate-pulse" />}
+                          {effectiveStatus === 'completed' && <CheckCircle className="w-4 h-4 text-green-500" />}
+                          {effectiveStatus === 'failed' && <AlertCircle className="w-4 h-4 text-red-500" />}
                         </div>
 
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark truncate">
-                                {file.displayName}
-                              </p>
-                              <div className="mt-1 flex items-center gap-2">
-                                <label className="text-[11px] text-text-secondary-light dark:text-text-secondary-dark">
-                                  문서유형
-                                </label>
-                                <div className="relative w-[170px]">
-                                  <select
-                                    value={file.docType}
-                                    disabled={isSubmitting}
-                                    onChange={event => updateFile(file.id, { docType: event.target.value })}
-                                    className="w-full appearance-none px-2 py-1 pr-7 text-xs border border-border-light dark:border-border-dark rounded-md bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 transition-colors"
-                                  >
-                                    {allDocTypes.map(type => (
-                                      <option key={type} value={type}>
-                                        {type}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <span className="material-symbols-outlined pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                                    expand_more
-                                  </span>
-                                </div>
-                              </div>
-                              <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark mt-0.5">
-                                {formatBytes(file.file.size)} · {file.sourceType === 'folder' ? '폴더 업로드' : '파일 업로드'}
-                              </p>
+                            <div className="min-w-0 flex-1">
+                              {effectiveStatus === 'completed' ? (
+                                <Link href="/jobs" className="text-sm font-medium text-primary hover:underline truncate cursor-pointer block">
+                                  {file.displayName}
+                                </Link>
+                              ) : (
+                                <p className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark truncate">
+                                  {file.displayName}
+                                </p>
+                              )}
                             </div>
 
-                            {file.status === 'pending' && !isSubmitting && (
-                              <button
-                                onClick={() => removeFile(file.id)}
-                                className="flex-shrink-0 p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 transition-colors"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <div className="relative w-[130px]">
+                                <select
+                                  value={file.docType}
+                                  disabled={isSubmitting}
+                                  onChange={event => updateFile(file.id, { docType: event.target.value })}
+                                  className="w-full appearance-none px-2 py-1 pr-7 text-xs border border-border-light dark:border-border-dark rounded-md bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 transition-colors"
+                                >
+                                  {allDocTypes.map(type => (
+                                    <option key={type} value={type}>
+                                      {type}
+                                    </option>
+                                  ))}
+                                </select>
+                                <span className="material-symbols-outlined pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                                  expand_more
+                                </span>
+                              </div>
+
+                              {(file.status === 'pending' || effectiveStatus === 'failed') && !isSubmitting && (
+                                <button
+                                  onClick={() => removeFile(file.id)}
+                                  className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
 
-                          <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark mt-1">
-                            {file.status === 'pending' && '대기 중'}
-                            {file.status === 'uploading' && '업로드 중...'}
-                            {file.status === 'queued' && 'Redis 큐 등록 완료 · 워커 처리 대기/진행 중'}
-                            {file.status === 'failed' && '등록 실패'}
+                          <div className="text-xs text-text-secondary-light dark:text-text-secondary-dark mt-1">
+                            {effectiveStatus === 'pending' && '대기 중'}
+                            {effectiveStatus === 'uploading' && '업로드 중...'}
+                            {(effectiveStatus === 'queued' || effectiveStatus === 'processing' || effectiveStatus === 'completed') && (
+                              <PipelineProgress
+                                status={effectiveStatus}
+                                progress={tracked?.progressPercent || 0}
+                                subStage={tracked?.subStage}
+                              />
+                            )}
+                            {effectiveStatus === 'failed' && <span className="text-red-500 font-medium">처리 실패</span>}
+                          </div>
+                          <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark mt-0.5">
+                            {formatBytes(file.fileSize)} · {file.sourceType === 'folder' ? '폴더 업로드' : '파일 업로드'}
                           </p>
 
-                          {file.status === 'uploading' && (
+                          {effectiveStatus === 'uploading' && (
                             <div className="mt-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
                               <div
                                 className="h-1.5 rounded-full transition-all duration-300 bg-blue-500"
@@ -522,19 +598,13 @@ export default function OcrWorkPage() {
                             </div>
                           )}
 
-                          {file.status === 'queued' && (
-                            <div className="mt-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                              <div className="h-1.5 rounded-full bg-blue-600 transition-all duration-500 animate-pulse" style={{ width: '12%' }} />
-                            </div>
-                          )}
-
-                          {file.status === 'failed' && file.error && (
-                            <p className="text-xs text-red-500 mt-1">{file.error}</p>
+                          {effectiveStatus === 'failed' && errorMessage && (
+                            <p className="text-xs text-red-500 mt-1">{errorMessage}</p>
                           )}
                         </div>
                       </div>
                     </li>
-                  ))}
+                  )})}
                 </ul>
               )}
             </div>
@@ -544,3 +614,6 @@ export default function OcrWorkPage() {
     </div>
   )
 }
+
+
+
