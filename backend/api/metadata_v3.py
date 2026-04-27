@@ -504,6 +504,12 @@ class CustomFieldCreate(BaseModel):
     pattern: Optional[str] = None
     description: Optional[str] = None
 
+
+class CustomFieldUpdate(BaseModel):
+    label: Optional[str] = None
+    pattern: Optional[str] = None
+    description: Optional[str] = None
+
 @router.get("/metadata-v3/categories")
 def get_categories(user_id: str = Query(...), db: Session = Depends(get_db)):
     """사용자가 추가한 커스텀 카테고리 목록 조회"""
@@ -561,6 +567,34 @@ def create_custom_field(body: CustomFieldCreate, user_id: str = Query(...), db: 
         description=body.description
     )
     db.add(cf)
+    db.commit()
+    db.refresh(cf)
+    return {
+        "id": cf.id,
+        "field_key": cf.field_key,
+        "label": cf.label,
+        "pattern": cf.pattern,
+        "description": cf.description
+    }
+
+
+@router.put("/metadata-v3/custom-fields/{field_id}")
+def update_custom_field(field_id: int, body: CustomFieldUpdate, user_id: str = Query(...), db: Session = Depends(get_db)):
+    """커스텀 마스킹 필드 수정"""
+    cf = db.query(CustomMaskingField).filter_by(id=field_id, user_id=user_id).first()
+    if not cf:
+        raise HTTPException(status_code=404, detail="Custom masking field not found.")
+
+    if body.label is not None:
+        normalized_label = (body.label or "").strip()
+        if not normalized_label:
+            raise HTTPException(status_code=400, detail="label is required.")
+        cf.label = normalized_label
+    if body.pattern is not None:
+        cf.pattern = body.pattern
+    if body.description is not None:
+        cf.description = body.description
+
     db.commit()
     db.refresh(cf)
     return {

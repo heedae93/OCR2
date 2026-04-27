@@ -7,7 +7,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-PYTHON_BIN="python"
+PYTHON_BIN="${PYTHON_BIN:-python}"
 
 # ── config.yaml에서 설정 읽기 ──────────────────────────────
 read_config() {
@@ -78,9 +78,9 @@ if port_in_use "$BACKEND_PORT"; then
         echo "[INFO] Backend port $BACKEND_PORT in use. Killing..."
         kill_port "$BACKEND_PORT"
         sleep 1
+        # 포트가 여전히 점유여도 고스트 소켓일 수 있으므로 계속 진행
         if port_in_use "$BACKEND_PORT"; then
-            echo "[ERROR] Cannot free port $BACKEND_PORT. Run: ./stop.sh"
-            exit 1
+            echo "[WARN] Port $BACKEND_PORT still reported in use (may be ghost socket). Proceeding..."
         fi
     fi
 fi
@@ -90,8 +90,7 @@ if port_in_use "$FRONTEND_PORT"; then
     kill_port "$FRONTEND_PORT"
     sleep 1
     if port_in_use "$FRONTEND_PORT"; then
-        echo "[ERROR] Cannot free port $FRONTEND_PORT. Run: ./stop.sh"
-        exit 1
+        echo "[WARN] Port $FRONTEND_PORT still reported in use (may be ghost socket). Proceeding..."
     fi
 fi
 

@@ -145,6 +145,15 @@ async def startup_event():
     Config.ensure_directories()
     logger.info("Data directories verified")
 
+    # 2. OpenSearch 인덱스 초기화
+    try:
+        from search_engine import search_engine
+        search_engine.create_index_if_not_exists()
+        logger.info(f"OpenSearch index '{Config.OS_INDEX_NAME}' verified/created")
+    except Exception as e:
+        logger.error(f"Failed to initialize OpenSearch: {e}")
+        logger.warning("Search functionality might not work properly")
+
     # Initialize database
     try:
         init_db()
@@ -184,6 +193,9 @@ async def startup_event():
 async def shutdown_event():
     """Application shutdown"""
     logger.info("BBOCR API shutting down...")
+    from database import engine
+    engine.dispose()
+    logger.info("Database connections closed.")
 
 
 @app.get("/")

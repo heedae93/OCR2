@@ -65,6 +65,13 @@ class Config:
     OCR_TILE_OVERLAP = 150
     OCR_TILE_NMS_IOU = 0.3
 
+    # OpenSearch settings (추가된 부분)
+    OS_HOST = os.getenv("OPENSEARCH_HOST", "localhost")
+    OS_PORT = int(os.getenv("OPENSEARCH_PORT", "9200"))
+    OS_USER = os.getenv("OPENSEARCH_USER", "admin")
+    OS_PASS = os.getenv("OPENSEARCH_PASS", "admin")
+    OS_INDEX_NAME = os.getenv("OPENSEARCH_INDEX", "masking_docs")
+
     # Table Transformer settings
     # backend: slanet | table_transformer | hybrid
     OCR_TABLE_BACKEND = "slanet"

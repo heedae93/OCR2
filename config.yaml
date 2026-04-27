@@ -10,16 +10,17 @@
 #
 # ============================================================================
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 #  1. OCR 엔진 설정
 # ──────────────────────────────────────────────────────────────────────────────
 #  PaddleOCR 기반 텍스트 인식 엔진의 동작을 제어합니다.
 #
 ocr:
-  engine: pp_structure
   # GPU 사용 여부  (true: GPU 가속 / false: CPU 전용)
   use_gpu: true
+
+  # OCR 엔진 선택 (pp_structure: 레이아웃 분석 포함 / paddleocr: 텍스트 인식만, CPU에서 안정적)
+  engine: paddleocr
 
   # 단일 GPU 모드에서 사용할 GPU 번호 (nvidia-smi 기준 index)
   gpu_id: 0
@@ -36,8 +37,8 @@ ocr:
 
   # 텍스트 감지 시 이미지 축소 한계 (px)
   #   값이 클수록 작은 텍스트도 감지하지만 속도가 느려짐
-  #   권장: 2000 (정확도) — tiling 사용 시 타일 단위 해상도 기준
-  detection_limit_side_len: 2000
+  #   권장: 1200 (속도) ~ 2000 (정확도)
+  detection_limit_side_len: 1200
 
   # PaddleOCR 라인 병합 사용 여부
   #   false: PaddleOCR가 반환한 라인 bbox를 그대로 사용 (권장)
@@ -49,6 +50,12 @@ ocr:
 
   # 커스텀 인식 모델 경로 (상대경로 가능)
   recognition_model_dir: data/models/best_0828
+
+  # 사용 가능한 커스텀 모델 목록 (향후 모델 교체 시 활용)
+  custom_models:
+    best_0828: "data/models/best_0828"
+    # best_1012_8M: "data/models/best_1012_8M"
+
   ppstructure_layout_model: "PP-DocLayout-L"
   ppstructure_recognition_model: "korean_PP-OCRv5_mobile_rec"
   use_table_recognition: true
@@ -77,7 +84,6 @@ ocr:
     column_gap_ratio: 0.20
     column_balance_ratio: 0.35
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 #  2. GPU / 병렬 처리 설정
 # ──────────────────────────────────────────────────────────────────────────────
@@ -88,17 +94,15 @@ gpu:
   cudnn_lib_path: ""
   cublas_lib_path: ""
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 #  3. 디렉토리 설정
 # ──────────────────────────────────────────────────────────────────────────────
 directories:
-  input_image_dir: ""
-  upload_dir: "data/raw"
-  output_pdf_dir: "data/processed"
-  log_dir: "data/logs"
-  debug_dir: "data/debug"
-
+  input_image_dir: "" # 입력 이미지 (비워두면 업로드만 사용)
+  upload_dir: "data/raw" # 사용자 업로드 파일
+  output_pdf_dir: "data/processed" # OCR 처리 결과 PDF
+  log_dir: "data/logs" # 애플리케이션 로그
+  debug_dir: "data/debug" # 디버그 시각화 이미지
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  4. 폰트 설정
@@ -114,33 +118,64 @@ fonts:
     - path: "C:/Windows/Fonts/gulim.ttc"
       name: "Gulim"
 
-  max_font_size: 90
-  korean_min_size: 7
-  english_min_size: 6
-
+  max_font_size: 90 # PDF 텍스트 레이어 최대 폰트 크기 (px)
+  korean_min_size: 7 # 한글 최소 폰트 크기
+  english_min_size: 6 # 영문 최소 폰트 크기
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  5. PDF 처리 설정
 # ──────────────────────────────────────────────────────────────────────────────
 pdf_processing:
-  dpi: 400
+  # PDF → 이미지 변환 DPI
+  #   높을수록 정확하지만 처리 시간과 메모리 사용량 증가
+  #   권장: 300 (일반) / 400 (고품질 스캔)
+  dpi: 200
+
+  # 빠른 처리 모드 (일부 후처리 생략)
+
   fast_mode: true
   standard_resolution:
-    default_dpi: 300
-    max_dpi: 600
-    min_dpi: 150
-    scale_factor: 1.0
-  enable_parallel: true
-  parallel_workers: null
+    default_dpi: 300 # 원본 DPI를 알 수 없을 때 기본값
+    max_dpi: 600 # 최대 허용 DPI
+    min_dpi: 150 # 최소 허용 DPI
+    scale_factor: 1.0 # OCR ↔ PDF 렌더링 스케일 매칭 비율
 
+  # 멀티 페이지 병렬 처리
+  enable_parallel: true
+  parallel_workers: null # null이면 GPU 수에 맞춰 자동 결정
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  6. 이미지 전처리 설정
 # ──────────────────────────────────────────────────────────────────────────────
 preprocessing:
   enable: false
-  preserve_size: true
 
+  # 컬러 노이즈 제거 (FastNlMeansDenoising)
+  #   스캔 문서의 점/얼룩 노이즈를 제거합니다.
+  denoise:
+    enabled: true
+    h: 6 # 필터 강도 (높을수록 노이즈 제거 강함, 디테일 손실)
+    h_color: 6 # 컬러 채널 필터 강도
+    template_window_size: 7 # 패치 크기 (홀수)
+    search_window_size: 21 # 탐색 영역 크기 (홀수)
+
+  # 저해상도 이미지 업스케일링
+  #   짧은 변이 min_edge보다 작은 이미지만 확대합니다.
+  upscale:
+    enabled: true
+    min_edge: 1600 # 이 길이(px) 미만이면 업스케일
+    max_scale: 2.0 # 최대 확대 배율
+
+  # 대비 보정 (CLAHE: Contrast Limited Adaptive Histogram Equalization)
+  #   흐릿하거나 저대비 문서의 텍스트를 선명하게 만듭니다.
+  clahe:
+    enabled: true
+    clip_limit: 3.0 # 대비 제한 값 (높을수록 대비 강함)
+    tile_grid_size: [8, 8] # 타일 격자 크기
+
+  # 전처리 후 원본 해상도로 복원 (OCR 좌표 일관성 유지)
+
+  preserve_size: true
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  7. 텍스트 레이어 설정
@@ -155,7 +190,6 @@ text_coverage:
   width_overshoot_ratio: 1.02
   enable_text_recovery: false
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 #  8. 레이아웃 감지 설정
 # ──────────────────────────────────────────────────────────────────────────────
@@ -166,7 +200,6 @@ layout_detection:
   max_dimension: 1400
   cache_enabled: true
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 #  9. 다단(컬럼) 감지 설정
 # ──────────────────────────────────────────────────────────────────────────────
@@ -175,14 +208,13 @@ column_detection:
   confidence_threshold: 0.05
   min_blocks_for_detection: 4
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 #  10. 파일 처리 설정
 # ──────────────────────────────────────────────────────────────────────────────
 file_processing:
-  supported_image_extensions: ["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.tiff", "*.tif"]
+  supported_image_extensions:
+    ["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.tiff", "*.tif"]
   supported_pdf_extensions: ["*.pdf"]
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  11. LLM 및 외부 검색 연동 (요약/인용문 추출)
@@ -194,7 +226,6 @@ llm_integration:
   enable_web_search: true
   max_file_size_mb: 50
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 #  12. 성능 최적화 설정
 # ──────────────────────────────────────────────────────────────────────────────
@@ -202,7 +233,6 @@ performance:
   text_alpha: 0.01
   gc_interval_pages: 8
   enable_memory_cleanup: true
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  13. 기본 사용자 설정
@@ -212,13 +242,11 @@ user:
   default_name: "Admin"
   default_email: "user@email.com"
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 #  14. 데이터베이스 설정
 # ──────────────────────────────────────────────────────────────────────────────
 database:
   url: "postgresql+psycopg2://ocr_user:1234@192.168.0.231:3306/ocr_db?client_encoding=utf8"
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  15. Redis 설정 (Celery OCR 작업 큐 브로커)
@@ -227,7 +255,6 @@ redis:
   url: "redis://localhost:6379/0"
   # OCR 작업 최대 처리 시간 (초). 이 시간 초과 시 failed 처리
   job_timeout_seconds: 1800
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  16. 서버 설정
@@ -247,3 +274,10 @@ server:
     - http://127.0.0.1:6017
     - http://192.168.0.69:6017
     - http://192.168.0.69:5017
+
+opensearch:
+  host: "localhost"
+  port: 9200
+  user: "admin"
+  pass: "admin"
+  index_name: "masking_docs"
