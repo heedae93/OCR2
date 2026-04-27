@@ -246,27 +246,6 @@ import fitz
 from pathlib import Path
 
 
-def _get_partial_mask_bbox(value: str, masked_value: str, bbox: list):
-    """
-    value와 masked_value를 비교해 * 에 해당하는 부분의 sub-bbox만 반환.
-    예: value="박채연", masked_value="박**" → "채연" 부분의 bbox 반환.
-    실패 시 None 반환 (호출부에서 원본 bbox로 fallback).
-    """
-    if not value or not masked_value or len(value) != len(masked_value):
-        return None
-
-    first_star = masked_value.find('*')
-    last_star = masked_value.rfind('*')
-    if first_star == -1:
-        return None
-
-    masked_substr = value[first_star:last_star + 1]
-    if not masked_substr:
-        return None
-
-    from core.pii_extractor import _estimate_sub_bbox
-    return _estimate_sub_bbox(masked_substr, value, bbox)
-
 
 def _sample_background_color(pdf_page, rect: fitz.Rect) -> tuple:
     """
@@ -406,20 +385,30 @@ def _apply_masking(pdf_path: Path, boxes: list, ocr_data: dict) -> bytes:
                 masked_value = item.get("masked_value", "")
 
                 x1, y1, x2, y2 = bbox
-                rect = fitz.Rect(
-                    x1 * scale_x - 3,
-                    y1 * scale_y - 2,
-                    x2 * scale_x + 3,
-                    y2 * scale_y + 2,
+                # redact_rect: 여백을 너무 크게 주면 인접한 마스킹 박스가 겹쳐서 가려지는 문제 발생
+                # 좌우 여백을 ±2px로 줄여서 겹침 현상을 최소화합니다.
+                redact_rect = fitz.Rect(
+                    max(0, x1 * scale_x - 2),
+                    max(0, y1 * scale_y - 3),
+                    x2 * scale_x + 2,
+                    y2 * scale_y + 3,
+                )
+                # text_rect: 긴 텍스트(주소 등)가 영역 부족으로 잘리는(Truncation) 현상을 방지하기 위해 
+                # 우측과 하단에 충분한 가상 공간(+100px)을 확보합니다.
+                text_rect = fitz.Rect(
+                    x1 * scale_x - 1,
+                    y1 * scale_y,
+                    x2 * scale_x + 100,
+                    y2 * scale_y + 20,
                 )
 
                 # 원본 폰트 정보 추출 (삭제 전에 해야 함)
-                orig_font_bytes, orig_font_size, orig_font_color = _extract_span_font(doc, pdf_page, rect)
+                orig_font_bytes, orig_font_size, orig_font_color = _extract_span_font(doc, pdf_page, redact_rect)
 
-                fill_color = _sample_background_color(pdf_page, rect)
-                pdf_page.add_redact_annot(rect, fill=fill_color)
+                fill_color = _sample_background_color(pdf_page, redact_rect)
+                pdf_page.add_redact_annot(redact_rect, fill=fill_color)
 
-                pending.append((rect, masked_value, orig_font_bytes, orig_font_size, orig_font_color))
+                pending.append((text_rect, masked_value, orig_font_bytes, orig_font_size, orig_font_color))
 
             # ── 2단계: redaction 적용 (텍스트 물리적 제거) ────────────────────
             pdf_page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
