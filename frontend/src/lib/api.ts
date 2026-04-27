@@ -1,8 +1,17 @@
 import axios from 'axios'
 import { Job, OCRResult, SmartToolLayer } from '@/types'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5015'
-export const API_BASE_URL = API_URL
+const getApiUrl = () => {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL
+  if (typeof window !== 'undefined') {
+    const { hostname } = window.location
+    return `http://${hostname}:6016`
+  }
+  return 'http://localhost:6016'
+}
+
+export const API_BASE_URL = getApiUrl()
+const API_URL = API_BASE_URL
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,
@@ -51,8 +60,9 @@ export const getOCRResults = async (jobId: string): Promise<OCRResult> => {
   return response.data
 }
 
-export const listJobs = async (): Promise<Job[]> => {
-  const response = await api.get('/jobs')
+export const listJobs = async (userId?: string): Promise<Job[]> => {
+  const params = userId ? { user_id: userId } : {}
+  const response = await api.get('/jobs', { params })
   return response.data
 }
 

@@ -93,7 +93,7 @@ export default function LoginPage() {
           <div className="bg-gradient-to-br from-primary to-primary/70 rounded-2xl size-14 flex items-center justify-center shadow-lg shadow-primary/20 mb-4">
             <span className="material-symbols-outlined text-white !text-3xl">document_scanner</span>
           </div>
-          <h1 className="text-text-primary-light dark:text-text-primary-dark text-2xl font-bold">Futurenuri PDFix</h1>
+          <h1 className="text-text-primary-light dark:text-text-primary-dark text-2xl font-bold">AI Doc Intelligence</h1>
           <p className="text-text-secondary-light dark:text-text-secondary-dark text-sm mt-1">계정에 로그인하세요</p>
         </div>
 

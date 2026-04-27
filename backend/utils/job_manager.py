@@ -130,8 +130,29 @@ class JobManager:
         """Update job information"""
         job = self.jobs.get(job_id)
         if not job:
-            logger.warning(f"Job not found: {job_id}")
-            return None
+            # Try to load from file (especially for workers)
+            file_data = self.read_status_from_file(job_id)
+            if file_data:
+                try:
+                    job = Job(
+                        job_id=file_data["job_id"],
+                        filename=file_data.get("filename", "unknown"),
+                        user_id=file_data.get("user_id", "worker"),
+                        status=file_data.get("status", JobStatus.QUEUED),
+                        progress_percent=file_data.get("progress_percent", 0.0),
+                        current_page=file_data.get("current_page", 0),
+                        total_pages=file_data.get("total_pages", 0),
+                        message=file_data.get("message"),
+                        sub_stage=file_data.get("sub_stage"),
+                        pdf_url=file_data.get("pdf_url")
+                    )
+                    self.jobs[job_id] = job
+                except Exception as e:
+                    logger.warning(f"Failed to restore job from file for update: {e}")
+                    return None
+            else:
+                logger.warning(f"Job not found in memory or file: {job_id}")
+                return None
 
         if status is not None:
             job.status = status

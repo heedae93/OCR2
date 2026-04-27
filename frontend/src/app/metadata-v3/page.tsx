@@ -4,18 +4,18 @@ import { useState, useEffect, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { API_BASE_URL } from '@/lib/api'
 import {
-  Shield, CheckCircle2, AlertCircle, RefreshCw, Save, Plus, Trash2, Tag, X
+  Database, CheckCircle2, AlertCircle, RefreshCw, Save, Plus, Trash2, Tag, X, FileText
 } from 'lucide-react'
 
 const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타', '미분류']
 
-const DEFAULT_PII_ITEMS = [
-  { key: 'rrn',     label: '주민등록번호', desc: '000000-0000000 형식',       color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
-  { key: 'phone',   label: '전화번호',     desc: '010-0000-0000 형식',        color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' },
-  { key: 'email',   label: '이메일',       desc: 'user@domain.com 형식',      color: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
-  { key: 'card',    label: '신용카드번호', desc: '0000-0000-0000-0000 형식',  color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300' },
-  { key: 'address', label: '주소',         desc: '도로명/지번 주소',           color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
-  { key: 'name',    label: '이름/인명',    desc: 'NER 기반 인명 감지',        color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300' },
+const DEFAULT_METADATA_FIELDS = [
+  { key: 'title',   label: '문서 제목',   desc: '문서의 이름, 주제 또는 주요 타이틀', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
+  { key: 'date',    label: '발행 날짜',   desc: '거래일, 작성일, 유효 기간 등',    color: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
+  { key: 'amount',  label: '금액 / 수치',  desc: '합계, 공급가액, 수량 등 숫자 데이터',  color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' },
+  { key: 'vendor',  label: '업체 / 기관명', desc: '발행처, 상호, 거래처명 등',        color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' },
+  { key: 'address', label: '주소 / 위치',   desc: '도로명 주소, 지번, 장소 정보',      color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
+  { key: 'person',  label: '인명 / 담당자', desc: '작성자, 서명자, 고객 성함 등',      color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300' },
 ]
 
 export default function MetadataV3Page() {
@@ -124,7 +124,10 @@ export default function MetadataV3Page() {
     } catch (e) {}
   }
 
-  const allDocTypes = [...DEFAULT_DOC_TYPES, ...categories.map(c => c.name)]
+  const allDocTypes = [
+    ...DEFAULT_DOC_TYPES,
+    ...categories.map(c => c.name).filter(name => !DEFAULT_DOC_TYPES.includes(name)),
+  ]
   const currentPiiTypes = rules[selectedDocType] ?? []
 
   const togglePii = (piiKey: string) => {
@@ -155,11 +158,11 @@ export default function MetadataV3Page() {
 
   // Combine default fields with custom fields
   const allFields = [
-    ...DEFAULT_PII_ITEMS.map(i => ({ ...i, isCustom: false, id: null, pattern: null })),
+    ...DEFAULT_METADATA_FIELDS.map(i => ({ ...i, isCustom: false, id: null, pattern: null })),
     ...customFields.map(f => ({
       key: f.field_key,
       label: f.label,
-      desc: f.description || '특정한 패턴이 일치하면 마스킹 처리',
+      desc: f.description || '특정한 패턴이 일치하면 메타데이터 추출',
       color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
       isCustom: true,
       id: f.id,
@@ -173,9 +176,9 @@ export default function MetadataV3Page() {
       <main className="flex-1 ml-64 flex flex-col h-screen overflow-hidden">
         
         <div className="px-6 py-6 border-b border-border-light dark:border-border-dark flex-shrink-0">
-          <h1 className="text-xl font-bold text-text-primary-light dark:text-text-primary-dark tracking-tight">문서 유형별 마스킹 관리</h1>
+          <h1 className="text-xl font-bold text-text-primary-light dark:text-text-primary-dark tracking-tight">문서 유형별 추출 메타데이터 관리</h1>
           <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mt-1">
-            문서 카테고리를 선택하고, 해당 문서에 대한 마스킹 규칙(필드 / 정규식)을 설정합니다.
+            문서 카테고리를 선택하고, 해당 문서에서 자동으로 추출할 중요 데이터 필드를 설정합니다.
           </p>
         </div>
 
@@ -206,7 +209,7 @@ export default function MetadataV3Page() {
                     </div>
                     <div className="flex items-center gap-2">
                       {count > 0 && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300 font-bold tracking-tighter">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300 font-bold tracking-tighter">
                           {count}
                         </span>
                       )}
@@ -238,19 +241,19 @@ export default function MetadataV3Page() {
             </div>
           </div>
 
-          {/* 마스킹 필드 설정 영역 */}
+          {/* 메타데이터 추출 설정 영역 */}
           <div className="flex-1 flex flex-col bg-bg-light dark:bg-bg-dark">
             <div className="px-10 py-6 border-b border-border-light dark:border-border-dark flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-bold flex items-center gap-3 text-text-primary-light dark:text-text-primary-dark tracking-tight">
-                   <Shield size={24} className="text-primary" /> {selectedDocType}
-                   {currentPiiTypes.length > 0 && <span className="text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400">활성 {currentPiiTypes.length}건</span>}
+                   <FileText size={24} className="text-primary" /> {selectedDocType}
+                   {currentPiiTypes.length > 0 && <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400">설정 {currentPiiTypes.length}건</span>}
                 </h2>
-                <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mt-2 font-medium">이 카테고리로 분류된 문서를 스캔할 때, 활성화된 마스킹 항목을 자동으로 적용합니다.</p>
+                <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mt-2 font-medium">이 카테고리로 분류된 문서를 분석할 때, 활성화된 데이터 항목을 자동으로 추출하여 색인화합니다.</p>
               </div>
               <button onClick={saveRules} disabled={saving || loading} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 shadow-md transition-all active:scale-95 disabled:opacity-50">
                 {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
-                변경사항 저장
+                추출 설정 저장
               </button>
             </div>
 
@@ -263,10 +266,10 @@ export default function MetadataV3Page() {
                 <div>
                   <div className="flex items-center justify-between mb-6">
                     <h3 className="text-base font-bold text-text-secondary-light dark:text-text-secondary-dark tracking-widest uppercase">
-                      마스킹 설정 필드
+                      추출 필드 설정
                     </h3>
                     <button onClick={() => setIsAddingField(true)} className="flex items-center gap-1.5 text-sm font-bold text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400 hover:bg-sky-100 dark:hover:bg-sky-900/50 px-4 py-2 rounded-full transition-colors shadow-sm">
-                      <Plus size={16} /> 커스텀 필드 생성
+                      <Plus size={16} /> 커스텀 추출 필드 추가
                     </button>
                   </div>
 
@@ -309,30 +312,30 @@ export default function MetadataV3Page() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-surface-light dark:bg-surface-dark w-11/12 max-w-md p-8 rounded-3xl shadow-2xl flex flex-col gap-5 animate-in zoom-in-95 duration-200">
               <div className="flex justify-between items-center mb-1">
-                <h3 className="text-xl font-bold text-text-primary-light dark:text-text-primary-dark">새 커스텀 필드 생성</h3>
+                <h3 className="text-xl font-bold text-text-primary-light dark:text-text-primary-dark">새 추출 필드 정의</h3>
                 <button onClick={() => setIsAddingField(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-text-secondary-light transition-colors">
                   <X size={20} />
                 </button>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-sky-600 mb-1.5 block uppercase tracking-wide">표시 라벨 (필수)</label>
+                <label className="text-xs font-bold text-sky-600 mb-1.5 block uppercase tracking-wide">필드명 (UI 표시용)</label>
                 <input autoFocus placeholder="예: 차량번호, 계좌번호" className="w-full text-base font-bold bg-transparent border-b-2 border-border-light dark:border-border-dark outline-none py-2 focus:border-sky-500 text-text-primary-light dark:text-text-primary-dark transition-colors" value={newField.label} onChange={e => setNewField({...newField, label: e.target.value})} />
               </div>
 
               <div>
-                <label className="text-xs font-bold text-sky-600 mb-1.5 block uppercase tracking-wide">정규표현식 매칭 패턴 (선택)</label>
+                <label className="text-xs font-bold text-sky-600 mb-1.5 block uppercase tracking-wide">정규표현식 패턴 (선택)</label>
                 <input placeholder="예: [0-9]{2,3}[가-힣]{1}[0-9]{4}" className="w-full font-mono text-sm tracking-tight bg-transparent border-b-2 border-border-light dark:border-border-dark outline-none py-2 focus:border-sky-500 text-text-primary-light dark:text-text-primary-dark transition-colors" value={newField.pattern} onChange={e => setNewField({...newField, pattern: e.target.value})} />
               </div>
 
               <div>
-                <label className="text-xs font-bold text-sky-600 mb-1.5 block uppercase tracking-wide">상세 설명 (선택)</label>
-                <input placeholder="어떤 목적의 마스킹인지 작성" className="w-full text-sm bg-transparent border-b-2 border-border-light dark:border-border-dark outline-none py-2 focus:border-sky-500 text-text-primary-light dark:text-text-primary-dark transition-colors" value={newField.description} onChange={e => setNewField({...newField, description: e.target.value})} />
+                <label className="text-xs font-bold text-sky-600 mb-1.5 block uppercase tracking-wide">필드 설명 (선택)</label>
+                <input placeholder="추출하고자 하는 데이터 의미를 작성" className="w-full text-sm bg-transparent border-b-2 border-border-light dark:border-border-dark outline-none py-2 focus:border-sky-500 text-text-primary-light dark:text-text-primary-dark transition-colors" value={newField.description} onChange={e => setNewField({...newField, description: e.target.value})} />
               </div>
               
               <div className="flex justify-end gap-3 mt-4">
                  <button onClick={() => setIsAddingField(false)} className="text-sm font-bold px-5 py-2.5 text-text-secondary-light hover:text-text-primary-light rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors">취소</button>
-                 <button onClick={addCustomField} className="text-sm font-bold px-6 py-2.5 bg-sky-500 text-white rounded-xl shadow-md hover:bg-sky-600 focus:scale-95 transition-all disabled:opacity-50" disabled={!newField.label.trim()}>생성하기</button>
+                 <button onClick={addCustomField} className="text-sm font-bold px-6 py-2.5 bg-sky-500 text-white rounded-xl shadow-md hover:bg-sky-600 focus:scale-95 transition-all disabled:opacity-50" disabled={!newField.label.trim()}>정의 완료</button>
               </div>
             </div>
           </div>

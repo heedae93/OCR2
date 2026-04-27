@@ -19,6 +19,7 @@ from config import Config
 from utils.job_manager import JobManager
 from core.ctc_char_confidence import HeuristicCharConfidenceEstimator
 from database import SessionLocal, DownloadHistory, FileVersion, Job as DBJob
+from utils.ocr_storage import load_ocr_results
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +61,7 @@ def record_download(job_id: str, user_id: str, file_type: str, ip: Optional[str]
 
 def get_ocr_results(job_id: str) -> Optional[Dict]:
     """Load OCR results from JSON file"""
-    json_path = Config.PROCESSED_DIR / f"{job_id}_ocr.json"
-    if not json_path.exists():
-        return None
-
-    with open(json_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    return load_ocr_results(job_id)
 
 
 # ============================================================

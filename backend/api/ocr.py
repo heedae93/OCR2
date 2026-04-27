@@ -14,7 +14,7 @@ import asyncio
 import shutil
 import time
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from config import Config
@@ -29,6 +29,7 @@ from core.reading_order_sorter import ReadingOrderSorter
 from utils.job_manager import JobManager
 from utils.file_utils import save_uploaded_file, generate_unique_id, cleanup_temp_files
 from utils.smart_layers import apply_smart_layers_to_image
+from utils.ocr_storage import resolve_ocr_json_path
 from database import SessionLocal, Job as DBJob, DownloadHistory, FileVersion
 
 # Import pdf_gen pipeline components
@@ -38,6 +39,30 @@ from core.config_manager import create_legacy_config
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# 취소 플래그 파일 디렉토리 (Worker와 FastAPI 프로세스 간 공유)
+CANCEL_FLAGS_DIR = Config.TEMP_DIR / "cancel_flags"
+CANCEL_FLAGS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _is_job_cancelled(job_id: str) -> bool:
+    """파일 기반 취소 체크 - Worker/FastAPI 프로세스 모두에서 동작"""
+    return (CANCEL_FLAGS_DIR / f"{job_id}.cancel").exists()
+
+
+def _set_cancel_flag(job_id: str):
+    """취소 플래그 파일 생성"""
+    (CANCEL_FLAGS_DIR / f"{job_id}.cancel").touch()
+
+
+def _clear_cancel_flag(job_id: str):
+    """취소 플래그 파일 삭제"""
+    flag = CANCEL_FLAGS_DIR / f"{job_id}.cancel"
+    try:
+        flag.unlink(missing_ok=True)
+    except Exception:
+        pass
+
 
 # Global instances
 job_manager = JobManager()
@@ -316,7 +341,12 @@ def _merge_ocr_lines(blocks: List[Dict], y_threshold: float = 6.0, x_gap: float 
 
 
 @router.post("/upload")
-def upload_file(file: UploadFile = File(...), user_id: str = Config.DEFAULT_USER_ID):
+def upload_file(
+    file: UploadFile = File(...),
+    user_id: str = Config.DEFAULT_USER_ID,
+    doc_type: Optional[str] = Query(None),
+    session_id: str = "default"
+):
     """Upload a file for OCR processing"""
     try:
         # Validate file type
@@ -355,15 +385,17 @@ def upload_file(file: UploadFile = File(...), user_id: str = Config.DEFAULT_USER
             filename=file.filename,
             file_path=str(file_path),
             file_size=file_path.stat().st_size,
-            user_id=user_id
+            user_id=user_id,
+            doc_type=doc_type
         )
         if db_saved:
             logger.info(f"Job {job_id} successfully saved to database")
 
-            # Add to default session
-            session_added = add_job_to_session(job_id, "default")
+            # Add to specified session (or default)
+            target_session = session_id if session_id else "default"
+            session_added = add_job_to_session(job_id, target_session)
             if session_added:
-                logger.info(f"Job {job_id} added to default session")
+                logger.info(f"Job {job_id} added to session {target_session}")
         else:
             logger.error(f"Failed to save job {job_id} to database")
 
@@ -451,7 +483,7 @@ def get_page_image(job_id: str, page_number: int):
 
 
 @router.post("/process/{job_id}")
-def process_job(job_id: str, background_tasks: BackgroundTasks):
+def process_job(job_id: str):
     """Start OCR processing for a job"""
     try:
         job = job_manager.get_job(job_id)
@@ -498,8 +530,10 @@ def process_job(job_id: str, background_tasks: BackgroundTasks):
             # Reset to queued
             job_manager.update_job(job_id, status=JobStatus.QUEUED, progress_percent=0.0)
 
-        # Start processing in background
-        background_tasks.add_task(process_job_task, job_id)
+        # Celery Worker에 작업 전달 (Redis 큐를 통해)
+        from celery_app import celery_app as _celery
+        _celery.send_task('ocr.process', args=[job_id], queue='ocr')
+        logger.info(f"Dispatched job {job_id} to Celery OCR queue")
 
         return {
             "job_id": job_id,
@@ -519,25 +553,86 @@ def cancel_job(job_id: str):
     """Cancel an OCR processing job"""
     try:
         job = job_manager.get_job(job_id)
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
 
-        if job.status != JobStatus.PROCESSING:
+        # job_manager가 재시작 등으로 비어있을 경우 DB에서 복원
+        if not job:
+            db = SessionLocal()
+            try:
+                db_job = db.query(DBJob).filter_by(job_id=job_id).first()
+                if db_job:
+                    job = job_manager.create_job(
+                        job_id=job_id,
+                        filename=db_job.original_filename,
+                        user_id="restored"
+                    )
+                    # DB 상태 반영
+                    if db_job.status == 'processing':
+                        job_manager.update_job(job_id, status=JobStatus.PROCESSING)
+                    logger.info(f"Restored job from DB for cancel: {job_id}")
+                else:
+                    raise HTTPException(status_code=404, detail="Job not found")
+            finally:
+                db.close()
+
+        if job.status not in [JobStatus.PROCESSING, JobStatus.QUEUED]:
             raise HTTPException(status_code=400, detail="Job is not processing")
 
-        # Mark job for cancellation
-        job_manager.cancel_job(job_id)
+        # 파일 기반 취소 플래그 (Worker/Celery 프로세스에서도 감지 가능)
+        _set_cancel_flag(job_id)
+        # 메모리 기반 취소도 병행
+        job_in_memory = job_id in job_manager.jobs
+        job_manager.cancelled_jobs.add(job_id)
 
-        return {
-            "job_id": job_id,
-            "status": "cancelling",
-            "message": "Cancellation requested"
-        }
+        # 스레드가 없거나 서버 재시작 후 복원된 경우 → 즉시 CANCELLED로 강제 전환
+        if not job_in_memory or job_id not in [j for j in job_manager.jobs if job_manager.jobs[j].status == JobStatus.PROCESSING]:
+            job_manager.update_job(job_id, status=JobStatus.CANCELLED, message="중단됨")
+            job_manager.clear_cancelled(job_id)
+            logger.info(f"Job force-cancelled (no active thread): {job_id}")
+            return {"job_id": job_id, "status": "cancelled", "message": "중단되었습니다"}
+
+        logger.info(f"Cancellation signal sent to active thread: {job_id}")
+        return {"job_id": job_id, "status": "cancelling", "message": "중단 요청됨"}
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to cancel job: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/cancel-all")
+def cancel_all_jobs():
+    """Cancel all processing and queued jobs"""
+    try:
+        db = SessionLocal()
+        try:
+            # Find all active jobs
+            active_jobs = db.query(DBJob).filter(
+                DBJob.status.in_(['processing', 'queued'])
+            ).all()
+            
+            count = 0
+            for db_job in active_jobs:
+                job_id = db_job.job_id
+                # Set cancel flag
+                _set_cancel_flag(job_id)
+                # Update memory
+                if job_id in job_manager.jobs:
+                    job_manager.cancelled_jobs.add(job_id)
+                    job_manager.update_job(job_id, status=JobStatus.CANCELLED, message="모두 중단됨")
+                
+                # Update DB
+                db_job.status = 'cancelled'
+                db_job.message = '모두 중단됨'
+                count += 1
+            
+            db.commit()
+            logger.info(f"Batch cancelled {count} jobs")
+            return {"status": "success", "cancelled_count": count, "message": f"{count}개의 작업이 중단되었습니다."}
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Failed to cancel all jobs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -561,8 +656,23 @@ def process_job_task(job_id: str):
 
         job = job_manager.get_job(job_id)
         if not job:
-            logger.error(f"Job not found: {job_id}")
-            return
+            # Worker 프로세스 실행 시 메모리에 job이 없으므로 DB에서 복원
+            from database import SessionLocal, Job as DBJob
+            db = SessionLocal()
+            try:
+                db_job = db.query(DBJob).filter_by(job_id=job_id).first()
+                if db_job:
+                    job = job_manager.create_job(
+                        job_id=job_id,
+                        filename=db_job.original_filename,
+                        user_id=db_job.user_id or 'worker'
+                    )
+                    logger.info(f"Restored job {job_id} from DB for processing")
+                else:
+                    logger.error(f"Job not found in DB: {job_id}")
+                    return
+            finally:
+                db.close()
 
         # Find uploaded file
         job_dir = Config.RAW_DIR / job_id
@@ -679,7 +789,7 @@ def process_job_task(job_id: str):
             page_start_time = time.time()
             try:
                 # Check for cancellation before starting
-                if job_manager.is_cancelled(job_id):
+                if _is_job_cancelled(job_id):
                     logger.info(f"[Page {page_num}] Cancelled before processing")
                     return {'page_number': page_num, 'cancelled': True}
 
@@ -701,6 +811,10 @@ def process_job_task(job_id: str):
                     ocr_results = []
                 else:
                     logger.info(f"[Page {page_num}] OCR completed in {ocr_elapsed:.2f}s ({len(ocr_results)} text blocks)")
+                
+                # Progress update: OCR done
+                if total_pages == 1:
+                    job_manager.update_job(job_id, progress_percent=40.0, sub_stage=f"Page {page_num}: OCR completed, starting layout analysis...")
 
                 layout_regions = structured_result.get('layout_info', {}).get('regions', []) or []
                 table_regions = structured_result.get('layout_info', {}).get('tables', []) or []
@@ -741,9 +855,14 @@ def process_job_task(job_id: str):
                             except Exception as layout_exc:
                                 logger.warning(f"Layout detection failed on page {page_num}: {layout_exc}")
                                 layout_regions = []
+                        
+                        # Progress update: Layout done
+                        if total_pages == 1:
+                            job_manager.update_job(job_id, progress_percent=70.0, sub_stage=f"Page {page_num}: Layout analysis completed, finalizing results...")
+
+                    sorter = get_reading_order_sorter()
 
                     if Config.USE_SMART_READING_ORDER:
-                        sorter = get_reading_order_sorter()
                         sorted_blocks, detected_column_info = sorter.sort_reading_order(
                             ocr_results,
                             page_width=width,
@@ -752,8 +871,12 @@ def process_job_task(job_id: str):
                         )
                         column_info = detected_column_info or column_info
                         ocr_results = sorter.add_column_labels(sorted_blocks, column_info, width)
-                        for idx, block in enumerate(ocr_results):
-                            block['reading_order'] = idx
+
+                    # Text-layer/UI numbering follows visual order:
+                    # left-to-right within a row, then top-to-bottom.
+                    ocr_results = sorter.sort_visual_left_to_right_top_to_bottom(ocr_results)
+                    for idx, block in enumerate(ocr_results):
+                        block['reading_order'] = idx
 
                     for block in ocr_results:
                         block.setdefault('layout_type', 'text')
@@ -833,7 +956,7 @@ def process_job_task(job_id: str):
             cancelled = False
             for future in as_completed(future_map):
                 # Check for cancellation
-                if job_manager.is_cancelled(job_id):
+                if _is_job_cancelled(job_id):
                     logger.info(f"[Job {job_id}] Cancellation detected, stopping processing")
                     cancelled = True
                     for f in future_map:
@@ -865,7 +988,7 @@ def process_job_task(job_id: str):
             # Handle cancellation
             if cancelled:
                 job_manager.update_job(job_id, status=JobStatus.CANCELLED, message="Cancelled by user")
-                job_manager.clear_cancelled(job_id)
+                _clear_cancel_flag(job_id)
                 cleanup_temp_files(temp_files)
                 logger.info(f"[Job {job_id}] Processing cancelled")
                 return
@@ -1056,11 +1179,18 @@ def process_job_task(job_id: str):
 
     except Exception as e:
         logger.error(f"Job {job_id} failed: {e}", exc_info=True)
+        # Update file-based status
         job_manager.update_job(
             job_id,
             status=JobStatus.FAILED,
             message=str(e)
         )
+        # Update database status
+        try:
+            from utils.db_helper import update_job_status
+            update_job_status(job_id, "failed", error_message=str(e))
+        except Exception as db_err:
+            logger.error(f"Failed to update DB status for failed job {job_id}: {db_err}")
     finally:
         cleanup_temp_files(temp_files)
 
@@ -1301,88 +1431,152 @@ async def get_job_status(job_id: str):
     from utils.job_manager import JobManager
     import time
 
-    # Try file-based status first (non-blocking for processing jobs)
+    def build_response(
+        *,
+        job_id_value: str,
+        filename: Optional[str],
+        status: str,
+        progress_percent: float = 0,
+        current_page: int = 0,
+        total_pages: int = 0,
+        message: Optional[str] = None,
+        sub_stage: Optional[str] = None,
+        pdf_url: Optional[str] = None,
+        created_at: Optional[str] = None,
+        completed_at: Optional[str] = None,
+        processing_time_seconds: Optional[float] = None,
+        total_text_blocks: Optional[int] = None,
+        average_confidence: Optional[float] = None,
+        is_double_column: Optional[bool] = None,
+    ) -> JobResponse:
+        raw_file_url = None
+        if filename:
+            raw_file_url = f"/files/raw/{job_id_value}/{filename}"
+
+        return JobResponse(
+            job_id=job_id_value,
+            filename=filename,
+            status=status,
+            progress_percent=progress_percent,
+            current_page=current_page,
+            total_pages=total_pages,
+            message=message,
+            sub_stage=sub_stage,
+            pdf_url=pdf_url,
+            raw_file_url=raw_file_url,
+            created_at=created_at,
+            completed_at=completed_at,
+            processing_time_seconds=processing_time_seconds,
+            total_text_blocks=total_text_blocks,
+            average_confidence=average_confidence,
+            is_double_column=is_double_column,
+        )
+
+    # Prefer file-based status when worker is actively updating progress.
     file_status = JobManager.read_status_from_file(job_id)
-    if file_status and file_status.get("status") == "processing":
-        raw_file_url = None
-        if file_status.get("filename"):
-            raw_file_url = f"/files/raw/{job_id}/{file_status['filename']}"
+    if file_status:
+        # Check if DB has completed/failed state (which might have more info like processing_time)
+        db = SessionLocal()
+        try:
+            db_job = db.query(DBJob).filter_by(job_id=job_id).first()
+            if db_job and db_job.status in {"completed", "failed", "cancelled"} and file_status.get("status") != "failed":
+                # Fall through to DB check if DB is already finished and file isn't failed
+                pass
+            else:
+                return build_response(
+                    job_id_value=file_status["job_id"],
+                    filename=file_status.get("filename"),
+                    status=file_status.get("status", "unknown"),
+                    progress_percent=file_status.get("progress_percent", 0),
+                    current_page=file_status.get("current_page", 0),
+                    total_pages=file_status.get("total_pages", 0),
+                    message=file_status.get("message"),
+                    sub_stage=file_status.get("sub_stage"),
+                    pdf_url=file_status.get("pdf_url"),
+                )
+        finally:
+            db.close()
 
-        return JobResponse(
-            job_id=file_status["job_id"],
-            filename=file_status.get("filename"),
-            status=file_status.get("status", "unknown"),
-            progress_percent=file_status.get("progress_percent", 0),
-            current_page=file_status.get("current_page", 0),
-            total_pages=file_status.get("total_pages", 0),
-            message=file_status.get("message"),
-            sub_stage=file_status.get("sub_stage"),
-            pdf_url=file_status.get("pdf_url"),
-            raw_file_url=raw_file_url
-        )
-
-    # Try memory for active jobs
-    memory_job = job_manager.get_job(job_id)
-
-    if memory_job:
-        # Build raw file URL
-        raw_file_url = None
-        if memory_job.filename:
-            raw_file_url = f"/files/raw/{job_id}/{memory_job.filename}"
-
-        # Handle both Enum and string status
-        status_str = memory_job.status.value if hasattr(memory_job.status, 'value') else memory_job.status
-
-        return JobResponse(
-            job_id=memory_job.job_id,
-            filename=memory_job.filename,
-            status=status_str,
-            progress_percent=memory_job.progress_percent,
-            current_page=memory_job.current_page,
-            total_pages=memory_job.total_pages,
-            message=memory_job.message,
-            sub_stage=memory_job.sub_stage,
-            pdf_url=memory_job.pdf_url,
-            raw_file_url=raw_file_url
-        )
-
-    # Fallback to database for completed jobs
     db = SessionLocal()
     try:
         db_job = db.query(DBJob).filter_by(job_id=job_id).first()
-        if not db_job:
+        if not db_job and not file_status:
             raise HTTPException(status_code=404, detail="Job not found")
 
-        # Build URLs
-        raw_file_url = None
-        if db_job.original_filename:
-            raw_file_url = f"/files/raw/{job_id}/{db_job.original_filename}"
+        # Completed/failed states from DB are more authoritative than stale in-memory queued state.
+        if db_job and db_job.status in {"completed", "failed", "cancelled"}:
+            pdf_url = None
+            if db_job.pdf_file_path:
+                import os
+                filename = os.path.basename(db_job.pdf_file_path)
+                timestamp = int(time.time() * 1000)
+                pdf_url = f"/files/processed/{filename}?v={timestamp}"
 
-        pdf_url = None
-        if db_job.pdf_file_path:
-            import os
-            filename = os.path.basename(db_job.pdf_file_path)
-            timestamp = int(time.time() * 1000)
-            pdf_url = f"/files/processed/{filename}?v={timestamp}"
+            return build_response(
+                job_id_value=db_job.job_id,
+                filename=db_job.original_filename,
+                status=db_job.status,
+                progress_percent=db_job.progress_percent,
+                current_page=db_job.current_page,
+                total_pages=db_job.total_pages,
+                message=db_job.error_message,
+                pdf_url=pdf_url,
+                created_at=db_job.created_at.isoformat() if db_job.created_at else None,
+                completed_at=db_job.completed_at.isoformat() if db_job.completed_at else None,
+                processing_time_seconds=db_job.processing_time_seconds,
+                total_text_blocks=db_job.total_text_blocks,
+                average_confidence=db_job.average_confidence,
+                is_double_column=db_job.is_double_column,
+            )
 
-        return JobResponse(
-            job_id=db_job.job_id,
-            filename=db_job.original_filename,
-            status=db_job.status,
-            progress_percent=db_job.progress_percent,
-            current_page=db_job.current_page,
-            total_pages=db_job.total_pages,
-            message=db_job.error_message,
-            sub_stage=None,
-            pdf_url=pdf_url,
-            raw_file_url=raw_file_url,
-            created_at=db_job.created_at.isoformat() if db_job.created_at else None,
-            completed_at=db_job.completed_at.isoformat() if db_job.completed_at else None,
-            processing_time_seconds=db_job.processing_time_seconds,
-            total_text_blocks=db_job.total_text_blocks,
-            average_confidence=db_job.average_confidence,
-            is_double_column=db_job.is_double_column
-        )
+        # If there is a file-based queued state, prefer it over stale memory.
+        if file_status and file_status.get("status") in {"queued", "failed", "completed", "cancelled"}:
+            return build_response(
+                job_id_value=file_status["job_id"],
+                filename=file_status.get("filename"),
+                status=file_status.get("status", "unknown"),
+                progress_percent=file_status.get("progress_percent", 0),
+                current_page=file_status.get("current_page", 0),
+                total_pages=file_status.get("total_pages", 0),
+                message=file_status.get("message"),
+                sub_stage=file_status.get("sub_stage"),
+                pdf_url=file_status.get("pdf_url"),
+            )
+
+        # Try memory for active jobs in the API process.
+        memory_job = job_manager.get_job(job_id)
+        if memory_job:
+            status_str = memory_job.status.value if hasattr(memory_job.status, 'value') else memory_job.status
+            return build_response(
+                job_id_value=memory_job.job_id,
+                filename=memory_job.filename,
+                status=status_str,
+                progress_percent=memory_job.progress_percent,
+                current_page=memory_job.current_page,
+                total_pages=memory_job.total_pages,
+                message=memory_job.message,
+                sub_stage=memory_job.sub_stage,
+                pdf_url=memory_job.pdf_url,
+            )
+
+        if db_job:
+            return build_response(
+                job_id_value=db_job.job_id,
+                filename=db_job.original_filename,
+                status=db_job.status,
+                progress_percent=db_job.progress_percent,
+                current_page=db_job.current_page,
+                total_pages=db_job.total_pages,
+                message=db_job.error_message,
+                created_at=db_job.created_at.isoformat() if db_job.created_at else None,
+                completed_at=db_job.completed_at.isoformat() if db_job.completed_at else None,
+                processing_time_seconds=db_job.processing_time_seconds,
+                total_text_blocks=db_job.total_text_blocks,
+                average_confidence=db_job.average_confidence,
+                is_double_column=db_job.is_double_column,
+            )
+
+        raise HTTPException(status_code=404, detail="Job not found")
     finally:
         db.close()
 
@@ -1390,10 +1584,21 @@ async def get_job_status(job_id: str):
 @router.get("/ocr-results/{job_id}")
 async def get_ocr_results(job_id: str):
     """Get OCR results for a job"""
-    ocr_json_path = Config.PROCESSED_DIR / f"{job_id}_ocr.json"
+    ocr_json_path = resolve_ocr_json_path(job_id)
 
-    if not ocr_json_path.exists():
-        raise HTTPException(status_code=404, detail="OCR results not found")
+    if not ocr_json_path:
+        db = SessionLocal()
+        try:
+            db_job = db.query(DBJob).filter_by(job_id=job_id).first()
+        finally:
+            db.close()
+
+        if db_job:
+            raise HTTPException(
+                status_code=404,
+                detail="OCR result file is missing for this job",
+            )
+        raise HTTPException(status_code=404, detail="Job not found")
 
     try:
         with open(ocr_json_path, 'r', encoding='utf-8') as f:
@@ -1407,9 +1612,9 @@ async def get_ocr_results(job_id: str):
 @router.get("/download-json/{job_id}")
 async def download_json(job_id: str):
     """Download OCR results as JSON file"""
-    ocr_json_path = Config.PROCESSED_DIR / f"{job_id}_ocr.json"
+    ocr_json_path = resolve_ocr_json_path(job_id)
 
-    if not ocr_json_path.exists():
+    if not ocr_json_path:
         raise HTTPException(status_code=404, detail="OCR results not found")
 
     return FileResponse(
@@ -1433,8 +1638,8 @@ async def save_ocr_edits(job_id: str, payload: dict):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
 
-        ocr_json_path = Config.PROCESSED_DIR / f"{job_id}_ocr.json"
-        if not ocr_json_path.exists():
+        ocr_json_path = resolve_ocr_json_path(job_id)
+        if not ocr_json_path:
             raise HTTPException(status_code=404, detail="OCR results not found")
 
         # Read current OCR results

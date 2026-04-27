@@ -63,7 +63,7 @@ class ReadingOrderSorter:
         column_info = self._detect_columns(ocr_blocks, page_width)
 
         if column_info.get('is_double_column'):
-            # Double column: left column top→bottom, then right column top→bottom
+            # 명확한 2단 컬럼: 왼쪽 컬럼 위→아래, 오른쪽 컬럼 위→아래
             boundary = column_info['boundary']
             left_blocks = [b for b in ocr_blocks if (b['bbox'][0] + b['bbox'][2]) / 2.0 < boundary]
             right_blocks = [b for b in ocr_blocks if (b['bbox'][0] + b['bbox'][2]) / 2.0 >= boundary]
@@ -72,9 +72,11 @@ class ReadingOrderSorter:
             sorted_blocks = left_blocks + right_blocks
             column_info['sorting_method'] = 'double_column_y'
         else:
-            # Single column: strict top→bottom, left→right
-            sorted_blocks = sorted(ocr_blocks, key=lambda b: (b['bbox'][1], b['bbox'][0]))
-            column_info['sorting_method'] = 'single_column_y'
+            # 단일/복합 레이아웃: 행(row) 클러스터링 후 각 행 내에서 왼→오른 정렬
+            # 단순 Y 정렬보다 정확 — 같은 높이의 블록들이 왼→오른 순으로 묶임
+            rows = self._cluster_into_rows(ocr_blocks)
+            sorted_blocks = self._sort_single_column(rows)
+            column_info['sorting_method'] = 'row_cluster_ltr'
 
         logger.info(
             f"Reading order sorted: {len(sorted_blocks)} blocks, "
@@ -422,3 +424,18 @@ class ReadingOrderSorter:
                 block['column'] = 'left' if center_x < boundary else 'right'
 
         return blocks
+
+    def sort_visual_left_to_right_top_to_bottom(self, blocks: List[Dict]) -> List[Dict]:
+        """
+        Sort blocks in visual order:
+        1. Top-to-bottom by clustered rows
+        2. Left-to-right within each row
+
+        This is used when the UI/text-layer numbering should follow
+        the visible page flow rather than semantic multi-column reading order.
+        """
+        if not blocks or len(blocks) < 2:
+            return blocks
+
+        rows = self._cluster_into_rows(blocks)
+        return self._sort_single_column(rows)

@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { ThemeProvider } from '@/contexts/ThemeContext'
+import { OcrActivityProvider } from '@/contexts/OcrActivityContext'
 
 export const metadata: Metadata = {
-  title: 'Futurenuri PDFix',
+  title: 'AI Doc Intelligence',
   description: 'Powerful multilingual OCR with searchable PDF generation',
 }
 
@@ -26,7 +27,9 @@ export default function RootLayout({
       </head>
       <body>
         <ThemeProvider>
-          {children}
+          <OcrActivityProvider>
+            {children}
+          </OcrActivityProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -27,6 +27,7 @@ from PyPDF2 import PdfMerger, PdfReader, PdfWriter
 from database import get_db, Session, SessionDocument, Job, SessionLocal, User
 from utils.file_utils import generate_unique_id
 from config import Config
+from utils.ocr_storage import load_ocr_results, resolve_ocr_json_path
 
 # Export status directory
 EXPORT_STATUS_DIR = Config.TEMP_DIR / "export_status"
@@ -79,6 +80,7 @@ class SessionResponse(BaseModel):
 class AddDocumentRequest(BaseModel):
     """Request to add a document to session"""
     job_id: str
+    doc_type: Optional[str] = None
 
 
 class UpdateSelectionRequest(BaseModel):
@@ -206,7 +208,7 @@ async def list_sessions(
 ):
     """List all sessions for a user"""
     try:
-        sessions = db.query(Session).filter_by(user_id=user_id).order_by(Session.updated_at.desc()).all()
+        sessions = db.query(Session).filter_by(user_id=user_id).order_by(Session.created_at.asc()).all()
 
         result = []
         for session in sessions:
@@ -442,6 +444,9 @@ async def add_document_to_session(
         )
 
         db.add(session_doc)
+        if request.doc_type is not None:
+            normalized_doc_type = request.doc_type.strip() or None
+            job.doc_type = normalized_doc_type
         session.updated_at = datetime.now()
         db.commit()
 
@@ -944,11 +949,7 @@ async def reorder_documents(
 
 def get_ocr_json(job_id: str) -> Optional[dict]:
     """Load OCR results from JSON file"""
-    json_path = Config.PROCESSED_DIR / f"{job_id}_ocr.json"
-    if not json_path.exists():
-        return None
-    with open(json_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    return load_ocr_results(job_id)
 
 
 def generate_txt_content(ocr_data: dict) -> str:
@@ -1143,8 +1144,8 @@ def do_multi_format_export(
                                 file_count += 1
 
                         elif fmt == 'json':
-                            json_path = Config.PROCESSED_DIR / f"{job_id}_ocr.json"
-                            if json_path.exists():
+                            json_path = resolve_ocr_json_path(job_id)
+                            if json_path and json_path.exists():
                                 zf.write(json_path, filename)
                                 file_count += 1
 

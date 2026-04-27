@@ -13,7 +13,7 @@ import {
   Upload
 } from 'lucide-react'
 
-const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5015'}/api`
+const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/api`
 
 type FileStatus = 'pending' | 'uploading' | 'processing' | 'completed' | 'failed'
 
@@ -22,9 +22,21 @@ interface QueueFile {
   file: File
   status: FileStatus
   progress: number
+  docType: string
   error?: string
   jobId?: string
 }
+
+const DEFAULT_DOC_TYPES = [
+  '영수증',
+  '계약서',
+  '보고서',
+  '공문서',
+  '명세서',
+  '신분증',
+  '인사서류',
+  '기타',
+]
 
 export interface ProcessingStats {
   total: number
@@ -51,8 +63,46 @@ export default function UploadQueueModal({ visible, onClose, onComplete, onProce
   const [queue, setQueue] = useState<QueueFile[]>([])
   const [isRunning, setIsRunning] = useState(false)
   const [isDone, setIsDone] = useState(false)
+  const [docTypeOptions, setDocTypeOptions] = useState<string[]>(DEFAULT_DOC_TYPES)
+  const [bulkDocType, setBulkDocType] = useState('')
+  const [hasFsApi, setHasFsApi] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setHasFsApi(typeof window !== 'undefined' && 'showOpenFilePicker' in window)
+  }, [])
+
+  useEffect(() => {
+    const loadDocTypeOptions = async () => {
+      try {
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+        const userId = currentUser.user_id || ''
+        if (!userId) {
+          setDocTypeOptions(DEFAULT_DOC_TYPES)
+          return
+        }
+
+        const res = await fetch(`${API_BASE}/metadata-v3/categories?user_id=${encodeURIComponent(userId)}`)
+        if (!res.ok) {
+          setDocTypeOptions(DEFAULT_DOC_TYPES)
+          return
+        }
+
+        const customTypes = (await res.json())
+          .map((item: { name?: string }) => (item.name || '').trim())
+          .filter(Boolean)
+
+        setDocTypeOptions(Array.from(new Set([...DEFAULT_DOC_TYPES, ...customTypes])))
+      } catch {
+        setDocTypeOptions(DEFAULT_DOC_TYPES)
+      }
+    }
+
+    if (visible) {
+      void loadDocTypeOptions()
+    }
+  }, [visible])
 
   useEffect(() => {
     if (!onProcessingChange) return
@@ -72,8 +122,22 @@ export default function UploadQueueModal({ visible, onClose, onComplete, onProce
     id: `${Date.now()}-${Math.random()}`,
     file,
     status: 'pending',
-    progress: 0
+    progress: 0,
+    docType: bulkDocType,
   })
+
+  const applyBulkDocType = (docType: string) => {
+    setBulkDocType(docType)
+    setQueue(prev => prev.map(file => (
+      file.status === 'pending' ? { ...file, docType } : file
+    )))
+  }
+
+  const updateFileDocType = (id: string, docType: string) => {
+    setQueue(prev => prev.map(file => (
+      file.id === id ? { ...file, docType } : file
+    )))
+  }
 
   const openFilePicker = async () => {
     if (isRunning) return
@@ -144,9 +208,10 @@ export default function UploadQueueModal({ visible, onClose, onComplete, onProce
     setIsRunning(true)
 
     let sessionId: string
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+    const userId = currentUser.user_id || ''
     try {
-      const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
-      const res = await fetch(`${API_BASE}/sessions?user_id=${currentUser.user_id || ''}`, {
+      const res = await fetch(`${API_BASE}/sessions?user_id=${encodeURIComponent(userId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_name: sessionName, description: '' })
@@ -164,7 +229,10 @@ export default function UploadQueueModal({ visible, onClose, onComplete, onProce
         updateFile(qf.id, { status: 'uploading', progress: 0 })
         const jobId = await new Promise<string>((resolve, reject) => {
           const xhr = new XMLHttpRequest()
-          xhr.open('POST', `${API_BASE}/upload`)
+          const params = new URLSearchParams()
+          if (userId) params.set('user_id', userId)
+          if (qf.docType) params.set('doc_type', qf.docType)
+          xhr.open('POST', `${API_BASE}/upload?${params.toString()}`)
           xhr.upload.onprogress = e => {
             if (e.lengthComputable)
               updateFile(qf.id, { progress: Math.round((e.loaded / e.total) * 50) })
@@ -187,7 +255,7 @@ export default function UploadQueueModal({ visible, onClose, onComplete, onProce
         await fetch(`${API_BASE}/sessions/${sessionId}/documents`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ job_id: jobId })
+          body: JSON.stringify({ job_id: jobId, doc_type: qf.docType || null })
         })
         await fetch(`${API_BASE}/process/${jobId}`, { method: 'POST' })
         await pollStatus(jobId, qf.id)
@@ -208,8 +276,6 @@ export default function UploadQueueModal({ visible, onClose, onComplete, onProce
   const completedCount = queue.filter(f => f.status === 'completed').length
   const failedCount = queue.filter(f => f.status === 'failed').length
   const allDoneOrFailed = queue.length > 0 && queue.every(f => f.status === 'completed' || f.status === 'failed')
-  const hasFsApi = typeof window !== 'undefined' && 'showOpenFilePicker' in window
-
   return (
     <div className={`fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 ${visible ? '' : 'hidden'}`}>
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden" style={{ height: '90vh' }}>
@@ -258,6 +324,22 @@ export default function UploadQueueModal({ visible, onClose, onComplete, onProce
 
         {/* File select button */}
         <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700">
+          <div className="mb-3 flex items-center gap-3">
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+              일괄 카테고리
+            </label>
+            <select
+              value={bulkDocType}
+              onChange={e => applyBulkDocType(e.target.value)}
+              disabled={isRunning || queue.length === 0}
+              className="flex-1 px-3 py-2 text-sm border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 disabled:opacity-60"
+            >
+              <option value="">카테고리 미지정</option>
+              {docTypeOptions.map(option => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </div>
           {hasFsApi ? (
             <button
               onClick={openFilePicker}
@@ -319,6 +401,19 @@ export default function UploadQueueModal({ visible, onClose, onComplete, onProce
                             <X className="w-3.5 h-3.5" />
                           </button>
                         )}
+                      </div>
+                      <div className="mt-2">
+                        <select
+                          value={qf.docType}
+                          onChange={e => updateFileDocType(qf.id, e.target.value)}
+                          disabled={isRunning || qf.status !== 'pending'}
+                          className="w-full px-3 py-2 text-xs border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 disabled:opacity-60"
+                        >
+                          <option value="">카테고리 미지정</option>
+                          {docTypeOptions.map(option => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
                       </div>
                       <p className="text-xs text-gray-400 mt-0.5">
                         {formatBytes(qf.file.size)}

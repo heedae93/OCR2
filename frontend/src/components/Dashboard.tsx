@@ -51,7 +51,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [bgStats, setBgStats] = useState<{ total: number; completed: number; failed: number; isRunning: boolean } | null>(null)
 
-  const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5015'}/api`
+  const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/api`
 
   useEffect(() => {
     fetchData()

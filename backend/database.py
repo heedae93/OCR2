@@ -1,7 +1,7 @@
 """
 SQLite database setup and models using SQLAlchemy
 """
-from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, text
+from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, text, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -22,8 +22,8 @@ if DATABASE_URL.startswith("sqlite"):
 else:
     # PostgreSQL: 커넥션 풀 제한 (too many clients 방지)
     engine_args["pool_recycle"] = 1800   # 30분마다 커넥션 갱신
-    engine_args["pool_size"] = 5         # 최대 풀 크기
-    engine_args["max_overflow"] = 5      # 초과 허용 커넥션 수
+    engine_args["pool_size"] = 20        # 최대 풀 크기
+    engine_args["max_overflow"] = 20     # 초과 허용 커넥션 수
     engine_args["pool_timeout"] = 30     # 커넥션 대기 타임아웃(초)
 
 engine = create_engine(DATABASE_URL, **engine_args)
@@ -33,6 +33,20 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Base class for models
 Base = declarative_base()
+
+
+class PermissionGroup(Base):
+    """User permission group model"""
+    __tablename__ = "permission_groups"
+
+    group_key = Column(String(100), primary_key=True)
+    group_name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    masking_access_level = Column(String(20), default="masked")  # masked, original
+    masking_field_keys = Column(Text, default="[]")
+    is_system = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
 class User(Base):
@@ -47,6 +61,8 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.now)
     last_login = Column(DateTime, nullable=True)
     type = Column(String(1), default="U")  # A: Admin, U: User
+    permission_group = Column(String(100), default="default")
+    masking_access_level = Column(String(20), default="masked")  # masked, original
     total_jobs = Column(Integer, default=0)
     storage_used_bytes = Column(Integer, default=0)
 
@@ -107,6 +123,8 @@ class Job(Base):
     char_count = Column(Integer, nullable=True)
     word_count = Column(Integer, nullable=True)
     extracted_fields = Column(Text, nullable=True)   # JSON: NER 추출 KV 쌍 목록
+    summary = Column(Text, nullable=True)            # JSON/Text: LLM 요약본
+    citations = Column(Text, nullable=True)          # JSON: 추출된 인용문 및 웹 검색 출처 결과
 
     # Relationships
     user = relationship("User", back_populates="jobs")
@@ -250,7 +268,7 @@ class DocumentCategory(Base):
 
 
 class CustomMaskingField(Base):
-    """사용자 커스텀 마스킹 필드 정의"""
+    """사용자 커스텀 필드 정의 (구 마스킹 필드)"""
     __tablename__ = "custom_masking_fields"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -262,6 +280,52 @@ class CustomMaskingField(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+# ============================================================
+# 신규: 메타데이터 관리 전용 테이블
+# ============================================================
+
+class MetadataFieldDefinition(Base):
+    """추출 가능한 메타데이터 필드 정의"""
+    __tablename__ = "metadata_field_definitions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), index=True)
+    field_key = Column(String(50), nullable=False)  # 예: 'title', 'amount'
+    label = Column(String(100), nullable=False)    # 예: '문서 제목', '결제 금액'
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class ExtractionRule(Base):
+    """문서 유형별 추출 필드 연결 규칙"""
+    __tablename__ = "extraction_rules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), index=True)
+    doc_type = Column(String(100), nullable=False)  # 예: '영수증'
+    field_id = Column(Integer, ForeignKey("metadata_field_definitions.id", ondelete="CASCADE"))
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    field = relationship("MetadataFieldDefinition")
+
+
+class DocumentMetadataValue(Base):
+    """실제 추출된 메타데이터 결과 값 (문서당 여러 행)"""
+    __tablename__ = "document_metadata_values"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String(36), ForeignKey("jobs.job_id", ondelete="CASCADE"), index=True)
+    field_key = Column(String(50), nullable=False)   # 영문 키 (복제 보관)
+    label = Column(String(100), nullable=True)      # 한글 필드명 (스냅샷 저장)
+    field_value = Column(Text, nullable=True)
+    confidence = Column(Float, nullable=True)
+    page_number = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    job = relationship("Job")
+
+
 def init_db():
     """Initialize database and create tables"""
     try:
@@ -269,32 +333,104 @@ def init_db():
         Base.metadata.create_all(bind=engine)
         logger.info(f"Database initialized at {DATABASE_URL}")
 
-        # 기존 DB에 새 컬럼 추가 (없는 경우에만)
-        # with engine.connect() as conn:
-        #     for col_sql, col_name in [
-        #         ("ALTER TABLE jobs ADD COLUMN extracted_fields TEXT", "jobs.extracted_fields"),
-        #         ("ALTER TABLE metadata_settings ADD COLUMN extract_ner BOOLEAN DEFAULT 0", "metadata_settings.extract_ner"),
-        #     ]:
-        #         try:
-        #             conn.execute(text(col_sql))
-        #             conn.commit()
-        #             logger.info(f"DB migration: {col_name} 컬럼 추가 완료")
-        #         except Exception:
-        #             pass  # 이미 존재하면 무시
+        inspector = inspect(engine)
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+        migration_statements = []
+
+        if "permission_group" not in user_columns:
+            migration_statements.append(
+                text("ALTER TABLE users ADD COLUMN permission_group VARCHAR(100) DEFAULT 'default'")
+            )
+        if "masking_access_level" not in user_columns:
+            migration_statements.append(
+                text("ALTER TABLE users ADD COLUMN masking_access_level VARCHAR(20) DEFAULT 'masked'")
+            )
+        group_columns = {column["name"] for column in inspector.get_columns("permission_groups")}
+        if "masking_field_keys" not in group_columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE permission_groups ADD COLUMN masking_field_keys TEXT DEFAULT '[]'")
+                )
+            logger.info("Applied permission group masking field migration")
+
+        if migration_statements:
+            with engine.begin() as connection:
+                for statement in migration_statements:
+                    connection.execute(statement)
+            logger.info("Applied user permission schema migration")
 
         # Create default user if not exists
         db = SessionLocal()
         try:
+            default_groups = [
+                {
+                    "group_key": "default",
+                    "group_name": "기본 그룹",
+                    "description": "기본 사용자 그룹",
+                    "masking_access_level": "masked",
+                    "masking_field_keys": '["title","date","amount","vendor","address","person"]',
+                    "is_system": True,
+                },
+                {
+                    "group_key": "admins",
+                    "group_name": "관리자 그룹",
+                    "description": "관리자 및 원본 열람 가능 그룹",
+                    "masking_access_level": "original",
+                    "masking_field_keys": '["title","date","amount","vendor","address","person"]',
+                    "is_system": True,
+                },
+            ]
+            for group_data in default_groups:
+                existing_group = db.query(PermissionGroup).filter_by(group_key=group_data["group_key"]).first()
+                if not existing_group:
+                    db.add(PermissionGroup(**group_data))
+            db.commit()
+
+            known_groups = {group.group_key for group in db.query(PermissionGroup).all()}
+            users_updated = False
+            for existing_user in db.query(User).all():
+                if not existing_user.permission_group:
+                    existing_user.permission_group = "default"
+                    users_updated = True
+                if not existing_user.masking_access_level:
+                    existing_user.masking_access_level = "masked"
+                    users_updated = True
+                if existing_user.permission_group not in known_groups:
+                    db.add(PermissionGroup(
+                        group_key=existing_user.permission_group,
+                        group_name=existing_user.permission_group,
+                        description="기존 사용자 데이터에서 자동 생성된 그룹",
+                        masking_access_level=existing_user.masking_access_level or "masked",
+                        masking_field_keys='["title","date","amount","vendor","address","person"]',
+                        is_system=False,
+                    ))
+                    known_groups.add(existing_user.permission_group)
+                    users_updated = True
+            if users_updated:
+                db.commit()
+
             default_user = db.query(User).filter_by(user_id=Config.DEFAULT_USER_ID).first()
             if not default_user:
                 default_user = User(
                     user_id=Config.DEFAULT_USER_ID,
                     username=Config.DEFAULT_USER_NAME,
-                    email=Config.DEFAULT_USER_EMAIL
+                    email=Config.DEFAULT_USER_EMAIL,
+                    permission_group="admins",
+                    masking_access_level="original",
                 )
                 db.add(default_user)
                 db.commit()
                 logger.info(f"Default user created: {Config.DEFAULT_USER_ID}")
+            else:
+                changed = False
+                if not default_user.permission_group:
+                    default_user.permission_group = "admins"
+                    changed = True
+                if not default_user.masking_access_level:
+                    default_user.masking_access_level = "original"
+                    changed = True
+                if changed:
+                    db.commit()
 
             # Create default session if not exists
             default_session = db.query(Session).filter_by(session_id="default").first()

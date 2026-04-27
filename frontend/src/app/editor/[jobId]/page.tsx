@@ -61,6 +61,7 @@ export default function EditorPage() {
 
   const [job, setJob] = useState<Job | null>(null);
   const [ocrResults, setOcrResults] = useState<OCRResult | null>(null);
+  const [ocrLoadError, setOcrLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -180,15 +181,29 @@ export default function EditorPage() {
 
     const fetchData = async () => {
       try {
+        setOcrLoadError(null);
         const jobData = await getJobStatus(jobId);
         setJob(jobData);
 
         if (jobData.status === "completed") {
-          const ocr = await getOCRResults(jobId);
-          setOcrResults(ocr);
-          setIsProcessingOCR(false);
-          setShowProgressOverlay(false);
-          setOcrProgress(100);
+          try {
+            const ocr = await getOCRResults(jobId);
+            setOcrResults(ocr);
+            setIsProcessingOCR(false);
+            setShowProgressOverlay(false);
+            setOcrProgress(100);
+          } catch (error: any) {
+            console.error("Failed to load OCR results:", error);
+            setOcrResults(null);
+            setIsProcessingOCR(false);
+            setShowProgressOverlay(false);
+            setOcrLoadError(
+              error?.response?.data?.detail || "OCR 결과를 불러오지 못했습니다.",
+            );
+            if (intervalId) {
+              clearInterval(intervalId);
+            }
+          }
 
           // Stop polling when completed
           if (intervalId) {
@@ -245,6 +260,18 @@ export default function EditorPage() {
       }
     };
   }, [jobId]);
+
+  // 브라우저 탭 타이틀을 파일명으로 업데이트
+  useEffect(() => {
+    if (job?.filename) {
+      document.title = `${job.filename} — AI Doc Intelligence`;
+    } else {
+      document.title = "AI Doc Intelligence";
+    }
+    return () => {
+      document.title = "AI Doc Intelligence";
+    };
+  }, [job?.filename]);
 
   const handleStartOCR = async () => {
     try {
@@ -669,6 +696,35 @@ export default function EditorPage() {
     );
   }
 
+  if (job.status === "completed" && !ocrResults && ocrLoadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background-light dark:bg-background-dark">
+        <div className="max-w-lg rounded-2xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark p-8 text-center shadow-sm">
+          <p className="mb-3 text-xl font-semibold text-text-primary-light dark:text-text-primary-dark">
+            OCR 결과를 열 수 없습니다
+          </p>
+          <p className="mb-6 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+            {ocrLoadError}
+          </p>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => router.push("/jobs")}
+              className="rounded-lg bg-primary px-5 py-2 text-white hover:bg-primary/90"
+            >
+              작업 목록으로 이동
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="rounded-lg border border-border-light px-5 py-2 text-text-primary-light hover:bg-black/5 dark:border-border-dark dark:text-text-primary-dark dark:hover:bg-white/10"
+            >
+              다시 시도
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Show editor for queued and completed status
   const hasOCRResults = job.status === "completed" && ocrResults;
 
@@ -724,16 +780,23 @@ export default function EditorPage() {
                 document_scanner
               </span>
               <h1 className="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">
-                Futurenuri PDFix
+                AI Doc Intelligence
               </h1>
             </button>
-            <div className="hidden md:flex items-center gap-2">
-              <span className="material-symbols-outlined text-text-secondary-light dark:text-text-secondary-dark">
+            <div className="hidden md:flex items-center gap-2 max-w-xs">
+              <span className="material-symbols-outlined text-text-secondary-light dark:text-text-secondary-dark flex-shrink-0">
                 description
               </span>
-              <span className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">
-                {jobId.substring(0, 12)}...
-              </span>
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark truncate leading-tight" title={job?.filename || jobId}>
+                  {job?.filename || `${jobId.substring(0, 12)}...`}
+                </span>
+                {hasOCRResults && (
+                  <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark leading-tight">
+                    {currentPage} / {totalPdfPages || ocrResults?.page_count || "?"} 페이지
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex flex-1 items-center justify-end gap-3 sm:gap-4">
@@ -793,6 +856,27 @@ export default function EditorPage() {
             <ThemeToggle />
             <div className="h-6 w-px bg-border-light dark:bg-border-dark"></div>
             <div className="flex items-center gap-1 sm:gap-2">
+              <button
+                onClick={async () => {
+                  if (!confirm('OCR을 다시 처리하시겠습니까?\n기존 결과가 초기화됩니다.')) return
+                  try {
+                    await processJob(jobId)
+                    setIsProcessingOCR(true)
+                    setShowProgressOverlay(true)
+                    setOcrProgress(0)
+                    setOcrCurrentPage(0)
+                    setOcrStage('OCR 재처리 시작...')
+                  } catch (e) {
+                    alert('재처리 요청에 실패했습니다.')
+                  }
+                }}
+                disabled={isProcessingOCR}
+                className="flex h-9 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg bg-transparent px-3 text-sm font-medium text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="OCR 재처리"
+              >
+                <span className="material-symbols-outlined text-xl">refresh</span>
+                <span className="hidden sm:inline">재처리</span>
+              </button>
               <button
                 onClick={() => setShowDataViewer(true)}
                 disabled={!ocrResults}

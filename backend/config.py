@@ -23,12 +23,12 @@ class Config:
 
     # Server settings
     BACKEND_HOST = os.getenv("BACKEND_HOST", "0.0.0.0")
-    BACKEND_PORT = int(os.getenv("BACKEND_PORT", "5015"))
+    BACKEND_PORT = int(os.getenv("BACKEND_PORT", "6015"))
     FRONTEND_HOST = "0.0.0.0"
-    FRONTEND_PORT = 5017
+    FRONTEND_PORT = 6017
     CORS_ORIGINS = [
-        "http://localhost:5017",
-        "http://127.0.0.1:5017",
+        "http://localhost:6017",
+        "http://127.0.0.1:6017",
     ]
 
     # Database settings
@@ -54,7 +54,7 @@ class Config:
     OCR_ENABLE_LINE_MERGE = False
     OCR_ENGINE = "pp_structure"
     OCR_PPSTRUCTURE_LAYOUT_MODEL = "PP-DocLayout-L"
-    OCR_PPSTRUCTURE_REC_MODEL = "PP-OCRv5_server_rec"
+    OCR_PPSTRUCTURE_REC_MODEL = "korean_PP-OCRv5_mobile_rec"
     OCR_PPSTRUCTURE_TABLE_MODEL = "SLANet_plus"
     OCR_PPSTRUCTURE_WIRELESS_TABLE_MODEL = "SLANet"
     OCR_PPSTRUCTURE_USE_TABLE_RECOGNITION = True
@@ -74,7 +74,7 @@ class Config:
 
     # Table Transformer settings
     # backend: slanet | table_transformer | hybrid
-    OCR_TABLE_BACKEND = "hybrid"
+    OCR_TABLE_BACKEND = "slanet"
     TABLE_TRANSFORMER_DET_MODEL = "microsoft/table-transformer-detection"
     TABLE_TRANSFORMER_STR_MODEL = (
         "microsoft/table-transformer-structure-recognition-v1.1-all"
@@ -120,6 +120,18 @@ class Config:
     COLUMN_DEBUG_OUTPUT = True
     COLUMN_CONFIDENCE_THRESHOLD = 0.05
     COLUMN_MIN_BLOCKS = 4
+
+    # LLM & Web Search (EXAONE)
+    LLM_ENABLED = True
+    LLM_API_URL = "http://211.233.58.220:8079"
+    LLM_MODEL_NAME = "exaone3.5:latest"
+    LLM_ENABLE_WEB_SEARCH = True
+
+    # Redis settings (Celery broker)
+    REDIS_URL = "redis://localhost:6379/0"
+
+    # Job timeout (seconds) — worker가 이 시간 안에 완료 못 하면 failed 처리
+    JOB_TIMEOUT_SECONDS = 1800  # 30분
 
     # User settings
     DEFAULT_USER_ID = "user001"
@@ -284,10 +296,23 @@ class Config:
             cls.DEFAULT_USER_NAME = user.get("default_name", cls.DEFAULT_USER_NAME)
             cls.DEFAULT_USER_EMAIL = user.get("default_email", cls.DEFAULT_USER_EMAIL)
 
+        # Update LLM settings
+        if "llm_integration" in config_data:
+            llm = config_data["llm_integration"]
+            cls.LLM_ENABLED = llm.get("enabled", cls.LLM_ENABLED)
+            cls.LLM_API_URL = llm.get("api_url", cls.LLM_API_URL)
+            cls.LLM_MODEL_NAME = llm.get("model_name", cls.LLM_MODEL_NAME)
+            cls.LLM_ENABLE_WEB_SEARCH = llm.get("enable_web_search", cls.LLM_ENABLE_WEB_SEARCH)
+
         # Update database settings
         if "database" in config_data:
             db_config = config_data["database"]
             cls.DATABASE_URL = db_config.get("url", cls.DATABASE_URL)
+
+        # Update Redis settings
+        if "redis" in config_data:
+            cls.REDIS_URL = config_data["redis"].get("url", cls.REDIS_URL)
+            cls.JOB_TIMEOUT_SECONDS = int(config_data["redis"].get("job_timeout_seconds", cls.JOB_TIMEOUT_SECONDS))
 
         # Update server settings
         if "server" in config_data:

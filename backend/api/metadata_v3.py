@@ -2,7 +2,7 @@
 메타데이터 관리 v3 API
 - 처리 완료된 문서의 메타데이터 조회 / 검색 / 편집
 - RAG 검색을 위한 문서 메타데이터 브라우저
-- 문서 유형별 자동 마스킹 규칙 설정
+- 문서 유형별 자동 추출 메타데이터 필드 설정 (추출 규칙)
 """
 import json
 import logging
@@ -15,18 +15,18 @@ from pydantic import BaseModel
 from sqlalchemy import Column, String, Integer, Text, DateTime
 from sqlalchemy.orm import Session
 
-from database import Base, engine, get_db, Job, DocumentChunk, DocumentCategory, CustomMaskingField
+from database import Base, engine, get_db, Job, DocumentChunk, DocumentCategory, CustomMaskingField, MetadataFieldDefinition, ExtractionRule, DocumentMetadataValue
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 # ============================================================
-# DB 모델 — 문서 유형별 마스킹 규칙
+# DB 모델 — 문서 유형별 추출 필드 설정
 # ============================================================
 
 class MaskingRuleModel(Base):
-    """문서 유형별 자동 마스킹 규칙"""
+    """문서 유형별 자동 추출 메타데이터 필드 설정"""
     __tablename__ = "masking_rules_v3"
     __table_args__ = {"extend_existing": True}
 
@@ -62,6 +62,8 @@ class DocumentMeta(BaseModel):
     tags: Optional[List[str]]
     notes: Optional[str]
     chunk_count: int
+    summary: Optional[str]
+    citations: Optional[List[dict]]
     created_at: str
     completed_at: Optional[str]
 
@@ -91,7 +93,7 @@ class StatsResponse(BaseModel):
 
 class MaskingRuleUpsert(BaseModel):
     doc_type: str
-    pii_types: List[str]  # ["rrn", "phone", "email", "card", "address", "name"]
+    pii_types: List[str]  # ["title", "date", "amount", "vendor", "address", "person"]
 
 
 # ============================================================
@@ -116,7 +118,77 @@ def _parse_extracted_fields(value: Optional[str]) -> List[dict]:
         return []
 
 
-def _job_to_meta(job: Job, chunk_count: int) -> dict:
+def _build_fallback_extracted_fields(job: Job) -> List[dict]:
+    items: List[dict] = []
+
+    if job.doc_type:
+        items.append({
+            "key": "문서유형",
+            "value": job.doc_type,
+            "entity_type": "DOC_TYPE",
+            "entity_type_ko": "문서유형",
+        })
+
+    if job.detected_language:
+        items.append({
+            "key": "언어",
+            "value": job.detected_language,
+            "entity_type": "LANGUAGE",
+            "entity_type_ko": "언어",
+        })
+
+    for date in _parse_json_field(job.detected_dates)[:3]:
+        if date:
+            items.append({
+                "key": "날짜",
+                "value": date,
+                "entity_type": "DATE",
+                "entity_type_ko": "날짜",
+            })
+
+    for keyword in _parse_json_field(job.keywords)[:5]:
+        if keyword:
+            items.append({
+                "key": "키워드",
+                "value": keyword,
+                "entity_type": "KEYWORD",
+                "entity_type_ko": "키워드",
+            })
+
+    return items
+
+
+def _job_to_meta(job: Job, chunk_count: int, db: Optional[Session] = None,
+                 allowed_field_keys: Optional[set] = None) -> dict:
+    # 신규 테이블 방식 데이터
+    structured_metadata = []
+    if db:
+        rows = db.query(DocumentMetadataValue).filter_by(job_id=job.job_id).all()
+        structured_metadata = [
+            {
+                "key": r.field_key,
+                "label": r.label,
+                "value": r.field_value,
+                "confidence": r.confidence,
+                "page_number": r.page_number
+            }
+            for r in rows
+        ]
+
+    # 기존 JSON 방식 데이터 (호환성 유지)
+    extracted_fields_json = _parse_extracted_fields(getattr(job, "extracted_fields", None))
+
+    if structured_metadata:
+        raw_fields = structured_metadata
+    elif extracted_fields_json:
+        raw_fields = extracted_fields_json
+    else:
+        raw_fields = _build_fallback_extracted_fields(job)
+
+    # 추출 설정에 정의된 필드만 표시 (allowed_field_keys 가 전달된 경우)
+    if allowed_field_keys is not None:
+        raw_fields = [f for f in raw_fields if f.get("key") in allowed_field_keys]
+
     return {
         "job_id": job.job_id,
         "original_filename": job.original_filename,
@@ -135,7 +207,9 @@ def _job_to_meta(job: Job, chunk_count: int) -> dict:
         "tags": _parse_json_field(job.tags),
         "notes": job.notes,
         "chunk_count": chunk_count,
-        "extracted_fields": _parse_extracted_fields(getattr(job, "extracted_fields", None)),
+        "extracted_fields": raw_fields,
+        "summary": job.summary,
+        "citations": _parse_extracted_fields(getattr(job, "citations", None)),
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
     }
@@ -236,7 +310,20 @@ def list_documents(
         for row in rows:
             chunk_counts[row.job_id] = chunk_counts.get(row.job_id, 0) + 1
 
-    items = [_job_to_meta(j, chunk_counts.get(j.job_id, 0)) for j in jobs]
+    # 문서 유형별 허용 필드 키 맵 {doc_type: set(field_key)}
+    rules = db.query(ExtractionRule).filter_by(user_id=user_id, is_active=True).all()
+    allowed_by_doc_type: dict = {}
+    for rule in rules:
+        if rule.field:
+            allowed_by_doc_type.setdefault(rule.doc_type, set()).add(rule.field.field_key)
+
+    def _allowed_keys(doc_type: Optional[str]) -> Optional[set]:
+        if doc_type and doc_type in allowed_by_doc_type:
+            return allowed_by_doc_type[doc_type]
+        # 설정된 규칙이 없으면 None → 필터링 안 함
+        return None
+
+    items = [_job_to_meta(j, chunk_counts.get(j.job_id, 0), db, _allowed_keys(j.doc_type)) for j in jobs]
 
     return {
         "total": total,
@@ -307,22 +394,65 @@ def patch_document(
 
 
 # ============================================================
-# 마스킹 규칙 API
+# 추출 규칙 API (전용 테이블 활용 버전)
 # ============================================================
+
+def _ensure_default_fields(user_id: str, db: Session):
+    """기본 메타데이터 필드 정의가 없으면 생성"""
+    defaults = [
+        {"key": "title",   "label": "제목"},
+        {"key": "date",    "label": "날짜"},
+        {"key": "amount",  "label": "금액"},
+        {"key": "vendor",  "label": "업체/기관명"},
+        {"key": "address", "label": "주소"},
+        {"key": "person",  "label": "인명"},
+    ]
+    for d in defaults:
+        exists = db.query(MetadataFieldDefinition).filter_by(user_id=user_id, field_key=d["key"]).first()
+        if not exists:
+            db.add(MetadataFieldDefinition(user_id=user_id, field_key=d["key"], label=d["label"]))
+    db.commit()
+
+
+def _ensure_default_categories(user_id: str, db: Session):
+    """Ensure default categories exist"""
+    defaults = ["공문서", "계약서", "보고서", "학술논문", "법령문서", "회의록", "영수증", "신분증", "기타", "미분류"]
+    for name in defaults:
+        exists = db.query(DocumentCategory).filter_by(user_id=user_id, name=name).first()
+        if not exists:
+            db.add(DocumentCategory(user_id=user_id, name=name))
+    db.commit()
+
+
+def _is_korean_doc_category(name: str) -> bool:
+    """한글/숫자/공백/일부 구분자만 허용하고 영문 카테고리는 제외"""
+    if not name:
+        return False
+    # ASCII 알파벳 포함 시 영어 카테고리로 간주
+    if any(('a' <= ch.lower() <= 'z') for ch in name):
+        return False
+    return True
+
 
 @router.get("/metadata-v3/masking-rules")
 def get_masking_rules(
     user_id: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    """문서 유형별 마스킹 규칙 전체 조회 → {doc_type: [pii_type, ...]}"""
-    rules = db.query(MaskingRuleModel).filter_by(user_id=user_id).all()
+    """문서 유형별 추출 필드 목록 전체 조회 (신규 테이블 기반)"""
+    _ensure_default_fields(user_id, db)
+    
+    # 1. 모든 규칙 조회
+    rules = db.query(ExtractionRule).filter_by(user_id=user_id, is_active=True).all()
+    
+    # 2. 결과 구조화: {doc_type: [field_key, ...]}
     result = {}
     for rule in rules:
-        try:
-            result[rule.doc_type] = json.loads(rule.pii_types or "[]")
-        except Exception:
+        if rule.doc_type not in result:
             result[rule.doc_type] = []
+        if rule.field:
+            result[rule.doc_type].append(rule.field.field_key)
+            
     return result
 
 
@@ -332,20 +462,33 @@ def upsert_masking_rule(
     user_id: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    """특정 문서 유형의 마스킹 규칙 저장 (없으면 생성, 있으면 업데이트)"""
-    rule = db.query(MaskingRuleModel).filter_by(user_id=user_id, doc_type=body.doc_type).first()
-    if rule:
-        rule.pii_types = json.dumps(body.pii_types, ensure_ascii=False)
-        rule.updated_at = datetime.now()
-    else:
-        rule = MaskingRuleModel(
+    """특정 문서 유형의 추출 대상 필드 저장 (신규 테이블 기반)"""
+    _ensure_default_fields(user_id, db)
+    
+    # 1. 기존 해당 doc_type의 모든 규칙 삭제 (단순화를 위해)
+    db.query(ExtractionRule).filter_by(user_id=user_id, doc_type=body.doc_type).delete()
+    
+    # 2. 새 필드 리스트를 바탕으로 규칙 생성
+    for field_key in body.pii_types:
+        # 필드 정의가 있는지 확인
+        field_def = db.query(MetadataFieldDefinition).filter_by(user_id=user_id, field_key=field_key).first()
+        if not field_def:
+            # 커스텀 필드일 가능성 있음 -> 새로 정의
+            field_def = MetadataFieldDefinition(user_id=user_id, field_key=field_key, label=field_key)
+            db.add(field_def)
+            db.commit()
+            db.refresh(field_def)
+        
+        # 규칙 추가
+        new_rule = ExtractionRule(
             user_id=user_id,
             doc_type=body.doc_type,
-            pii_types=json.dumps(body.pii_types, ensure_ascii=False),
+            field_id=field_def.id
         )
-        db.add(rule)
+        db.add(new_rule)
+    
     db.commit()
-    logger.info(f"[MaskingRule] {user_id}/{body.doc_type} → {body.pii_types}")
+    logger.info(f"[ExtractionRule-Structured] {user_id}/{body.doc_type} → {body.pii_types}")
     return {"doc_type": body.doc_type, "pii_types": body.pii_types}
 
 
@@ -361,16 +504,27 @@ class CustomFieldCreate(BaseModel):
     pattern: Optional[str] = None
     description: Optional[str] = None
 
+
+class CustomFieldUpdate(BaseModel):
+    label: Optional[str] = None
+    pattern: Optional[str] = None
+    description: Optional[str] = None
+
 @router.get("/metadata-v3/categories")
 def get_categories(user_id: str = Query(...), db: Session = Depends(get_db)):
     """사용자가 추가한 커스텀 카테고리 목록 조회"""
+    _ensure_default_categories(user_id, db)
     cats = db.query(DocumentCategory).filter_by(user_id=user_id).order_by(DocumentCategory.created_at).all()
+    cats = [c for c in cats if _is_korean_doc_category(c.name)]
     return [{"id": c.id, "name": c.name} for c in cats]
 
 @router.post("/metadata-v3/categories")
 def create_category(body: CategoryCreate, user_id: str = Query(...), db: Session = Depends(get_db)):
     """커스텀 카테고리 추가"""
-    cat = DocumentCategory(user_id=user_id, name=body.name)
+    normalized_name = (body.name or "").strip()
+    if not _is_korean_doc_category(normalized_name):
+        raise HTTPException(status_code=400, detail="문서 카테고리는 한글로 입력해주세요.")
+    cat = DocumentCategory(user_id=user_id, name=normalized_name)
     db.add(cat)
     db.commit()
     db.refresh(cat)
@@ -413,6 +567,34 @@ def create_custom_field(body: CustomFieldCreate, user_id: str = Query(...), db: 
         description=body.description
     )
     db.add(cf)
+    db.commit()
+    db.refresh(cf)
+    return {
+        "id": cf.id,
+        "field_key": cf.field_key,
+        "label": cf.label,
+        "pattern": cf.pattern,
+        "description": cf.description
+    }
+
+
+@router.put("/metadata-v3/custom-fields/{field_id}")
+def update_custom_field(field_id: int, body: CustomFieldUpdate, user_id: str = Query(...), db: Session = Depends(get_db)):
+    """커스텀 마스킹 필드 수정"""
+    cf = db.query(CustomMaskingField).filter_by(id=field_id, user_id=user_id).first()
+    if not cf:
+        raise HTTPException(status_code=404, detail="Custom masking field not found.")
+
+    if body.label is not None:
+        normalized_label = (body.label or "").strip()
+        if not normalized_label:
+            raise HTTPException(status_code=400, detail="label is required.")
+        cf.label = normalized_label
+    if body.pattern is not None:
+        cf.pattern = body.pattern
+    if body.description is not None:
+        cf.description = body.description
+
     db.commit()
     db.refresh(cf)
     return {

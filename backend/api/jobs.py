@@ -36,8 +36,12 @@ async def list_jobs(
         offset: Offset for pagination
     """
     logger.info(f"list_jobs called: user_id={user_id}, status={status}, search={search}")
+    print(f"\n[DEBUG] list_jobs called with user_id: '{user_id}'")
     try:
         query = db.query(Job).filter(Job.user_id == user_id)
+        total_in_db = db.query(Job).count()
+        count_for_user = query.count()
+        print(f"[DEBUG] Total jobs in DB: {total_in_db}, Jobs for user '{user_id}': {count_for_user}")
         logger.info(f"Created query for user_id={user_id}")
 
         # Filter by status
@@ -57,17 +61,37 @@ async def list_jobs(
 
         # Convert to response format
         job_responses = []
+        from utils.job_manager import JobManager
         for job in jobs:
+            status = job.status
+            progress_percent = job.progress_percent or 0
+            current_page = job.current_page or 0
+            total_pages = job.total_pages or 0
+            message = job.error_message if job.status == "failed" else None
+
+            # Prefer file-based status for active jobs (and check for recent failures/completions)
+            file_status = JobManager.read_status_from_file(job.job_id)
+            if file_status:
+                file_state = file_status.get("status")
+                # If file status is different from DB, or if it's currently active, use file status
+                if job.status in ("processing", "queued", "pending") or file_state in ("failed", "completed"):
+                    status = file_state or status
+                    progress_percent = file_status.get("progress_percent", progress_percent)
+                    current_page = file_status.get("current_page", current_page)
+                    total_pages = file_status.get("total_pages", total_pages)
+                    if status == "failed":
+                        message = file_status.get("message", message)
+
             job_responses.append(JobResponse(
                 job_id=job.job_id,
                 filename=job.original_filename,
-                status=job.status,
-                progress_percent=job.progress_percent,
-                current_page=job.current_page,
-                total_pages=job.total_pages,
-                message=job.error_message if job.status == "failed" else None,
+                status=status,
+                progress_percent=progress_percent,
+                current_page=current_page,
+                total_pages=total_pages,
+                message=message,
                 pdf_url=f"/files/processed/{job.job_id}.pdf" if job.pdf_file_path else None,
-                raw_file_url=None,  # Can be added if needed
+                raw_file_url=None,
                 created_at=job.created_at.isoformat() if job.created_at else None,
                 completed_at=job.completed_at.isoformat() if job.completed_at else None,
                 processing_time_seconds=job.processing_time_seconds,
@@ -93,14 +117,33 @@ async def get_job(job_id: str, db: Session = Depends(get_db)):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
 
+        from utils.job_manager import JobManager
+        status = job.status
+        progress_percent = job.progress_percent or 0
+        current_page = job.current_page or 0
+        total_pages = job.total_pages or 0
+        message = job.error_message if job.status == "failed" else None
+
+        # Prefer file-based status for active jobs (and check for recent failures/completions)
+        file_status = JobManager.read_status_from_file(job.job_id)
+        if file_status:
+            file_state = file_status.get("status")
+            if job.status in ("processing", "queued", "pending") or file_state in ("failed", "completed"):
+                status = file_state or status
+                progress_percent = file_status.get("progress_percent", progress_percent)
+                current_page = file_status.get("current_page", current_page)
+                total_pages = file_status.get("total_pages", total_pages)
+                if status == "failed":
+                    message = file_status.get("message", message)
+
         return JobResponse(
             job_id=job.job_id,
             filename=job.original_filename,
-            status=job.status,
-            progress_percent=job.progress_percent,
-            current_page=job.current_page,
-            total_pages=job.total_pages,
-            message=job.error_message if job.status == "failed" else None,
+            status=status,
+            progress_percent=progress_percent,
+            current_page=current_page,
+            total_pages=total_pages,
+            message=message,
             pdf_url=f"/files/processed/{job.job_id}.pdf" if job.pdf_file_path else None,
             created_at=job.created_at.isoformat() if job.created_at else None,
             completed_at=job.completed_at.isoformat() if job.completed_at else None,
@@ -126,8 +169,18 @@ async def delete_job(job_id: str, db: Session = Depends(get_db)):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
 
+        linked_session_ids = [
+            session_id
+            for (session_id,) in db.query(SessionDocument.session_id).filter(
+                SessionDocument.job_id == job_id
+            ).distinct().all()
+        ]
+
         # Delete associated files
         from pathlib import Path
+        import shutil
+        from config import Config
+
         files_to_delete = [
             job.raw_file_path,
             job.pdf_file_path,
@@ -145,6 +198,46 @@ async def delete_job(job_id: str, db: Session = Depends(get_db)):
                         deleted_files += 1
                 except Exception as e:
                     logger.warning(f"Failed to delete file {file_path}: {e}")
+
+        # 관련 디렉토리 삭제 (raw 업로드 폴더, pages 폴더)
+        for dir_path in [
+            Config.RAW_DIR / job_id,
+            Config.PROCESSED_DIR / f"{job_id}_pages",
+        ]:
+            try:
+                if dir_path.exists():
+                    shutil.rmtree(dir_path)
+                    deleted_files += 1
+            except Exception as e:
+                logger.warning(f"Failed to delete directory {dir_path}: {e}")
+
+        # 추가 파일들 (pii, masked, smart_layers, editor_state 등)
+        for extra in [
+            Config.PROCESSED_DIR / f"{job_id}_pii.json",
+            Config.PROCESSED_DIR / f"{job_id}_masked.pdf",
+            Config.PROCESSED_DIR / f"{job_id}_smart_layers.json",
+            Config.PROCESSED_DIR / f"{job_id}_editor_state.json",
+            Config.PROCESSED_DIR / f"{job_id}_final.pdf",
+        ]:
+            try:
+                if extra.exists():
+                    extra.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to delete extra file {extra}: {e}")
+
+        for session_id in linked_session_ids:
+            document_count = db.query(SessionDocument).filter(
+                SessionDocument.session_id == session_id
+            ).count()
+            session = db.query(DBSession).filter(DBSession.session_id == session_id).first()
+
+            if not session:
+                continue
+
+            if document_count <= 1:
+                db.delete(session)
+            else:
+                session.updated_at = datetime.now()
 
         # Delete from database (cascade will delete pages)
         db.delete(job)

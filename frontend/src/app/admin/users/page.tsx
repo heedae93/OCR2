@@ -1,115 +1,132 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
+import { API_BASE_URL } from '@/lib/api'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'
+type UserType = 'A' | 'U'
+type MaskingAccessLevel = 'masked' | 'original'
 
 interface User {
   user_id: string
   username: string
   name: string
   email: string
-  type: string
+  type: UserType
+  permission_group: string
+  permission_group_name: string
+  masking_access_level: MaskingAccessLevel
   total_jobs: number
   created_at: string | null
   last_login: string | null
 }
 
-const emptyForm = { username: '', name: '', email: '', password: '', type: 'U' }
+interface PermissionGroup {
+  group_key: string
+  group_name: string
+  masking_access_level: MaskingAccessLevel
+}
 
-export default function UserManagementPage() {
+interface UserFormState {
+  username: string
+  name: string
+  email: string
+  password: string
+  type: UserType
+  permission_group: string
+}
+
+const emptyForm: UserFormState = { username: '', name: '', email: '', password: '', type: 'U', permission_group: 'default' }
+
+const maskingLabel: Record<MaskingAccessLevel, string> = { masked: '마스킹만', original: '원본 포함' }
+const roleLabel: Record<UserType, string> = { A: '관리자', U: '일반 사용자' }
+
+const inputClass =
+  'rounded-lg border border-border-light bg-background-light px-3 py-2 text-text-primary-light focus:outline-none focus:ring-2 focus:ring-primary/50 dark:border-border-dark dark:bg-background-dark dark:text-text-primary-dark'
+
+export default function UsersPage() {
   const router = useRouter()
   const [users, setUsers] = useState<User[]>([])
+  const [groups, setGroups] = useState<PermissionGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null)
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
-  const [form, setForm] = useState(emptyForm)
+  const [form, setForm] = useState<UserFormState>(emptyForm)
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
+
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  // 관리자 체크
   useEffect(() => {
     if (typeof window === 'undefined') return
     const stored = localStorage.getItem('user')
     if (!stored) { router.push('/login'); return }
     try {
-      const user = JSON.parse(stored)
-      if (user.type !== 'A') { router.push('/'); return }
-    } catch {
-      router.push('/login'); return
-    }
-    fetchUsers()
-  }, [])
+      if (JSON.parse(stored).type !== 'A') { router.push('/'); return }
+    } catch { router.push('/login'); return }
+    void loadAll()
+  }, [router])
 
-  async function fetchUsers() {
+  async function loadAll() {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`${API_URL}/api/admin/users`)
-      if (!res.ok) throw new Error('불러오기 실패')
-      setUsers(await res.json())
-    } catch (e: any) {
-      setError(e.message || '오류가 발생했습니다.')
+      const [usersRes, groupsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/admin/users`),
+        fetch(`${API_BASE_URL}/api/admin/permission-groups`),
+      ])
+      if (!usersRes.ok) throw new Error('사용자 목록을 불러오지 못했습니다.')
+      if (!groupsRes.ok) throw new Error('그룹 목록을 불러오지 못했습니다.')
+      const [usersData, groupsData] = await Promise.all([usersRes.json(), groupsRes.json()])
+      setUsers(usersData)
+      setGroups(groupsData)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '데이터를 불러오는 중 오류가 발생했습니다.')
     } finally {
       setLoading(false)
     }
   }
 
   function openCreate() {
-    setForm(emptyForm)
-    setFormError('')
     setSelectedUser(null)
+    setForm({ ...emptyForm, permission_group: groups[0]?.group_key || 'default' })
+    setFormError('')
     setModalMode('create')
   }
 
   function openEdit(user: User) {
-    setForm({ username: user.username, name: user.name, email: user.email, password: '', type: user.type })
-    setFormError('')
     setSelectedUser(user)
+    setForm({ username: user.username, name: user.name ?? '', email: user.email ?? '', password: '', type: user.type, permission_group: user.permission_group })
+    setFormError('')
     setModalMode('edit')
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function submitUser(e: React.FormEvent) {
     e.preventDefault()
     setFormError('')
-
-    if (!form.name.trim()) { setFormError('이름을 입력하세요.'); return }
+    if (!form.name.trim()) { setFormError('이름을 입력해주세요.'); return }
     if (modalMode === 'create') {
-      if (!form.username.trim()) { setFormError('아이디를 입력하세요.'); return }
-      if (!form.password.trim()) { setFormError('비밀번호를 입력하세요.'); return }
+      if (!form.username.trim()) { setFormError('아이디를 입력해주세요.'); return }
+      if (!form.password.trim()) { setFormError('비밀번호를 입력해주세요.'); return }
     }
-
     setSaving(true)
     try {
-      let res: Response
-      if (modalMode === 'create') {
-        res = await fetch(`${API_URL}/api/admin/users`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(form),
-        })
-      } else {
-        const body: any = { name: form.name, email: form.email, type: form.type }
-        if (form.password) body.password = form.password
-        res = await fetch(`${API_URL}/api/admin/users/${selectedUser!.user_id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        })
-      }
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.detail || '저장 실패')
-      }
+      const payload = modalMode === 'create'
+        ? form
+        : { name: form.name, email: form.email, type: form.type, permission_group: form.permission_group, ...(form.password.trim() ? { password: form.password } : {}) }
+      const res = await fetch(
+        modalMode === 'create' ? `${API_BASE_URL}/api/admin/users` : `${API_BASE_URL}/api/admin/users/${selectedUser!.user_id}`,
+        { method: modalMode === 'create' ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+      )
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || '저장에 실패했습니다.') }
       setModalMode(null)
-      fetchUsers()
-    } catch (e: any) {
-      setFormError(e.message || '저장 중 오류가 발생했습니다.')
+      await loadAll()
+    } catch (e: unknown) {
+      setFormError(e instanceof Error ? e.message : '저장 중 오류가 발생했습니다.')
     } finally {
       setSaving(false)
     }
@@ -119,195 +136,169 @@ export default function UserManagementPage() {
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      const res = await fetch(`${API_URL}/api/admin/users/${deleteTarget.user_id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('삭제 실패')
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${deleteTarget.user_id}`, { method: 'DELETE' })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || '삭제에 실패했습니다.') }
       setDeleteTarget(null)
-      fetchUsers()
-    } catch (e: any) {
-      alert(e.message || '삭제 중 오류가 발생했습니다.')
+      await loadAll()
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : '삭제 중 오류가 발생했습니다.')
     } finally {
       setDeleting(false)
     }
   }
 
-  function formatDate(s: string | null) {
-    if (!s) return '-'
-    return new Date(s).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  function formatDate(v: string | null) {
+    if (!v) return '-'
+    return new Date(v).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   }
 
+  const adminCount = users.filter(u => u.type === 'A').length
+
   return (
-    <div className="bg-background-light dark:bg-background-dark min-h-screen">
+    <div className="min-h-screen bg-background-light dark:bg-background-dark">
       <Sidebar />
-      <div className="flex flex-col gap-6 p-8 flex-1 ml-64">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary-light dark:text-text-primary-dark">사용자관리</h1>
-          <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mt-1">
-            총 {users.length}명
-          </p>
+      <div className="ml-64 flex flex-col gap-6 p-8">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-text-primary-light dark:text-text-primary-dark">사용자 관리</h1>
+            <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+              사용자를 등록하고 그룹 권한을 배정합니다.
+            </p>
+          </div>
+          <button
+            onClick={openCreate}
+            className="rounded-xl bg-primary px-4 py-2 font-medium text-white transition-colors hover:bg-primary/90"
+          >
+            사용자 등록
+          </button>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors font-medium"
-        >
-          <span className="material-symbols-outlined text-lg">person_add</span>
-          사용자 등록
-        </button>
-      </div>
 
-      {/* Table */}
-      <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center p-16">
-            <span className="material-symbols-outlined animate-spin text-primary text-4xl">progress_activity</span>
+        <div className="grid grid-cols-3 gap-4">
+          <StatCard label="전체 사용자" value={users.length} />
+          <StatCard label="관리자" value={adminCount} />
+          <StatCard label="일반 사용자" value={users.length - adminCount} />
+        </div>
+
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+            {error}
           </div>
-        ) : error ? (
-          <div className="p-8 text-center text-red-500">{error}</div>
-        ) : users.length === 0 ? (
-          <div className="p-16 text-center text-text-secondary-light dark:text-text-secondary-dark">
-            <span className="material-symbols-outlined text-4xl">group_off</span>
-            <p className="mt-2">등록된 사용자가 없습니다.</p>
-          </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-background-light dark:bg-background-dark border-b border-border-light dark:border-border-dark">
-              <tr>
-                {['아이디', '이름', '이메일', '권한', '작업수', '최근 로그인', '가입일', ''].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-light dark:divide-border-dark">
-              {users.map((u) => (
-                <tr key={u.user_id} className="hover:bg-background-light dark:hover:bg-background-dark transition-colors">
-                  <td className="px-4 py-3 font-medium text-text-primary-light dark:text-text-primary-dark">{u.username}</td>
-                  <td className="px-4 py-3 text-text-primary-light dark:text-text-primary-dark">{u.name || '-'}</td>
-                  <td className="px-4 py-3 text-text-secondary-light dark:text-text-secondary-dark">{u.email || '-'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                      u.type === 'A'
-                        ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
-                        : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-                    }`}>
-                      {u.type === 'A' ? '관리자' : '일반'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-text-secondary-light dark:text-text-secondary-dark">{u.total_jobs}</td>
-                  <td className="px-4 py-3 text-text-secondary-light dark:text-text-secondary-dark">{formatDate(u.last_login)}</td>
-                  <td className="px-4 py-3 text-text-secondary-light dark:text-text-secondary-dark">{formatDate(u.created_at)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => openEdit(u)}
-                        className="p-1.5 rounded-lg hover:bg-primary/10 text-primary transition-colors"
-                        title="수정"
-                      >
-                        <span className="material-symbols-outlined text-lg">edit</span>
-                      </button>
-                      <button
-                        onClick={() => setDeleteTarget(u)}
-                        className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500 transition-colors"
-                        title="삭제"
-                      >
-                        <span className="material-symbols-outlined text-lg">delete</span>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         )}
+
+        <section className="overflow-hidden rounded-2xl border border-border-light bg-surface-light dark:border-border-dark dark:bg-surface-dark">
+          {loading ? (
+            <div className="flex items-center justify-center p-16">
+              <span className="material-symbols-outlined animate-spin text-4xl text-primary">progress_activity</span>
+            </div>
+          ) : users.length === 0 ? (
+            <div className="p-12 text-center text-text-secondary-light dark:text-text-secondary-dark">등록된 사용자가 없습니다.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="border-b border-border-light bg-background-light dark:border-border-dark dark:bg-background-dark">
+                <tr>
+                  {['아이디', '이름', '이메일', '역할', '권한 그룹', '작업 수', '최근 로그인', ''].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-light dark:divide-border-dark">
+                {users.map(user => (
+                  <tr key={user.user_id} className="transition-colors hover:bg-background-light dark:hover:bg-background-dark">
+                    <td className="px-4 py-3 font-medium text-text-primary-light dark:text-text-primary-dark">{user.username}</td>
+                    <td className="px-4 py-3 text-text-primary-light dark:text-text-primary-dark">{user.name || '-'}</td>
+                    <td className="px-4 py-3 text-text-secondary-light dark:text-text-secondary-dark">{user.email || '-'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${user.type === 'A' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300' : 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300'}`}>
+                        {roleLabel[user.type]}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-medium text-text-primary-light dark:text-text-primary-dark">{user.permission_group_name}</span>
+                        <span className={`text-xs font-medium ${user.masking_access_level === 'original' ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                          {maskingLabel[user.masking_access_level]}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-text-secondary-light dark:text-text-secondary-dark">{user.total_jobs}</td>
+                    <td className="px-4 py-3 text-text-secondary-light dark:text-text-secondary-dark">{formatDate(user.last_login)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => openEdit(user)} className="rounded-lg p-1.5 text-primary transition-colors hover:bg-primary/10" title="수정">
+                          <span className="material-symbols-outlined text-lg">edit</span>
+                        </button>
+                        <button onClick={() => setDeleteTarget(user)} className="rounded-lg p-1.5 text-red-500 transition-colors hover:bg-red-50 dark:hover:bg-red-500/10" title="삭제">
+                          <span className="material-symbols-outlined text-lg">delete</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
       </div>
 
-      {/* Create / Edit Modal */}
+      {/* 사용자 등록/수정 모달 */}
       {modalMode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-surface-light dark:bg-surface-dark rounded-2xl border border-border-light dark:border-border-dark shadow-2xl w-full max-w-md mx-4">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border-light dark:border-border-dark">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-border-light bg-surface-light shadow-2xl dark:border-border-dark dark:bg-surface-dark">
+            <div className="flex items-center justify-between border-b border-border-light px-6 py-4 dark:border-border-dark">
               <h2 className="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">
                 {modalMode === 'create' ? '사용자 등록' : '사용자 수정'}
               </h2>
-              <button onClick={() => setModalMode(null)} className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5">
+              <button onClick={() => setModalMode(null)} className="rounded-lg p-1 hover:bg-black/5 dark:hover:bg-white/5">
                 <span className="material-symbols-outlined text-text-secondary-light dark:text-text-secondary-dark">close</span>
               </button>
             </div>
-            <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4">
+            <form onSubmit={submitUser} className="grid grid-cols-2 gap-4 p-6">
               {modalMode === 'create' && (
-                <div className="flex flex-col gap-1">
+                <div className="col-span-2 flex flex-col gap-1">
                   <label className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">아이디 *</label>
-                  <input
-                    type="text"
-                    value={form.username}
-                    onChange={(e) => setForm({ ...form, username: e.target.value })}
-                    className="px-3 py-2 rounded-lg border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    placeholder="영문, 숫자"
-                  />
+                  <input type="text" value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value }))} className={inputClass} placeholder="로그인 아이디" />
                 </div>
               )}
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">이름 *</label>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="px-3 py-2 rounded-lg border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder="이름"
-                />
+                <input type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className={inputClass} placeholder="사용자 이름" />
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">이메일</label>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="px-3 py-2 rounded-lg border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder="example@email.com"
-                />
+                <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} className={inputClass} placeholder="example@email.com" />
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">
-                  비밀번호 {modalMode === 'edit' && <span className="text-text-secondary-light dark:text-text-secondary-dark font-normal">(변경 시에만 입력)</span>}
+                  {modalMode === 'create' ? '비밀번호 *' : '비밀번호'}
                 </label>
-                <input
-                  type="password"
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className="px-3 py-2 rounded-lg border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder={modalMode === 'edit' ? '변경하지 않으려면 비워두세요' : '비밀번호'}
-                />
+                <input type="password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} className={inputClass} placeholder={modalMode === 'create' ? '비밀번호' : '변경 시에만 입력'} />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">권한</label>
-                <select
-                  value={form.type}
-                  onChange={(e) => setForm({ ...form, type: e.target.value })}
-                  className="px-3 py-2 rounded-lg border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
+                <label className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">역할</label>
+                <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value as UserType }))} className={inputClass}>
                   <option value="U">일반 사용자</option>
                   <option value="A">관리자</option>
                 </select>
               </div>
-              {formError && (
-                <p className="text-sm text-red-500 bg-red-50 dark:bg-red-500/10 px-3 py-2 rounded-lg">{formError}</p>
-              )}
-              <div className="flex gap-3 mt-2">
-                <button
-                  type="button"
-                  onClick={() => setModalMode(null)}
-                  className="flex-1 px-4 py-2 rounded-xl border border-border-light dark:border-border-dark text-text-primary-light dark:text-text-primary-dark hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                >
+              <div className="col-span-2 flex flex-col gap-1">
+                <label className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">권한 그룹</label>
+                <select value={form.permission_group} onChange={e => setForm(p => ({ ...p, permission_group: e.target.value }))} className={inputClass}>
+                  {groups.map(g => (
+                    <option key={g.group_key} value={g.group_key}>
+                      {g.group_name} — {maskingLabel[g.masking_access_level]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {formError && <p className="col-span-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-500/10">{formError}</p>}
+              <div className="col-span-2 flex gap-3 pt-2">
+                <button type="button" onClick={() => setModalMode(null)} className="flex-1 rounded-xl border border-border-light px-4 py-2 text-text-primary-light transition-colors hover:bg-black/5 dark:border-border-dark dark:text-text-primary-dark dark:hover:bg-white/5">
                   취소
                 </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 px-4 py-2 rounded-xl bg-primary text-white hover:bg-primary/90 transition-colors font-medium disabled:opacity-60"
-                >
-                  {saving ? '저장 중...' : (modalMode === 'create' ? '등록' : '저장')}
+                <button type="submit" className="flex-1 rounded-xl bg-primary px-4 py-2 font-medium text-white transition-colors hover:bg-primary/90">
+                  {saving ? '저장 중...' : modalMode === 'create' ? '등록' : '저장'}
                 </button>
               </div>
             </form>
@@ -315,39 +306,33 @@ export default function UserManagementPage() {
         </div>
       )}
 
-      {/* Delete Confirm Modal */}
+      {/* 삭제 확인 모달 */}
       {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-surface-light dark:bg-surface-dark rounded-2xl border border-border-light dark:border-border-dark shadow-2xl w-full max-w-sm mx-4 p-6">
-            <div className="flex flex-col items-center gap-3 text-center">
-              <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-500/20 flex items-center justify-center">
-                <span className="material-symbols-outlined text-red-500 text-2xl">person_remove</span>
-              </div>
-              <h2 className="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">사용자 삭제</h2>
-              <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                <span className="font-semibold text-text-primary-light dark:text-text-primary-dark">{deleteTarget.name}({deleteTarget.username})</span> 사용자를 삭제하면<br/>
-                해당 사용자의 모든 작업 내역도 함께 삭제됩니다.
-              </p>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setDeleteTarget(null)}
-                className="flex-1 px-4 py-2 rounded-xl border border-border-light dark:border-border-dark text-text-primary-light dark:text-text-primary-dark hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-              >
-                취소
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className="flex-1 px-4 py-2 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors font-medium disabled:opacity-60"
-              >
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-border-light bg-surface-light p-6 shadow-2xl dark:border-border-dark dark:bg-surface-dark">
+            <h2 className="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">사용자 삭제</h2>
+            <p className="mt-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+              <strong>{deleteTarget.name || deleteTarget.username}</strong> 사용자를 삭제합니다.<br />
+              해당 사용자의 모든 작업과 세션도 함께 삭제됩니다.
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button onClick={() => setDeleteTarget(null)} className="flex-1 rounded-xl border border-border-light px-4 py-2 text-text-primary-light hover:bg-black/5 dark:border-border-dark dark:text-text-primary-dark dark:hover:bg-white/5">취소</button>
+              <button onClick={handleDelete} className="flex-1 rounded-xl bg-red-500 px-4 py-2 font-medium text-white hover:bg-red-600">
                 {deleting ? '삭제 중...' : '삭제'}
               </button>
             </div>
           </div>
         </div>
       )}
-      </div>
+    </div>
+  )
+}
+
+function StatCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-border-light bg-surface-light p-5 dark:border-border-dark dark:bg-surface-dark">
+      <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{label}</p>
+      <p className="mt-2 text-3xl font-bold text-text-primary-light dark:text-text-primary-dark">{value}</p>
     </div>
   )
 }

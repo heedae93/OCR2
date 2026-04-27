@@ -100,7 +100,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId }: Sessi
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportSessionInfo, setExportSessionInfo] = useState<{sessionId: string, sessionName: string} | null>(null)
 
-  const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5015'}/api`
+  const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/api`
   const router = useRouter()
 
   // Initial fetch
@@ -498,17 +498,18 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId }: Sessi
   // Cancel a single job
   const cancelJob = async (jobId: string) => {
     try {
-      // Call cancel API
-      await fetch(`${API_BASE}/cancel/${jobId}`, {
-        method: 'POST'
-      })
+      const res = await fetch(`${API_BASE}/cancel/${jobId}`, { method: 'POST' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        console.error('Cancel failed:', res.status, err)
+        alert(`중단 실패: ${err.detail || res.statusText}`)
+        return
+      }
 
-      // Update queue status
       setProcessingQueue(prev => prev.map(item =>
         item.jobId === jobId ? { ...item, status: 'cancelled' as const } : item
       ))
 
-      // Remove from queue after delay
       setTimeout(() => {
         setProcessingQueue(prev => prev.filter(item => item.jobId !== jobId))
       }, 2000)
@@ -516,6 +517,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId }: Sessi
       await fetchSessions()
     } catch (error) {
       console.error('Failed to cancel job:', error)
+      alert('중단 요청 중 오류가 발생했습니다.')
     }
   }
 
