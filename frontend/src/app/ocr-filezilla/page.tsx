@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 
 // API_BASE configuration matching current project
-const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/api`
+const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6016'}/api`
 
 const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타', '미분류']
 

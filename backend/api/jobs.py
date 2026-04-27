@@ -169,6 +169,13 @@ async def delete_job(job_id: str, db: Session = Depends(get_db)):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
 
+        linked_session_ids = [
+            session_id
+            for (session_id,) in db.query(SessionDocument.session_id).filter(
+                SessionDocument.job_id == job_id
+            ).distinct().all()
+        ]
+
         # Delete associated files
         from pathlib import Path
         import shutil
@@ -217,6 +224,20 @@ async def delete_job(job_id: str, db: Session = Depends(get_db)):
                     extra.unlink()
             except Exception as e:
                 logger.warning(f"Failed to delete extra file {extra}: {e}")
+
+        for session_id in linked_session_ids:
+            document_count = db.query(SessionDocument).filter(
+                SessionDocument.session_id == session_id
+            ).count()
+            session = db.query(DBSession).filter(DBSession.session_id == session_id).first()
+
+            if not session:
+                continue
+
+            if document_count <= 1:
+                db.delete(session)
+            else:
+                session.updated_at = datetime.now()
 
         # Delete from database (cascade will delete pages)
         db.delete(job)

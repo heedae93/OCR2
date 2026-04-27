@@ -208,7 +208,7 @@ async def list_sessions(
 ):
     """List all sessions for a user"""
     try:
-        sessions = db.query(Session).filter_by(user_id=user_id).order_by(Session.updated_at.desc()).all()
+        sessions = db.query(Session).filter_by(user_id=user_id).order_by(Session.created_at.asc()).all()
 
         result = []
         for session in sessions:

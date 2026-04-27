@@ -53,6 +53,7 @@ function JobsPageInner() {
   const [reprocessingJobs, setReprocessingJobs] = useState<Set<string>>(new Set())
   const [uploadingSession, setUploadingSession] = useState<string | null>(null)
   const [, setUploadProgress] = useState<Record<string, number>>({})
+  const [currentPage, setCurrentPage] = useState(0)
   const groupsRef = useRef<SessionGroup[]>([])
 
   useEffect(() => {
@@ -264,15 +265,23 @@ function JobsPageInner() {
     return Math.min(progress, 100)
   }
 
-  // 필터링
-  const filteredGroups = groups.map(g => ({
-    ...g,
-    jobs: g.jobs.filter(job => {
+  // 검색/필터 변경 시 첫 페이지로
+  useEffect(() => { setCurrentPage(0) }, [searchQuery, statusFilter])
+
+  // 필터링 (세션명 또는 파일명 검색)
+  const filteredGroups = groups.map(g => {
+    const sessionMatches = !searchQuery || g.session_name.toLowerCase().includes(searchQuery.toLowerCase())
+    const jobs = g.jobs.filter(job => {
       const matchStatus = statusFilter === 'all' || job.status === statusFilter
-      const matchSearch = !searchQuery || job.filename.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchSearch = sessionMatches || job.filename.toLowerCase().includes(searchQuery.toLowerCase())
       return matchStatus && matchSearch
     })
-  })).filter(g => g.jobs.length > 0)
+    return { ...g, jobs }
+  }).filter(g => g.jobs.length > 0)
+
+  const SESSIONS_PER_PAGE = 10
+  const totalPages = Math.ceil(filteredGroups.length / SESSIONS_PER_PAGE)
+  const paginatedGroups = filteredGroups.slice(currentPage * SESSIONS_PER_PAGE, (currentPage + 1) * SESSIONS_PER_PAGE)
   const inProgressGroups = useMemo(() => groups
     .map(g => ({
       ...g,
@@ -351,7 +360,7 @@ function JobsPageInner() {
             <div className="flex flex-col md:flex-row gap-4">
               <input
                 type="text"
-                placeholder="파일명 검색..."
+                placeholder="파일명 / 세션명 검색..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="flex-1 px-4 py-2 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-primary-light dark:text-text-primary-dark"
@@ -374,7 +383,7 @@ function JobsPageInner() {
           </div>
 
           {/* In-progress Jobs */}
-          <section className="bg-surface-light dark:bg-surface-dark p-5 rounded-xl border border-border-light dark:border-border-dark mb-6">
+          {inProgressCount > 0 && <section className="bg-surface-light dark:bg-surface-dark p-5 rounded-xl border border-border-light dark:border-border-dark mb-6">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -483,7 +492,7 @@ function JobsPageInner() {
                 ))}
               </div>
             )}
-          </section>
+          </section>}
 
           {/* Groups */}
           {loading ? (
@@ -496,7 +505,7 @@ function JobsPageInner() {
             </div>
           ) : (
             <div className="flex flex-col gap-4">
-              {filteredGroups.map(group => (
+              {paginatedGroups.map(group => (
                 <div key={group.session_id} className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
                   {/* 세션 헤더 */}
                   <div className="flex items-center justify-between px-6 py-4 bg-background-light dark:bg-background-dark">
@@ -642,6 +651,34 @@ function JobsPageInner() {
                   )}
                 </div>
               ))}
+              {/* 페이지네이션 */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 pt-2 pb-4">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                    disabled={currentPage === 0}
+                    className="px-3 py-1.5 rounded-lg border border-border-light dark:border-border-dark text-sm text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-base leading-none">chevron_left</span>
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setCurrentPage(i)}
+                      className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${i === currentPage ? 'bg-primary text-white' : 'border border-border-light dark:border-border-dark text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40'}`}
+                    >
+                      {i + 1}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                    disabled={currentPage === totalPages - 1}
+                    className="px-3 py-1.5 rounded-lg border border-border-light dark:border-border-dark text-sm text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-base leading-none">chevron_right</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
