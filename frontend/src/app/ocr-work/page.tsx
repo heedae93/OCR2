@@ -199,7 +199,7 @@ export default function OcrWorkPage() {
       sourceType: SourceType
     }> = []
 
-    // Group pending files by sessionName
+    // Group pending files by sessionName from the item itself to support multi-session batch
     const pendingBySession = pendingFiles.reduce((acc, file) => {
       const name = file.sessionName || '미지정 세션'
       if (!acc[name]) acc[name] = []
@@ -220,7 +220,7 @@ export default function OcrWorkPage() {
         sessionId = (await sessionResponse.json()).session_id
       } catch {
         alert(`세션 '${sName}' 생성에 실패했습니다.`)
-        continue // Skip to next session group
+        continue
       }
 
       for (const queueFile of files) {
@@ -309,7 +309,7 @@ export default function OcrWorkPage() {
         ? '작업 요청이 Redis 큐에 등록되었습니다. 다른 페이지로 이동해도 워커가 계속 처리됩니다.'
         : '큐 등록에 성공한 파일이 없습니다. 실패 항목을 확인해주세요.',
     )
-  }, [addTrackedJobs, queue, sessionName, updateFile])
+  }, [addTrackedJobs, queue, updateFile])
 
   const pendingCount = useMemo(() => queue.filter(file => {
     const tracked = trackedJobs.find(tj => tj.jobId === file.jobId)
@@ -383,7 +383,6 @@ export default function OcrWorkPage() {
                     onChange={event => {
                       const nextDocType = event.target.value
                       setDefaultDocType(nextDocType)
-                      // 일괄 선택 변경 시 현재 리스트의 모든 파일에 즉시 반영
                       setQueue(prev =>
                         prev.map(file => ({ ...file, docType: nextDocType })),
                       )
@@ -492,10 +491,10 @@ export default function OcrWorkPage() {
                 <button
                   onClick={clearAll}
                   disabled={isSubmitting || queue.length === 0}
-                  className="flex items-center justify-center gap-2 px-4 py-2 text-sm text-text-secondary-light dark:text-text-secondary-dark hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm text-text-secondary-light dark:text-text-secondary-dark hover:text-red-500 hover:bg-red-500/5 border border-border-light dark:border-border-dark rounded-xl disabled:opacity-40 disabled:cursor-not-allowed transition-all font-medium"
                 >
                   <Trash2 className="w-4 h-4" />
-                  전체 지우기
+                  전체 목록 지우기
                 </button>
               </div>
 
@@ -512,7 +511,7 @@ export default function OcrWorkPage() {
               )}
             </div>
 
-            <div className="flex-1 bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark min-h-[520px]">
+            <div className="flex-1 bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark min-h-[520px] flex flex-col overflow-hidden">
               {queue.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full py-20 text-text-secondary-light dark:text-text-secondary-dark">
                   <FileText className="w-12 h-12 mb-3 opacity-20" />
@@ -576,7 +575,7 @@ export default function OcrWorkPage() {
                                           onChange={event => updateFile(file.id, { docType: event.target.value })}
                                           className="w-full appearance-none px-2 py-1 pr-7 text-xs border border-border-light dark:border-border-dark rounded-md bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 transition-colors"
                                         >
-                                          {DEFAULT_DOC_TYPES.concat(categories.map(c => c.name)).map(type => (
+                                          {allDocTypes.map(type => (
                                             <option key={type} value={type}>
                                               {type}
                                             </option>
@@ -587,7 +586,7 @@ export default function OcrWorkPage() {
                                         </span>
                                       </div>
 
-                                      {(file.status === 'pending' || effectiveStatus === 'failed') && !isSubmitting && (
+                                      {(file.status === 'pending' || effectiveStatus === 'failed' || effectiveStatus === 'completed') && !isSubmitting && (
                                         <button
                                           onClick={() => removeFile(file.id)}
                                           className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 transition-colors"
@@ -635,7 +634,6 @@ export default function OcrWorkPage() {
                     </div>
                   ))}
                 </div>
-
               )}
             </div>
           </div>
@@ -644,6 +642,3 @@ export default function OcrWorkPage() {
     </div>
   )
 }
-
-
-
