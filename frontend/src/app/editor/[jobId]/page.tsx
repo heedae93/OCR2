@@ -71,17 +71,30 @@ export default function EditorPage() {
   const [showTextLayer, setShowTextLayer] = useState(false);
   const [showAccuracy, setShowAccuracy] = useState(false);
   const [showMasking, setShowMasking] = useState(false);
+  const [maskingPanelWidth, setMaskingPanelWidth] = useState(288);
+  const [smartToolsPanelWidth, setSmartToolsPanelWidth] = useState(288);
   const [maskingData, setMaskingData] = useState<any[]>([]);
   const PII_LABELS: Record<string, string> = {
-    PHONE: "전화번호", EMAIL: "이메일", RRN: "주민등록번호",
-    FOREIGNER_REG_NO: "외국인등록번호", BUSINESS_REG_NO: "사업자등록번호",
-    ACCOUNT_NO: "계좌번호", HEALTH_INSURANCE_NO: "건강보험번호",
-    CREDIT_CARD: "신용카드", PASSPORT_NO: "여권번호",
-    IP_ADDRESS: "IP주소", CAR_NO: "차량번호",
-    ROAD_ADDRESS: "도로명주소", NAME: "이름",
+    PHONE: "전화번호",
+    EMAIL: "이메일",
+    RRN: "주민등록번호",
+    FOREIGNER_REG_NO: "외국인등록번호",
+    BUSINESS_REG_NO: "사업자등록번호",
+    ACCOUNT_NO: "계좌번호",
+    HEALTH_INSURANCE_NO: "건강보험번호",
+    CREDIT_CARD: "신용카드",
+    PASSPORT_NO: "여권번호",
+    IP_ADDRESS: "IP주소",
+    CAR_NO: "차량번호",
+    ROAD_ADDRESS: "도로명주소",
+    NAME: "이름",
   };
-  const maskingSuccess = maskingData.filter(b => b.bbox && b.masked_value && b.masked_value !== b.value);
-  const maskingFail = maskingData.filter(b => !b.bbox || !b.masked_value || b.masked_value === b.value);
+  const maskingSuccess = maskingData.filter(
+    (b) => b.bbox && b.masked_value && b.masked_value !== b.value,
+  );
+  const maskingFail = maskingData.filter(
+    (b) => !b.bbox || !b.masked_value || b.masked_value === b.value,
+  );
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrCurrentPage, setOcrCurrentPage] = useState(0);
@@ -114,7 +127,10 @@ export default function EditorPage() {
 
   // 항상 원본 PDF를 표시 — 마스킹은 프론트엔드 오버레이로 처리
   const timestamp = useMemo(() => Date.now(), [jobId]);
-  const pdfUrl = useMemo(() => `${getProcessedFileUrl(jobId)}?v=${timestamp}`, [jobId, timestamp]);
+  const pdfUrl = useMemo(
+    () => `${getProcessedFileUrl(jobId)}?v=${timestamp}`,
+    [jobId, timestamp],
+  );
 
   // Debounced auto-save function
   const performSave = useCallback(async () => {
@@ -181,7 +197,9 @@ export default function EditorPage() {
 
           // OCR 완료 시 자동으로 PII 감지 + 마스킹 PDF 기본 표시
           try {
-            const res = await fetch(`${API_BASE_URL}/api/masking/${jobId}/detect`);
+            const res = await fetch(
+              `${API_BASE_URL}/api/masking/${jobId}/detect`,
+            );
             if (res.ok) {
               const data = await res.json();
               setMaskingData(data.masked_boxes || []);
@@ -654,6 +672,44 @@ export default function EditorPage() {
   // Show editor for queued and completed status
   const hasOCRResults = job.status === "completed" && ocrResults;
 
+  const handleMaskingResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = maskingPanelWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = startX - moveEvent.clientX;
+      setMaskingPanelWidth(Math.max(200, Math.min(600, startWidth + delta)));
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
+
+  const handleSmartToolsResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = smartToolsPanelWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = startX - moveEvent.clientX;
+      setSmartToolsPanelWidth(Math.max(200, Math.min(600, startWidth + delta)));
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
+
   return (
     <>
       <div className="flex h-screen w-full flex-col bg-background-light dark:bg-background-dark">
@@ -980,7 +1036,7 @@ export default function EditorPage() {
                   </button>
                 </div>
                 <div className="flex items-center gap-2 min-w-[300px] justify-end">
-                  <button
+                  {/* <button
                     onClick={() => setShowSmartTools(!showSmartTools)}
                     className={`flex items-center gap-2 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 whitespace-nowrap ${
                       showSmartTools
@@ -993,7 +1049,7 @@ export default function EditorPage() {
                     <span className="text-sm hidden lg:inline">
                       Smart Tools
                     </span>
-                  </button>
+                  </button> */}
                   <button
                     onClick={() => setShowOCRComparison(!showOCRComparison)}
                     className={`flex items-center gap-2 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 whitespace-nowrap ${
@@ -1034,7 +1090,9 @@ export default function EditorPage() {
                     title="개인정보 마스킹"
                   >
                     <span className="material-symbols-outlined">gpp_maybe</span>
-                    <span className="text-sm hidden lg:inline">개인정보 마스킹</span>
+                    <span className="text-sm hidden lg:inline">
+                      개인정보 마스킹
+                    </span>
                   </button>
                   <button
                     onClick={() => setShowAccuracy(!showAccuracy)}
@@ -1085,9 +1143,121 @@ export default function EditorPage() {
               </div>
             </section>
 
+            {/* Masking Results Panel */}
+            {showMasking && (
+              <aside
+                className="h-full flex-shrink-0 flex-col border-l border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark p-4 flex relative"
+                style={{ width: maskingPanelWidth }}
+              >
+                <div
+                  className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/50 active:bg-primary z-10 transition-colors"
+                  onMouseDown={handleMaskingResizeStart}
+                />
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark flex items-center gap-2">
+                    <span className="material-symbols-outlined text-base">
+                      shield_person
+                    </span>
+                    개인정보 마스킹 결과
+                  </span>
+                  <button
+                    onClick={() => setShowMasking(false)}
+                    className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-text-secondary-light dark:text-text-secondary-dark"
+                  >
+                    <span className="material-symbols-outlined text-xl">
+                      close
+                    </span>
+                  </button>
+                </div>
+                <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
+                  {maskingData.length > 0 ? (
+                    <>
+                      <div className="flex flex-col items-center justify-center p-3 rounded-lg bg-primary/10 border border-primary/20 mb-3">
+                        <span className="text-xs text-primary font-medium mb-1">
+                          자동 감지된 개인정보
+                        </span>
+                        <span className="text-2xl font-bold text-primary">
+                          {maskingData.length}
+                          <span className="text-sm font-medium ml-1">건</span>
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-1.5 overflow-y-auto">
+                        {maskingData.map((box, idx) => {
+                          const isSuccess = !!(
+                            box.bbox &&
+                            box.masked_value &&
+                            box.masked_value !== box.value
+                          );
+                          return (
+                            <div
+                              key={idx}
+                              className={`flex flex-col gap-0.5 p-2 rounded-md border text-xs ${isSuccess ? "border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10" : "border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10"}`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${isSuccess ? "bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300" : "bg-red-100 dark:bg-red-800 text-red-600 dark:text-red-300"}`}
+                                >
+                                  {PII_LABELS[box.type] ?? box.type}
+                                </span>
+                                <span
+                                  className={`text-[10px] ${isSuccess ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}
+                                >
+                                  {isSuccess ? "✓ 마스킹 됨" : "⚠️ 확인 필요"}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 mt-0.5 text-text-primary-light dark:text-text-primary-dark w-full overflow-hidden">
+                                <span
+                                  className="truncate flex-1 min-w-0"
+                                  title={box.value}
+                                >
+                                  {box.value}
+                                </span>
+                                {box.masked_value &&
+                                  box.masked_value !== box.value && (
+                                    <>
+                                      <span className="text-text-secondary-light dark:text-text-secondary-dark flex-shrink-0">
+                                        →
+                                      </span>
+                                      <span
+                                        className="truncate flex-1 min-w-0 font-medium"
+                                        title={box.masked_value}
+                                      >
+                                        {box.masked_value}
+                                      </span>
+                                    </>
+                                  )}
+                              </div>
+                              {box.page && (
+                                <span className="text-[10px] text-text-secondary-light dark:text-text-secondary-dark">
+                                  {box.page}페이지
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-border-light dark:border-border-dark">
+                      <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                        감지된 개인정보가 없습니다
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </aside>
+            )}
+
             {/* Smart Tools Floating Panel */}
             {showSmartTools && (
-              <aside className="h-full w-72 flex-shrink-0 flex-col border-l border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark p-4 flex">
+              <aside
+                className="h-full flex-shrink-0 flex-col border-l border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark p-4 flex relative"
+                style={{ width: smartToolsPanelWidth }}
+              >
+                <div
+                  className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/50 active:bg-primary z-10 transition-colors"
+                  onMouseDown={handleSmartToolsResizeStart}
+                />
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">
                     Smart Tools
@@ -1153,62 +1323,6 @@ export default function EditorPage() {
                       </button>
                     </div>
                   )}
-
-                  {/* Masking Results Section */}
-                  {maskingData.length > 0 && (
-                    <>
-                      <div className="h-px bg-border-light dark:bg-border-dark"></div>
-                      <div>
-                        <h3 className="font-medium mb-3 text-text-primary-light dark:text-text-primary-dark flex items-center gap-2">
-                          <span className="material-symbols-outlined text-base">shield_person</span>
-                          개인정보 마스킹 결과
-                        </h3>
-                        <div className="grid grid-cols-3 gap-2 mb-3">
-                          <div className="flex flex-col items-center p-2 rounded-lg bg-gray-100 dark:bg-white/5">
-                            <span className="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">{maskingData.length}</span>
-                            <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">전체</span>
-                          </div>
-                          <div className="flex flex-col items-center p-2 rounded-lg bg-green-50 dark:bg-green-900/20">
-                            <span className="text-lg font-bold text-green-600 dark:text-green-400">{maskingSuccess.length}</span>
-                            <span className="text-xs text-green-600 dark:text-green-400">성공</span>
-                          </div>
-                          <div className="flex flex-col items-center p-2 rounded-lg bg-red-50 dark:bg-red-900/20">
-                            <span className="text-lg font-bold text-red-500 dark:text-red-400">{maskingFail.length}</span>
-                            <span className="text-xs text-red-500 dark:text-red-400">실패</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
-                          {maskingData.map((box, idx) => {
-                            const isSuccess = !!(box.bbox && box.masked_value && box.masked_value !== box.value);
-                            return (
-                              <div key={idx} className={`flex flex-col gap-0.5 p-2 rounded-md border text-xs ${isSuccess ? "border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10" : "border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10"}`}>
-                                <div className="flex items-center justify-between">
-                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${isSuccess ? "bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300" : "bg-red-100 dark:bg-red-800 text-red-600 dark:text-red-300"}`}>
-                                    {PII_LABELS[box.type] ?? box.type}
-                                  </span>
-                                  <span className={`text-[10px] ${isSuccess ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}>
-                                    {isSuccess ? "✓ 성공" : "✗ 실패"}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1 mt-0.5 text-text-primary-light dark:text-text-primary-dark">
-                                  <span className="truncate max-w-[80px]">{box.value}</span>
-                                  {box.masked_value && box.masked_value !== box.value && (
-                                    <>
-                                      <span className="text-text-secondary-light dark:text-text-secondary-dark">→</span>
-                                      <span className="truncate max-w-[80px] font-medium">{box.masked_value}</span>
-                                    </>
-                                  )}
-                                </div>
-                                {box.page && <span className="text-[10px] text-text-secondary-light dark:text-text-secondary-dark">{box.page}페이지</span>}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  <div className="h-px bg-border-light dark:border-border-dark"></div>
 
                   <div className="grid grid-cols-3 gap-3">
                     {[
