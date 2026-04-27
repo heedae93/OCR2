@@ -233,7 +233,7 @@ export default function GlobalOcrActivityBanner() {
           작업 내역
         </Link>
         <Link href="/ocr-work" className="inline-flex items-center gap-1 font-medium text-primary hover:text-primary/80">
-          OCR 작업하기
+          문서 작업하기
           <ExternalLink className="w-3.5 h-3.5" />
         </Link>
       </div>

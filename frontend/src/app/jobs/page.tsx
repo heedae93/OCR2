@@ -302,7 +302,14 @@ function JobsPageInner() {
       return matchStatus && matchSearch
     })
     return { ...g, jobs }
-  }).filter(g => g.jobs.length > 0)
+  }).filter(g => g.jobs.length > 0).sort((a, b) => {
+    const aActive = a.jobs.some(j => j.status === 'processing' || j.status === 'queued') ? 1 : 0
+    const bActive = b.jobs.some(j => j.status === 'processing' || j.status === 'queued') ? 1 : 0
+    if (bActive !== aActive) return bActive - aActive
+    const aLatest = Math.max(...a.jobs.map(j => new Date(j.created_at).getTime()))
+    const bLatest = Math.max(...b.jobs.map(j => new Date(j.created_at).getTime()))
+    return bLatest - aLatest
+  })
 
   const SESSIONS_PER_PAGE = 10
   const totalPages = Math.ceil(filteredGroups.length / SESSIONS_PER_PAGE)
@@ -541,18 +548,18 @@ function JobsPageInner() {
               {paginatedGroups.map(group => (
                 <div key={group.session_id} className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
                   {/* 세션 헤더 */}
-                  <div className="flex items-center justify-between px-6 py-4 bg-background-light dark:bg-background-dark">
+                  <div className="flex items-center justify-between gap-3 px-6 py-4 bg-background-light dark:bg-background-dark">
                     <button
                       onClick={() => toggleGroup(group.session_id)}
-                      className="flex items-center gap-3 flex-1 text-left hover:opacity-80 transition-opacity"
+                      className="flex items-center gap-3 min-w-0 flex-1 text-left hover:opacity-80 transition-opacity"
                     >
-                      <span className="material-symbols-outlined text-primary">folder_open</span>
-                      <span className="font-semibold text-text-primary-light dark:text-text-primary-dark">{group.session_name}</span>
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary font-medium">
+                      <span className="material-symbols-outlined shrink-0 text-primary">folder_open</span>
+                      <span className="font-semibold truncate text-text-primary-light dark:text-text-primary-dark">{group.session_name}</span>
+                      <span className="shrink-0 px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary font-medium">
                         {group.jobs.length}개
                       </span>
                     </button>
-                    <div className="flex items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-2">
                       <label
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors ${uploadingSession === group.session_id ? 'opacity-50 cursor-not-allowed' : 'bg-primary/10 text-primary hover:bg-primary/20'}`}
                         title="이 세션에 파일 추가"
@@ -581,32 +588,43 @@ function JobsPageInner() {
                   {/* 작업 목록 */}
                   {group.expanded && (
                     <div className="overflow-x-auto">
-                      <table className="w-full">
+                      <table className="w-full table-fixed">
+                        <colgroup>
+                          <col style={{ width: '30%' }} />
+                          <col style={{ width: '9%' }} />
+                          <col style={{ width: '9%' }} />
+                          <col style={{ width: '18%' }} />
+                          <col style={{ width: '10%' }} />
+                          <col style={{ width: '19%' }} />
+                        </colgroup>
                         <thead className="border-t border-border-light dark:border-border-dark">
                           <tr>
-                            {['파일명', '상태', '페이지', '생성일', '처리 시간', '작업'].map(h => (
-                              <th key={h} className="px-6 py-3 text-left text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
-                                {h}
-                              </th>
-                            ))}
+                            <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">파일명</th>
+                            <th className="px-3 py-3 text-center text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">상태</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">페이지</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">생성일</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">처리시간</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">작업</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border-light dark:divide-border-dark">
                           {group.jobs.map(job => (
                             <tr key={job.job_id} className="hover:bg-background-light dark:hover:bg-background-dark transition-colors">
-                              <td className="px-6 py-4">
-                                {job.status === 'uploaded'
-                                  ? <span className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">{job.filename}</span>
-                                  : <button onClick={() => router.push(`/editor/${job.job_id}`)}
-                                      className="text-sm font-medium text-primary hover:text-primary/80 text-left">
-                                      {job.filename}
-                                    </button>
-                                }
-                                {job.is_double_column && (
-                                  <span className="ml-2 px-2 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-xs">더블 컬럼</span>
-                                )}
+                              <td className="px-6 py-4 min-w-0">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {job.status === 'uploaded'
+                                    ? <span className="text-sm font-medium truncate text-text-primary-light dark:text-text-primary-dark">{job.filename}</span>
+                                    : <button onClick={() => router.push(`/editor/${job.job_id}`)}
+                                        className="text-sm font-medium text-primary hover:text-primary/80 text-left truncate min-w-0">
+                                        {job.filename}
+                                      </button>
+                                  }
+                                  {job.is_double_column && (
+                                    <span className="shrink-0 px-2 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-xs">더블컬럼</span>
+                                  )}
+                                </div>
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
+                              <td className="px-3 py-4 text-center whitespace-nowrap">
                                 {job.status === 'uploaded'
                                   ? <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">-</span>
                                   : <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(job.status)}`}>
@@ -614,21 +632,21 @@ function JobsPageInner() {
                                     </span>
                                 }
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                              <td className="px-3 py-4 text-right whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
                                 {job.status === 'uploaded' ? '-' : (
                                   <>
-                                    {job.total_pages}p
+                                    <span>{job.total_pages}p</span>
                                     {job.total_text_blocks && <div className="text-xs">{job.total_text_blocks} 블록</div>}
                                   </>
                                 )}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                              <td className="px-3 py-4 text-right whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
                                 {job.status === 'uploaded' ? '-' : formatDate(job.created_at)}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                              <td className="px-3 py-4 text-right whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
                                 {job.status === 'uploaded' ? '-' : formatDuration(job.processing_time_seconds)}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-3">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right space-x-3">
                                 {job.status === 'uploaded' ? (
                                   <>
                                     <button
