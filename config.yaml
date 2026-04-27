@@ -17,7 +17,7 @@
 #
 ocr:
   # GPU 사용 여부  (true: GPU 가속 / false: CPU 전용)
-  use_gpu: false
+  use_gpu: true
 
   # OCR 엔진 선택 (pp_structure: 레이아웃 분석 포함 / paddleocr: 텍스트 인식만, CPU에서 안정적)
   engine: paddleocr
