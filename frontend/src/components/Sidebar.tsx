@@ -3,7 +3,13 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+<<<<<<< HEAD
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { Loader2 } from 'lucide-react'
+import { useOcrActivity } from '@/contexts/OcrActivityContext'
+=======
 import { useEffect, useRef, useState } from 'react'
+>>>>>>> d1f734558269f4e4444892b84d1cde2d428d0bac
 
 interface NavItem {
   href: string
@@ -53,9 +59,14 @@ export default function Sidebar() {
   const router = useRouter()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [expandedMenus, setExpandedMenus] = useState<string[]>([])
+  const { trackedJobs } = useOcrActivity()
   const [user, setUser] = useState<{ name: string; username: string; type?: string; user_id?: string } | null>(null)
   const [todayCount, setTodayCount] = useState(0)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  const isProcessing = useMemo(() => 
+    trackedJobs.some(job => job.status === 'processing' || job.status === 'queued'),
+  [trackedJobs])
 
   useEffect(() => {
     const stored = localStorage.getItem('user')
@@ -181,6 +192,9 @@ export default function Sidebar() {
                     <span className={`text-sm transition-all duration-200 ${active ? 'font-semibold' : 'font-medium'}`}>
                       {item.label}
                     </span>
+                    {item.href === '/ocr-work' && isProcessing && (
+                      <Loader2 className="ml-auto w-4 h-4 text-primary animate-spin" />
+                    )}
                     {item.badge && (
                       <span className="ml-auto rounded-full bg-primary/20 px-2 py-0.5 text-xs font-semibold text-primary">
                         {item.badge}

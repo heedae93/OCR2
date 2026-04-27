@@ -23,6 +23,8 @@ interface QueueFile {
   status: FileStatus
   progress: number
   docType: string
+  subStage?: string
+  message?: string
   error?: string
   jobId?: string
 }
@@ -181,19 +183,25 @@ export default function UploadQueueModal({ visible, onClose, onComplete, onProce
           if (!res.ok) throw new Error('상태 조회 실패')
           const data = await res.json()
           const mapped = 50 + Math.round(((data.progress_percent ?? 0) / 100) * 50)
-          updateFile(fileId, { progress: Math.min(mapped, 99) })
+          
+          updateFile(fileId, { 
+            progress: Math.min(mapped, 99),
+            subStage: data.sub_stage,
+            message: data.message
+          })
+          
           if (data.status === 'completed') {
             clearInterval(interval)
-            updateFile(fileId, { status: 'completed', progress: 100 })
+            updateFile(fileId, { status: 'completed', progress: 100, subStage: undefined })
             resolve()
           } else if (data.status === 'failed') {
             clearInterval(interval)
-            updateFile(fileId, { status: 'failed', error: data.error_message || '처리 실패' })
-            reject(new Error(data.error_message || '처리 실패'))
+            updateFile(fileId, { status: 'failed', error: data.message || '처리 실패', subStage: undefined })
+            reject(new Error(data.message || '처리 실패'))
           }
         } catch (err) {
           clearInterval(interval)
-          updateFile(fileId, { status: 'failed', error: String(err) })
+          updateFile(fileId, { status: 'failed', error: String(err), subStage: undefined })
           reject(err)
         }
       }, 2000)
@@ -418,7 +426,14 @@ export default function UploadQueueModal({ visible, onClose, onComplete, onProce
                       <p className="text-xs text-gray-400 mt-0.5">
                         {formatBytes(qf.file.size)}
                         {qf.status === 'uploading' && ' · 업로드 중...'}
-                        {qf.status === 'processing' && ' · OCR 처리 중...'}
+                        {qf.status === 'processing' && (
+                          <>
+                            {' · '}
+                            <span className="text-orange-500 font-bold animate-pulse">
+                              {qf.subStage || 'OCR 처리 중...'} ({qf.progress}%)
+                            </span>
+                          </>
+                        )}
                         {qf.status === 'completed' && ' · 완료'}
                       </p>
                       {(qf.status === 'uploading' || qf.status === 'processing') && (

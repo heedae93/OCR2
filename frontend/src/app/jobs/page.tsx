@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense, useMemo } from 'react'
 import Sidebar from '@/components/Sidebar'
+import PipelineProgress from '@/components/PipelineProgress'
 import { useRouter } from 'next/navigation'
 import { API_BASE_URL } from '@/lib/api'
 
@@ -10,6 +11,7 @@ interface Job {
   filename: string
   status: string
   progress_percent: number
+  sub_stage?: string | null
   total_pages: number
   created_at: string
   completed_at?: string
@@ -35,7 +37,6 @@ interface Statistics {
   storage_used_mb: number
 }
 
-const QUEUED_PROGRESS = 12
 
 function JobsPageInner() {
   const router = useRouter()
@@ -229,6 +230,19 @@ function JobsPageInner() {
     }
   }
 
+  const handleDeleteAllFailed = async () => {
+    const failedJobs = groups.flatMap(g => g.jobs.filter(j => j.status === 'failed'))
+    if (failedJobs.length === 0) return
+    if (!confirm(`실패한 작업 ${failedJobs.length}개를 모두 삭제하시겠습니까?`)) return
+    await Promise.all(
+      failedJobs.map(job =>
+        fetch(`${API_BASE_URL}/api/jobs/${job.job_id}`, { method: 'DELETE' }).catch(() => null)
+      )
+    )
+    loadData()
+    loadStatistics()
+  }
+
   const formatDate = (dateString?: string) => {
     if (!dateString) return '-'
     return new Date(dateString).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -259,6 +273,12 @@ function JobsPageInner() {
     }
   }
 
+<<<<<<< HEAD
+  // 필터링
+  const filteredGroups = groups.map(g => ({
+    ...g,
+    jobs: g.jobs.filter(job => {
+=======
   const getDisplayProgress = (status: string, progress: number) => {
     if (status === 'queued') return QUEUED_PROGRESS
     if (status === 'processing') return Math.max(QUEUED_PROGRESS, Math.min(progress, 100))
@@ -272,6 +292,7 @@ function JobsPageInner() {
   const filteredGroups = groups.map(g => {
     const sessionMatches = !searchQuery || g.session_name.toLowerCase().includes(searchQuery.toLowerCase())
     const jobs = g.jobs.filter(job => {
+>>>>>>> d1f734558269f4e4444892b84d1cde2d428d0bac
       const matchStatus = statusFilter === 'all' || job.status === statusFilter
       const matchSearch = sessionMatches || job.filename.toLowerCase().includes(searchQuery.toLowerCase())
       return matchStatus && matchSearch
@@ -336,6 +357,15 @@ function JobsPageInner() {
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <h1 className="text-3xl font-bold text-text-primary-light dark:text-text-primary-dark">작업 내역</h1>
+            {groups.some(g => g.jobs.some(j => j.status === 'failed')) && (
+              <button
+                onClick={handleDeleteAllFailed}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg transition-colors"
+              >
+                <span className="material-symbols-outlined text-base">delete_sweep</span>
+                실패 작업 전체 삭제
+              </button>
+            )}
           </div>
 
           {/* Statistics Cards */}
@@ -475,15 +505,14 @@ function JobsPageInner() {
                                 {getStatusText(job.status)}
                               </span>
                             </div>
-                            <p className="mt-2 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                              진행률 {Math.round(job.progress_percent || 0)}% · 생성 {formatDate(job.created_at)}
+                            <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                              생성 {formatDate(job.created_at)}
                             </p>
-                            <div className="mt-2 h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700">
-                              <div
-                                className="h-1.5 rounded-full bg-primary transition-all duration-300"
-                                style={{ width: `${getDisplayProgress(job.status, job.progress_percent || 0)}%` }}
-                              />
-                            </div>
+                            <PipelineProgress
+                              status={job.status}
+                              progress={job.progress_percent || 0}
+                              subStage={job.sub_stage}
+                            />
                           </div>
                         ))}
                       </div>

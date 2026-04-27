@@ -14,7 +14,7 @@ python-multipart>=0.0.6
 
 # ── PaddleOCR + PaddleX (레이아웃 감지) ──
 paddleocr>=3.1.0
-paddlex>=3.1.0
+paddlex[ocr]>=3.1.0
 
 # ── Table Transformer (Microsoft DETR 기반 표 인식) ──
 #   paddlepaddle 와 torch 는 같은 환경에서 공존 가능합니다.
