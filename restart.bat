@@ -13,7 +13,7 @@ cd backend
 start "OCR Backend" "%PYTHON%" -m uvicorn main:app --host 0.0.0.0 --port 6015
 
 echo Starting worker...
-start "OCR Worker" "%PYTHON%" -m celery -A ocr_worker worker -Q ocr --loglevel=info --pool=solo
+start "OCR Worker" "%PYTHON%" -m celery -A tasks.celery_app worker -Q ocr --loglevel=info --pool=solo
 
 echo Starting frontend...
 cd ..\frontend
