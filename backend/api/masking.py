@@ -110,7 +110,8 @@ def _apply_masking(pdf_path: Path, boxes: list, ocr_data: dict) -> bytes:
                 x1, y1, x2, y2 = bbox
                 rect = fitz.Rect(x1*scale_x, y1*scale_y, x2*scale_x, y2*scale_y)
                 
-                bg_color = _sample_background_color(pdf_page, rect)
+                # bg_color = _sample_background_color(pdf_page, rect)
+                bg_color = (1.0, 0.0, 0.0) # 임시로 빨간색 적용
                 f_bytes, f_size, f_color = _extract_span_font(doc, pdf_page, rect)
                 
                 pdf_page.add_redact_annot(rect, fill=bg_color)
