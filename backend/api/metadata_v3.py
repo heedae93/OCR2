@@ -76,10 +76,19 @@ class DocumentDetail(DocumentMeta):
     chunks: List[dict]
 
 
+class ExtractedFieldItem(BaseModel):
+    key: Optional[str] = None
+    value: str
+    entity_type: str = ""
+    entity_type_ko: str = ""
+
+
 class PatchDocumentRequest(BaseModel):
     tags: Optional[List[str]] = None
     notes: Optional[str] = None
     doc_type: Optional[str] = None
+    extracted_fields: Optional[List[ExtractedFieldItem]] = None
+    summary: Optional[str] = None
 
 
 class StatsResponse(BaseModel):
@@ -168,6 +177,8 @@ def _job_to_meta(job: Job, chunk_count: int, db: Optional[Session] = None,
             {
                 "key": r.field_key,
                 "label": r.label,
+                "entity_type_ko": r.label,
+                "entity_type": r.field_key,
                 "value": r.field_value,
                 "confidence": r.confidence,
                 "page_number": r.page_number
@@ -360,7 +371,7 @@ def get_document(
         for c in chunks
     ]
 
-    data = _job_to_meta(job, len(chunks))
+    data = _job_to_meta(job, len(chunks), db=db)
     data["full_text"] = (job.full_text or "")[:500] + "..." if job.full_text and len(job.full_text) > 500 else (job.full_text or "")
     data["chunks"] = chunk_list
     return data
@@ -385,12 +396,29 @@ def patch_document(
         job.notes = body.notes
     if body.doc_type is not None:
         job.doc_type = body.doc_type
+    if body.extracted_fields is not None:
+        # 기존 JSON 방식 업데이트 (호환성)
+        job.extracted_fields = json.dumps(
+            [f.model_dump() for f in body.extracted_fields], ensure_ascii=False
+        )
+        
+        # 신규 테이블 방식 동기화
+        db.query(DocumentMetadataValue).filter_by(job_id=job_id).delete()
+        for f in body.extracted_fields:
+            db.add(DocumentMetadataValue(
+                job_id=job_id,
+                field_key=f.key or f.entity_type or "",
+                label=f.entity_type_ko or f.key or "",
+                field_value=f.value
+            ))
+    if body.summary is not None:
+        job.summary = body.summary
 
     db.commit()
     db.refresh(job)
 
     chunks = db.query(DocumentChunk).filter(DocumentChunk.job_id == job_id).count()
-    return _job_to_meta(job, chunks)
+    return _job_to_meta(job, chunks, db=db)
 
 
 # ============================================================
