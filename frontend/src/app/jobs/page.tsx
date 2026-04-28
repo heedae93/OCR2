@@ -57,6 +57,8 @@ function JobsPageInner() {
   const [uploadingSession, setUploadingSession] = useState<string | null>(null)
   const [, setUploadProgress] = useState<Record<string, number>>({})
   const [currentPage, setCurrentPage] = useState(0)
+  const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'status'>('date_desc')
+  const [pageSize, setPageSize] = useState(5)
   const groupsRef = useRef<SessionGroup[]>([])
 
   useEffect(() => {
@@ -290,8 +292,9 @@ function JobsPageInner() {
     return Math.min(progress, 100)
   }
 
+
   // 검색/필터 변경 시 첫 페이지로
-  useEffect(() => { setCurrentPage(0) }, [searchQuery, statusFilter])
+  useEffect(() => { setCurrentPage(0) }, [searchQuery, statusFilter, sortBy, pageSize])
 
   // 필터링 (세션명 또는 파일명 검색)
   const filteredGroups = groups.map(g => {
@@ -303,6 +306,22 @@ function JobsPageInner() {
     })
     return { ...g, jobs }
   }).filter(g => g.jobs.length > 0).sort((a, b) => {
+    if (sortBy === 'date_asc') {
+      const aLatest = Math.max(...a.jobs.map(j => new Date(j.created_at).getTime()))
+      const bLatest = Math.max(...b.jobs.map(j => new Date(j.created_at).getTime()))
+      return aLatest - bLatest
+    }
+    if (sortBy === 'status') {
+      const statusPriority = (g: typeof a) => {
+        if (g.jobs.some(j => j.status === 'processing')) return 0
+        if (g.jobs.some(j => j.status === 'queued')) return 1
+        if (g.jobs.some(j => j.status === 'failed')) return 2
+        if (g.jobs.some(j => j.status === 'completed')) return 3
+        return 4
+      }
+      return statusPriority(a) - statusPriority(b)
+    }
+    // date_desc (default): 처리 중/대기 우선, 이후 최신순
     const aActive = a.jobs.some(j => j.status === 'processing' || j.status === 'queued') ? 1 : 0
     const bActive = b.jobs.some(j => j.status === 'processing' || j.status === 'queued') ? 1 : 0
     if (bActive !== aActive) return bActive - aActive
@@ -311,9 +330,8 @@ function JobsPageInner() {
     return bLatest - aLatest
   })
 
-  const SESSIONS_PER_PAGE = 10
-  const totalPages = Math.ceil(filteredGroups.length / SESSIONS_PER_PAGE)
-  const paginatedGroups = filteredGroups.slice(currentPage * SESSIONS_PER_PAGE, (currentPage + 1) * SESSIONS_PER_PAGE)
+  const totalPages = Math.ceil(filteredGroups.length / pageSize)
+  const paginatedGroups = filteredGroups.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
   const inProgressGroups = useMemo(() => groups
     .map(g => ({
       ...g,
@@ -379,14 +397,14 @@ function JobsPageInner() {
             )}
           </div>
 
-          {/* Statistics Cards */}
-          {statistics && (
+          {/* Statistics Cards — 임시 숨김 */}
+          {statistics && false && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
               {[
-                { label: '총 작업 수', value: statistics.total_jobs },
-                { label: '처리된 페이지', value: statistics.total_pages_processed },
-                { label: '평균 처리 시간', value: formatDuration(statistics.average_processing_time_seconds) },
-                { label: '사용 용량', value: `${statistics.storage_used_mb} MB` },
+                { label: '총 작업 수', value: statistics!.total_jobs },
+                { label: '처리된 페이지', value: statistics!.total_pages_processed },
+                { label: '평균 처리 시간', value: formatDuration(statistics!.average_processing_time_seconds) },
+                { label: '사용 용량', value: `${statistics!.storage_used_mb} MB` },
               ].map(({ label, value }) => (
                 <div key={label} className="bg-surface-light dark:bg-surface-dark p-6 rounded-xl border border-border-light dark:border-border-dark">
                   <div className="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-1">{label}</div>
@@ -406,17 +424,6 @@ function JobsPageInner() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="flex-1 px-4 py-2 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-primary-light dark:text-text-primary-dark"
               />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-4 py-2 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-primary-light dark:text-text-primary-dark"
-              >
-                <option value="all">모든 상태</option>
-                <option value="completed">완료</option>
-                <option value="processing">처리 중</option>
-                <option value="failed">실패</option>
-                <option value="queued">대기 중</option>
-              </select>
               <button onClick={() => loadData()} className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
                 검색
               </button>
@@ -534,7 +541,46 @@ function JobsPageInner() {
             )}
           </section>}
 
-          {/* Groups */}
+          {/* Groups 헤더: 필터 + 총 작업수 */}
+          {!loading && (
+            <div className="flex items-center justify-end gap-3 mb-3">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-1.5 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark"
+              >
+                <option value="all">모든 상태</option>
+                <option value="completed">완료</option>
+                <option value="processing">처리 중</option>
+                <option value="failed">실패</option>
+                <option value="queued">대기 중</option>
+              </select>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                className="px-3 py-1.5 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark"
+              >
+                <option value="date_desc">최신순</option>
+                <option value="date_asc">오래된순</option>
+                <option value="status">상태별</option>
+              </select>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="px-3 py-1.5 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark"
+              >
+                <option value={5}>5개씩</option>
+                <option value={10}>10개씩</option>
+                <option value={20}>20개씩</option>
+                <option value={50}>50개씩</option>
+              </select>
+              {filteredGroups.length > 0 && (
+                <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark whitespace-nowrap">
+                  총 <span className="text-primary text-base font-bold">{filteredGroups.reduce((acc, g) => acc + g.jobs.length, 0)}</span>개 작업
+                </span>
+              )}
+            </div>
+          )}
           {loading ? (
             <div className="flex items-center justify-center p-16">
               <span className="material-symbols-outlined animate-spin text-primary text-4xl">progress_activity</span>
@@ -703,7 +749,7 @@ function JobsPageInner() {
                 </div>
               ))}
               {/* 페이지네이션 */}
-              {totalPages > 1 && (
+              {totalPages >= 1 && (
                 <div className="flex items-center justify-center gap-2 pt-2 pb-4">
                   <button
                     onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
