@@ -768,7 +768,8 @@ export default function PDFViewer({
                 const offsetLeft = 0;
                 const boxW = fullW;
 
-                const bgColor = maskBgColors[idx] ?? "white";
+                // const bgColor = maskBgColors[idx] ?? "white";
+                const bgColor = "red"; // 임시로 빨간색 적용
                 const displayText = box.masked_value || box.value;
                 // 원본 폰트 크기가 있으면 사용, 없으면 박스 높이 기반 추정
                 const fontSize = box.font_size
