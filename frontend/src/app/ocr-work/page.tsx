@@ -80,8 +80,12 @@ export default function OcrWorkPage() {
     }
     fetchCategories()
 
-    // Restore state from localStorage
-    const savedQueue = localStorage.getItem('ocr_work_queue')
+    const savedUser = localStorage.getItem('user')
+    const user = savedUser ? JSON.parse(savedUser) : {}
+    const userId = user?.user_id || 'default'
+
+    // Restore state from user-specific localStorage
+    const savedQueue = localStorage.getItem(`ocr_work_queue_${userId}`)
     if (savedQueue) {
       try {
         setQueue(JSON.parse(savedQueue))
@@ -89,30 +93,40 @@ export default function OcrWorkPage() {
         console.error('Failed to restore queue', e)
       }
     }
-    const savedSessionName = localStorage.getItem('ocr_work_session_name')
+    const savedSessionName = localStorage.getItem(`ocr_work_session_name_${userId}`)
     if (savedSessionName) {
       setSessionName(savedSessionName)
     }
+
+    // [Cleanup] Remove old generic keys if they exist
+    localStorage.removeItem('ocr_work_queue')
+    localStorage.removeItem('ocr_work_session_name')
   }, [])
 
   // Persist state to localStorage
   useEffect(() => {
+    const savedUser = localStorage.getItem('user')
+    const user = savedUser ? JSON.parse(savedUser) : {}
+    const userId = user?.user_id || 'default'
+
     if (queue.length > 0) {
-      // Only save queued or failed items for persistence across page navigation
-      // Pending/Uploading items are lost anyway as we don't have the File object
       const serializableQueue = queue.map(item => ({
         ...item,
-        file: undefined // Cannot serialize File object
+        file: undefined
       }))
-      localStorage.setItem('ocr_work_queue', JSON.stringify(serializableQueue))
+      localStorage.setItem(`ocr_work_queue_${userId}`, JSON.stringify(serializableQueue))
     } else {
-      localStorage.removeItem('ocr_work_queue')
+      localStorage.removeItem(`ocr_work_queue_${userId}`)
     }
   }, [queue])
 
   useEffect(() => {
+    const savedUser = localStorage.getItem('user')
+    const user = savedUser ? JSON.parse(savedUser) : {}
+    const userId = user?.user_id || 'default'
+
     if (sessionName) {
-      localStorage.setItem('ocr_work_session_name', sessionName)
+      localStorage.setItem(`ocr_work_session_name_${userId}`, sessionName)
     }
   }, [sessionName])
   const fileInputRef = useRef<HTMLInputElement>(null)
