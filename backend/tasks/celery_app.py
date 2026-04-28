@@ -11,7 +11,7 @@ REDIS_URL = os.environ.get('REDIS_URL', Config.REDIS_URL)
 celery_app = Celery(
     'bbocr',
     broker=REDIS_URL,
-    include=['ocr_worker']
+    include=['tasks.ocr_worker']
 )
 
 celery_app.conf.update(
