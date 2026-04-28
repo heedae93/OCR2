@@ -16,7 +16,6 @@ Redis 또는 Celery Worker가 없으면 `OCR 시작하기` 시 아래와 같은 
 - 작업이 `queued`에서 멈춤
 - 작업이 실제로 처리되지 않음
 
-
 ## 1. 이 문서를 Claude / Codex에 넘길 때
 
 팀원이 AI 도구에게 실행을 맡길 경우 아래처럼 요청하면 됩니다.
@@ -34,7 +33,6 @@ redis.md 기준으로 누락된 설치가 있으면 먼저 설치하고, Redis /
 실행 후 접속 주소와 확인 결과까지 알려줘.
 ```
 
-
 ## 2. 필수 구성요소
 
 권장 환경:
@@ -51,7 +49,6 @@ redis.md 기준으로 누락된 설치가 있으면 먼저 설치하고, Redis /
 - 프론트 의존성: `frontend/package.json`
 - 백엔드 실행 디렉터리: `backend`
 - 프론트 실행 디렉터리: `frontend`
-
 
 ## 3. 처음 받은 뒤 설치 순서
 
@@ -99,7 +96,6 @@ cd frontend
 npm --version
 cd ..
 ```
-
 
 ## 4. Redis 설치
 
@@ -174,7 +170,6 @@ redis://localhost:6379/0
 - `backend/config.py`
 - `config.yaml`의 `redis.url`
 
-
 ## 5. 실행 순서
 
 반드시 아래 순서대로 실행하는 것을 권장합니다.
@@ -225,7 +220,7 @@ curl http://localhost:6015/docs
 cd <프로젝트-루트>
 .venv\Scripts\Activate.ps1
 cd backend
-python -m celery -A ocr_worker worker -Q ocr --loglevel=info --pool=solo
+python -m celery -A tasks.ocr_worker worker -Q ocr --loglevel=info --pool=solo
 ```
 
 중요:
@@ -253,7 +248,6 @@ npm run dev
 - Frontend: `http://localhost:6017`
 - Backend: `http://localhost:6015`
 
-
 ## 6. 최종 체크리스트
 
 정상 실행 상태:
@@ -270,7 +264,6 @@ npm run dev
 3. `OCR 작업하기` 진입
 4. 파일 업로드 후 `OCR 시작하기`
 5. 상태가 `queued` → `processing` → `completed`로 이동
-
 
 ## 7. 자주 나는 오류와 해결 방법
 
@@ -345,7 +338,6 @@ pip install -r backend\requirements.txt
 
 이 프로젝트는 OCR 백그라운드 큐 구조라서 Frontend 단독 실행만으로는 정상 동작하지 않습니다.
 
-
 ## 8. AI 도구용 빠른 요약
 
 Claude / Codex가 빠르게 참고할 수 있도록 핵심만 요약합니다.
@@ -396,7 +388,6 @@ docker run -d --name bbocr-redis -p 6379:6379 redis:7
 - Redis 없으면 OCR 시작 안 됨
 - Worker 없으면 작업이 큐에만 쌓임
 - `No module named 'celery'`가 뜨면 Python 환경이 잘못된 것
-
 
 ## 9. 권장 실행 요청 예시
 
