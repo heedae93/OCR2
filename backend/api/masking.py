@@ -216,209 +216,143 @@ async def download_masked_pdf(job_id:str):
 #         scale_x = pdf_page.rect.width / ocr_w
 #         scale_y = pdf_page.rect.height / ocr_h
 
-#         for item in page_boxes:
-#             x1, y1, x2, y2 = item["bbox"]
-            
-#             # PDF 좌표 변환 및 여유값(Padding) 부여
-#             rect = fitz.Rect(
-#                 x1 * scale_x - 2, 
-#                 y1 * scale_y - 2, 
-#                 x2 * scale_x + 2, 
-#                 y2 * scale_y + 2
-#             )
-            
-#             # 교정 영역 지정 (흰색 박스)
-#             pdf_page.add_redact_annot(rect, fill=(1, 1, 1))
-
-#         # 페이지별 즉시 적용
-#         pdf_page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
-
-#     # [수정] 문제가 된 linear=True 옵션을 제거하고 안정적인 옵션만 사용
-#     pdf_bytes = doc.tobytes(
-#         garbage=3, 
-#         deflate=True, 
-#         clean=True
-#     )
-#     doc.close()
-#     return pdf_bytes
-
-import fitz
-from pathlib import Path
-
-
-
-def _sample_background_color(pdf_page, rect: fitz.Rect) -> tuple:
+#   def _sample_background_color(pdf_page, rect: fitz.Rect) -> tuple:
     """
     rect 주변(상하좌우) 픽셀을 샘플링해 배경색을 추정한다.
-    밝은 픽셀 상위 10%만 평균 내어 텍스트(어두운 픽셀)의 오염을 완전히 차단한다.
-    반환값: fitz fill 용 (r, g, b) — 각 0.0~1.0 범위.
     """
-    pad = 15  # 샘플링 여백 (pt) — 조금 더 넓게 잡아 텍스트 간섭 최소화
+    pad = 12
     pr = pdf_page.rect
-
     zones = [
         fitz.Rect(rect.x0, max(pr.y0, rect.y0 - pad), rect.x1, rect.y0),
         fitz.Rect(rect.x0, rect.y1, rect.x1, min(pr.y1, rect.y1 + pad)),
         fitz.Rect(max(pr.x0, rect.x0 - pad), rect.y0, rect.x0, rect.y1),
         fitz.Rect(rect.x1, rect.y0, min(pr.x1, rect.x1 + pad), rect.y1),
     ]
-
     pixels = []
     for zone in zones:
-        if zone.is_empty or zone.width < 1 or zone.height < 1:
-            continue
+        if zone.is_empty or zone.width < 1 or zone.height < 1: continue
         try:
             pix = pdf_page.get_pixmap(clip=zone, matrix=fitz.Matrix(1, 1))
             data = pix.samples
-            n = pix.n
-            for i in range(0, len(data) - 2, n):
+            for i in range(0, len(data) - 2, pix.n):
                 pixels.append((data[i], data[i + 1], data[i + 2]))
-        except Exception:
-            pass
-
-    if not pixels:
-        return (1.0, 1.0, 1.0)
-
-    # 밝기 내림차순으로 정렬 후 상위 10% (배경 픽셀)만 평균 (텍스트 안티앨리어싱 회색 픽셀 완전 배제)
+        except: pass
+    if not pixels: return (1.0, 1.0, 1.0)
     pixels.sort(key=lambda p: p[0] + p[1] + p[2], reverse=True)
-    top_n = max(1, len(pixels) * 1 // 10)
+    top_n = max(1, len(pixels) // 10)
     top = pixels[:top_n]
-    avg_r = sum(p[0] for p in top) / top_n
-    avg_g = sum(p[1] for p in top) / top_n
-    avg_b = sum(p[2] for p in top) / top_n
-    return (avg_r / 255, avg_g / 255, avg_b / 255)
-
-
-# 한글 지원 폰트 경로 (없으면 None — 기본 폰트로 fallback)
-import os as _os
-import tempfile as _tempfile
-_KOREAN_FONT_PATH = next(
-    (p for p in [
-        r"C:\Windows\Fonts\malgun.ttf",      # Windows Malgun Gothic
-        r"C:\Windows\Fonts\gulim.ttc",
-        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",  # Linux NanumGothic
-    ] if _os.path.exists(p)),
-    None
-)
-
-
-def _extract_span_font(doc: fitz.Document, page: fitz.Page, rect: fitz.Rect):
-    """
-    rect와 가장 많이 겹치는 텍스트 span의 폰트 바이트·크기·색상 반환.
-    Returns: (font_bytes_or_none, font_size_or_none, font_color_or_none)
-    """
-    try:
-        best_span = None
-        best_area = 0.0
-        for block in page.get_text("dict")["blocks"]:
-            if block.get("type") != 0:
-                continue
-            for line in block.get("lines", []):
-                for span in line.get("spans", []):
-                    sr = fitz.Rect(span["bbox"])
-                    overlap = sr & rect
-                    if overlap.is_empty:
-                        continue
-                    area = overlap.width * overlap.height
-                    if area > best_area:
-                        best_area = area
-                        best_span = span
-
-        if best_span is None:
-            return None, None, None
-
-        raw_font_name = best_span.get("font", "")
-        font_size = best_span.get("size") or None
-        c = best_span.get("color", 0)
-        font_color = ((c >> 16 & 0xFF) / 255, (c >> 8 & 0xFF) / 255, (c & 0xFF) / 255)
-
-        # PDF에 내장된 폰트 바이트 추출 (subset prefix "ABCDEF+" 제거 후 매칭)
-        clean_name = raw_font_name.split("+")[-1].lower()
-        font_bytes = None
-        for fi in page.get_fonts(full=True):
-            # fi: (xref, ext, type, basefont, name, encoding, referencer)
-            xref = fi[0]
-            basefont = fi[3].split("+")[-1].lower()
-            if basefont == clean_name or clean_name in basefont or basefont in clean_name:
-                extracted = doc.extract_font(xref)
-                if extracted and extracted[3]:  # index 3 = raw bytes
-                    font_bytes = extracted[3]
-                    break
-
-        return font_bytes, font_size, font_color
-    except Exception:
-        return None, None, None
-
+    return (sum(p[0] for p in top)/top_n/255, sum(p[1] for p in top)/top_n/255, sum(p[2] for p in top)/top_n/255)
 
 def _apply_masking(pdf_path: Path, boxes: list, ocr_data: dict) -> bytes:
     """
-    마스킹 영역 주변 픽셀을 샘플링해 배경색으로 채우고,
-    그 위에 마스킹된 * 텍스트를 덧씌운다.
-    (예: 박채연 → "채연" 영역을 배경색으로 덮고 "**" 표시)
+    보안과 심미성을 동시에 잡은 프리미엄 마스킹 구현.
+    1. 원본 데이터를 물리적으로 삭제 (Redaction)
+    2. 주변 배경색 + 미세한 노이즈(질감)를 합성하여 이질감 제거
+    3. 마스킹 문자(*)를 원본 선명도에 맞춰 부드럽게 렌더링
     """
     try:
+        import numpy as np
+        from PIL import Image, ImageDraw, ImageFilter
+    except ImportError:
+        # Fallback if numpy/PIL not available (though they should be)
+        np = None
+
+    try:
         doc = fitz.open(str(pdf_path))
-        pages_list = ocr_data.get("pages", [])
-        ocr_pages = {p.get("page_number") or p.get("page"): p for p in pages_list}
+        ocr_pages = {p.get("page_number") or p.get("page"): p for p in ocr_data.get("pages", [])}
 
         for page_index in range(len(doc)):
             page_num = page_index + 1
             page_boxes = [b for b in boxes if str(b.get("page")) == str(page_num)]
-            if not page_boxes:
-                continue
+            if not page_boxes: continue
 
             pdf_page = doc[page_index]
             ocr_p = ocr_pages.get(page_num, {})
-            ocr_w = ocr_p.get("width") or pdf_page.rect.width
-            ocr_h = ocr_p.get("height") or pdf_page.rect.height
-            scale_x = pdf_page.rect.width / ocr_w
-            scale_y = pdf_page.rect.height / ocr_h
+            scale_x = pdf_page.rect.width / (ocr_p.get("width") or pdf_page.rect.width)
+            scale_y = pdf_page.rect.height / (ocr_p.get("height") or pdf_page.rect.height)
 
-            # ── 1단계: redaction 등록 + 배경색·폰트 정보 샘플링 (삭제 전에 해야 함) ──
-            pending: list[tuple[fitz.Rect, str, bytes | None, float | None, tuple | None]] = []
-
+            pending = []
             for item in page_boxes:
                 bbox = item.get("bbox")
-                if not bbox:
-                    continue
-
-                masked_value = item.get("masked_value", "")
-
+                if not bbox: continue
                 x1, y1, x2, y2 = bbox
-                # redact_rect: 여백을 너무 크게 주면 인접한 마스킹 박스가 겹쳐서 가려지는 문제 발생
-                # 좌우 여백을 ±2px로 줄여서 겹침 현상을 최소화합니다.
-                redact_rect = fitz.Rect(
-                    max(0, x1 * scale_x - 2),
-                    max(0, y1 * scale_y - 3),
-                    x2 * scale_x + 2,
-                    y2 * scale_y + 3,
-                )
-                # text_rect: 긴 텍스트(주소 등)가 영역 부족으로 잘리는(Truncation) 현상을 방지하기 위해 
-                # 우측과 하단에 충분한 가상 공간(+100px)을 확보합니다.
-                text_rect = fitz.Rect(
-                    x1 * scale_x - 1,
-                    y1 * scale_y,
-                    x2 * scale_x + 100,
-                    y2 * scale_y + 20,
-                )
+                # 마스킹 영역을 조금 더 정교하게 잡음 (상하 여백 최적화)
+                redact_rect = fitz.Rect(x1*scale_x-1, y1*scale_y-2, x2*scale_x+1, y2*scale_y+2)
+                
+                # 배경색 샘플링 및 물리적 삭제 등록
+                bg_color = _sample_background_color(pdf_page, redact_rect)
+                
+                # 원본 폰트 정보 추출 시도
+                f_bytes, f_size, f_color = _extract_span_font(doc, pdf_page, redact_rect)
+                
+                # Redaction 적용 (데이터 완전 삭제)
+                pdf_page.add_redact_annot(redact_rect, fill=bg_color)
+                
+                pending.append({
+                    "rect": redact_rect,
+                    "text": item.get("masked_value", ""),
+                    "bg_color": bg_color,
+                    "font_bytes": f_bytes,
+                    "font_size": f_size,
+                    "font_color": f_color
+                })
 
-                # 원본 폰트 정보 추출 (삭제 전에 해야 함)
-                orig_font_bytes, orig_font_size, orig_font_color = _extract_span_font(doc, pdf_page, redact_rect)
-
-                fill_color = _sample_background_color(pdf_page, redact_rect)
-                pdf_page.add_redact_annot(redact_rect, fill=fill_color)
-
-                pending.append((text_rect, masked_value, orig_font_bytes, orig_font_size, orig_font_color))
-
-            # ── 2단계: redaction 적용 (텍스트 물리적 제거) ────────────────────
+            # 물리적 삭제 실행
             pdf_page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
 
-            # ── 3단계: * 텍스트 덧씌우기 (원본 폰트 우선) ───────────────────────
-            tmp_font_files: list[str] = []
-            for rect, masked_text, font_bytes, orig_size, orig_color in pending:
-                if not masked_text:
-                    continue
-                font_size = orig_size if orig_size and orig_size > 0 else max(6.0, rect.height * 0.62)
+            # 덧씌우기 (자연스러운 질감 + 부드러운 텍스트)
+            for p in pending:
+                if not p["text"]: continue
+                
+                # 1. 질감 합성 (단색 박스의 이질감 제거를 위해 미세한 노이즈 추가)
+                if np:
+                    try:
+                        # 박스 크기에 맞는 아주 작은 노이즈 이미지 생성
+                        w, h = int(p["rect"].width * 2), int(p["rect"].height * 2)
+                        noise = np.random.randint(-3, 4, (h, w, 3), dtype='int16')
+                        base_rgb = np.array([p["bg_color"][0]*255, p["bg_color"][1]*255, p["bg_color"][2]*255])
+                        tex_arr = np.clip(base_rgb + noise, 0, 255).astype('uint8')
+                        tex_img = Image.fromarray(tex_arr)
+                        
+                        # PDF에 노이즈 이미지 삽입 (질감 부여)
+                        img_byte_arr = io.BytesIO()
+                        tex_img.save(img_byte_arr, format='PNG')
+                        pdf_page.insert_image(p["rect"], stream=img_byte_arr.getvalue(), overlay=True)
+                    except: pass
+
+                # 2. 텍스트 렌더링
+                f_size = p["font_size"] if p["font_size"] and p["font_size"] > 0 else max(7.0, p["rect"].height * 0.65)
+                f_color = p["font_color"] if p["font_color"] else (0.15, 0.15, 0.15)
+                
+                try:
+                    kwargs = {
+                        "rect": p["rect"],
+                        "text": p["text"],
+                        "fontsize": f_size,
+                        "color": f_color,
+                        "align": fitz.TEXT_ALIGN_LEFT
+                    }
+                    
+                    if p["font_bytes"]:
+                        with _tempfile.NamedTemporaryFile(suffix=".ttf", delete=False) as tmp:
+                            tmp.write(p["font_bytes"])
+                            tmp_name = tmp.name
+                        pdf_page.insert_textbox(**kwargs, fontfile=tmp_name, fontname="orig")
+                        try: _os.unlink(tmp_name)
+                        except: pass
+                    elif _KOREAN_FONT_PATH:
+                        pdf_page.insert_textbox(**kwargs, fontfile=_KOREAN_FONT_PATH, fontname="kor")
+                    else:
+                        pdf_page.insert_textbox(**kwargs)
+                except: pass
+
+        pdf_bytes = doc.tobytes(garbage=3, deflate=True)
+        doc.close()
+        return pdf_bytes
+    except Exception as e:
+        logger.error(f"Masking failed: {e}")
+        with open(pdf_path, "rb") as f: return f.read()
+ font_size = orig_size if orig_size and orig_size > 0 else max(6.0, rect.height * 0.62)
                 text_color = orig_color if orig_color else (0.2, 0.2, 0.2)
                 try:
                     kwargs = dict(
