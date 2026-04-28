@@ -47,6 +47,8 @@ class JobManager:
                 "message": job.message,
                 "sub_stage": job.sub_stage,
                 "pdf_url": job.pdf_url,
+                "user_id": job.user_id,
+                "created_at": job.created_at.isoformat() if hasattr(job.created_at, 'isoformat') else str(job.created_at),
                 "updated_at": datetime.now().isoformat()
             }
             # Atomic write with file locking (Unix only)
@@ -100,7 +102,7 @@ class JobManager:
             job_id=job_id,
             filename=filename,
             user_id=user_id,
-            status=JobStatus.QUEUED,
+            status=JobStatus.UPLOADED,
             progress_percent=0.0,
             current_page=0,
             total_pages=0,
@@ -138,13 +140,14 @@ class JobManager:
                         job_id=file_data["job_id"],
                         filename=file_data.get("filename", "unknown"),
                         user_id=file_data.get("user_id", "worker"),
-                        status=file_data.get("status", JobStatus.QUEUED),
+                        status=file_data.get("status", JobStatus.UPLOADED),
                         progress_percent=file_data.get("progress_percent", 0.0),
                         current_page=file_data.get("current_page", 0),
                         total_pages=file_data.get("total_pages", 0),
                         message=file_data.get("message"),
                         sub_stage=file_data.get("sub_stage"),
-                        pdf_url=file_data.get("pdf_url")
+                        pdf_url=file_data.get("pdf_url"),
+                        created_at=datetime.fromisoformat(file_data["created_at"]) if "created_at" in file_data else datetime.now()
                     )
                     self.jobs[job_id] = job
                 except Exception as e:

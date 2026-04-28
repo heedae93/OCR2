@@ -38,7 +38,6 @@ const baseNavItems: NavItem[] = [
   { href: '/jobs', icon: 'history', label: '작업내역' },
   { href: '/history', icon: 'manage_history', label: '이력관리' },
   { href: '/statistics', icon: 'bar_chart', label: '통계' },
-  { href: '/metadata', icon: 'settings_suggest', label: '추출 엔진 설정' },
  ]
 
 const adminNavItems: NavItem[] = [

@@ -62,6 +62,7 @@ class DocumentInSession(BaseModel):
     order: int
     is_selected: bool
     pdf_url: Optional[str] = None
+    message: Optional[str] = None
     added_at: str
 
 
@@ -163,26 +164,34 @@ async def create_session(
 ):
     """Create a new session"""
     try:
-        session_id = generate_unique_id()
-
         # 전달된 user_id로 사용자 존재 여부 확인, 없으면 기본값 사용
         user = db.query(User).filter_by(user_id=user_id).first()
         if not user:
             user = db.query(User).filter_by(user_id=Config.DEFAULT_USER_ID).first()
         actual_user_id = user.user_id if user else user_id
 
-        new_session = Session(
-            session_id=session_id,
-            user_id=actual_user_id,
-            session_name=request.session_name,
-            description=request.description
-        )
+        # 기존에 동일한 이름의 세션이 있는지 확인 (해당 사용자 내에서)
+        existing_session = db.query(Session).filter_by(
+            user_id=actual_user_id, 
+            session_name=request.session_name
+        ).first()
 
-        db.add(new_session)
-        db.commit()
-        db.refresh(new_session)
+        if existing_session:
+            logger.info(f"Using existing session: {existing_session.session_id} - {request.session_name}")
+            new_session = existing_session
+        else:
+            session_id = generate_unique_id()
+            new_session = Session(
+                session_id=session_id,
+                user_id=actual_user_id,
+                session_name=request.session_name,
+                description=request.description
+            )
+            db.add(new_session)
+            db.commit()
+            db.refresh(new_session)
 
-        logger.info(f"Created session: {session_id} - {request.session_name}")
+        logger.info(f"Session ready: {new_session.session_id} - {request.session_name}")
 
         return SessionResponse(
             session_id=new_session.session_id,
@@ -230,7 +239,7 @@ async def list_sessions(
                 total_pages = job.total_pages or 0
 
                 # Check file status for any non-completed job (processing, queued, etc.)
-                if job.status in ("processing", "queued", "pending"):
+                if job.status in ("processing", "queued", "pending", "uploaded"):
                     from utils.job_manager import JobManager
                     file_status = JobManager.read_status_from_file(job.job_id)
                     if file_status:
@@ -238,6 +247,14 @@ async def list_sessions(
                         progress_percent = file_status.get("progress_percent", progress_percent)
                         current_page = file_status.get("current_page", current_page)
                         total_pages = file_status.get("total_pages", total_pages)
+                        
+                        # Override status if message exists
+                        file_msg = file_status.get("message")
+                        if file_msg:
+                            status = "failed"
+                            message = file_msg
+                        else:
+                            message = job.error_message if status == "failed" else None
 
                 if status == "completed":
                     completed_count += 1
@@ -258,6 +275,7 @@ async def list_sessions(
                     order=sess_doc.order,
                     is_selected=sess_doc.is_selected,
                     pdf_url=pdf_url,
+                    message=message,
                     added_at=sess_doc.added_at.strftime("%Y-%m-%d %H:%M:%S") if sess_doc.added_at else None
                 ))
 

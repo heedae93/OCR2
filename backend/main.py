@@ -218,6 +218,33 @@ async def health_check():
     }
 
 
+@app.get("/api/worker/health")
+async def worker_health():
+    """Celery 워커 상태 확인"""
+    try:
+        from tasks.celery_app import celery_app
+        inspector = celery_app.control.inspect(timeout=2.0)
+        ping_result = inspector.ping()
+        available = bool(ping_result)
+        workers = list(ping_result.keys()) if ping_result else []
+        return {"available": available, "workers": workers}
+    except Exception as e:
+        return {"available": False, "workers": [], "error": str(e)}
+
+
+@app.get("/api/redis/health")
+async def redis_health():
+    """Redis 연결 상태 확인"""
+    try:
+        from config import Config
+        import redis as redis_lib
+        r = redis_lib.from_url(Config.REDIS_URL, socket_connect_timeout=2, socket_timeout=2)
+        r.ping()
+        return {"available": True}
+    except Exception as e:
+        return {"available": False, "error": str(e)}
+
+
 @app.get("/api/debug")
 async def debug_identity():
     import datetime

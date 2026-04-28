@@ -30,6 +30,7 @@ from utils.job_manager import JobManager
 from utils.file_utils import save_uploaded_file, generate_unique_id, cleanup_temp_files
 from utils.smart_layers import apply_smart_layers_to_image
 from utils.ocr_storage import resolve_ocr_json_path
+from utils.cancel_helper import is_job_cancelled as _is_job_cancelled, set_cancel_flag as _set_cancel_flag, clear_cancel_flag as _clear_cancel_flag
 from database import SessionLocal, Job as DBJob, DownloadHistory, FileVersion
 
 # Import pdf_gen pipeline components
@@ -40,28 +41,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# 취소 플래그 파일 디렉토리 (Worker와 FastAPI 프로세스 간 공유)
-CANCEL_FLAGS_DIR = Config.TEMP_DIR / "cancel_flags"
-CANCEL_FLAGS_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def _is_job_cancelled(job_id: str) -> bool:
-    """파일 기반 취소 체크 - Worker/FastAPI 프로세스 모두에서 동작"""
-    return (CANCEL_FLAGS_DIR / f"{job_id}.cancel").exists()
-
-
-def _set_cancel_flag(job_id: str):
-    """취소 플래그 파일 생성"""
-    (CANCEL_FLAGS_DIR / f"{job_id}.cancel").touch()
-
-
-def _clear_cancel_flag(job_id: str):
-    """취소 플래그 파일 삭제"""
-    flag = CANCEL_FLAGS_DIR / f"{job_id}.cancel"
-    try:
-        flag.unlink(missing_ok=True)
-    except Exception:
-        pass
 
 
 # Global instances
@@ -527,13 +506,36 @@ def process_job(job_id: str):
                     old_json.unlink()
             except Exception as e:
                 logger.warning(f"Failed to clean up old files for {job_id}: {e}")
-            # Reset to queued
-            job_manager.update_job(job_id, status=JobStatus.QUEUED, progress_percent=0.0)
-
+        # Celery Worker에 작업 전달 전 Redis 상태 확인
+        try:
+            import redis as _redis_lib
+            from config import Config as _Config
+            _r_client = _redis_lib.from_url(_Config.REDIS_URL, socket_connect_timeout=2)
+            _r_client.ping()
+        except Exception as redis_err:
+            logger.error(f"Redis connection failed: {redis_err}")
+            # Update status to failed
+            from utils.db_helper import update_job_status as _db_update_status
+            _db_update_status(job_id, "failed", error_message=f"Redis 서버 연결 실패: {str(redis_err)}")
+            job_manager.update_job(job_id, status=JobStatus.FAILED, message=f"Redis 서버 연결 실패: {str(redis_err)}")
+            raise HTTPException(status_code=503, detail="Redis 큐 서버가 비정상입니다. (연결 오류)")
+            
         # Celery Worker에 작업 전달 (Redis 큐를 통해)
-        from tasks.celery_app import celery_app as _celery
-        _celery.send_task('ocr.process', args=[job_id], queue='ocr')
-        logger.info(f"Dispatched job {job_id} to Celery OCR queue")
+        try:
+            from tasks.celery_app import celery_app as _celery
+            _celery.send_task('ocr.process', args=[job_id], queue='ocr')
+            logger.info(f"Dispatched job {job_id} to Celery OCR queue")
+            
+            # 작업이 성공적으로 전달된 경우에만 상태를 QUEUED로 전환
+            job_manager.update_job(job_id, status=JobStatus.QUEUED, progress_percent=0.0)
+            
+        except Exception as celery_err:
+            logger.error(f"Failed to dispatch job {job_id} to Celery: {celery_err}")
+            # Dispatch failure is a terminal error for this attempt
+            from utils.db_helper import update_job_status as _db_update_status
+            _db_update_status(job_id, "failed", error_message=f"Redis/큐 서버 비정상: {str(celery_err)}")
+            job_manager.update_job(job_id, status=JobStatus.FAILED, message=f"Redis/큐 서버 비정상: {str(celery_err)}")
+            raise HTTPException(status_code=503, detail="Redis 큐 서버가 비정상입니다. 작업을 등록할 수 없습니다.")
 
         return {
             "job_id": job_id,
@@ -545,6 +547,15 @@ def process_job(job_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to start processing: {e}")
+        # Update database status to failed if dispatch fails
+        try:
+            from utils.db_helper import update_job_status as _db_update_status
+            _db_update_status(job_id, "failed", error_message=f"작업 등록 실패: {str(e)}")
+            # Also update file-based status for immediate UI feedback
+            job_manager.update_job(job_id, status=JobStatus.FAILED, message=f"작업 등록 실패: {str(e)}")
+        except Exception as db_err:
+            logger.error(f"Failed to update job status to failed in DB: {db_err}")
+            
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -619,20 +630,58 @@ def cancel_all_jobs():
                 # Update memory
                 if job_id in job_manager.jobs:
                     job_manager.cancelled_jobs.add(job_id)
-                    job_manager.update_job(job_id, status=JobStatus.CANCELLED, message="모두 중단됨")
+                    job_manager.update_job(job_id, status=JobStatus.CANCELLED, message="중지됨")
                 
                 # Update DB
                 db_job.status = 'cancelled'
-                db_job.message = '모두 중단됨'
+                db_job.error_message = '사용자에 의해 중지됨'
                 count += 1
             
             db.commit()
             logger.info(f"Batch cancelled {count} jobs")
-            return {"status": "success", "cancelled_count": count, "message": f"{count}개의 작업이 중단되었습니다."}
+            return {"status": "success", "cancelled_count": count, "message": f"{count}개의 작업이 중지되었습니다."}
         finally:
             db.close()
     except Exception as e:
         logger.error(f"Failed to cancel all jobs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/cancel/{job_id}")
+async def cancel_job_api(job_id: str):
+    """Cancel a specific processing or queued job"""
+    try:
+        db = SessionLocal()
+        try:
+            db_job = db.query(DBJob).filter_by(job_id=job_id).first()
+            if not db_job:
+                raise HTTPException(status_code=404, detail="Job not found")
+
+            # Set cancel flag for worker
+            _set_cancel_flag(job_id)
+            
+            # Update memory state
+            if job_id in job_manager.jobs:
+                job_manager.cancelled_jobs.add(job_id)
+                job_manager.update_job(job_id, status=JobStatus.CANCELLED, message="사용자에 의해 중지됨")
+            else:
+                # Even if not in memory, update status file
+                job_manager.update_job(job_id, status=JobStatus.CANCELLED, message="사용자에 의해 중지됨")
+
+            # Update DB status
+            db_job.status = 'cancelled'
+            db_job.error_message = '사용자에 의해 중지됨'
+            db_job.updated_at = datetime.now()
+            db.commit()
+
+            logger.info(f"Job {job_id} cancelled by user")
+            return {"status": "success", "message": "작업이 중지되었습니다."}
+        finally:
+            db.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to cancel job {job_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1579,6 +1628,46 @@ async def get_job_status(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
     finally:
         db.close()
+
+
+@router.patch("/status/{job_id}")
+async def update_job_status_manual(
+    job_id: str, 
+    data: Dict[str, Any], 
+):
+    """Manually update job status (e.g. from frontend on error)"""
+    try:
+        status = data.get("status")
+        progress = data.get("progress_percent")
+        error_message = data.get("error_message")
+        
+        if not status:
+            raise HTTPException(status_code=400, detail="Status is required")
+
+        # Update DB
+        from utils.db_helper import update_job_status as _db_update_status
+        _db_update_status(job_id, status, progress=progress, error_message=error_message)
+
+        # Update File/Memory via JobManager
+        # Note: we use the global job_manager instance in this file
+        from models.job import JobStatus
+        try:
+            enum_status = JobStatus(status)
+            job_manager.update_job(
+                job_id, 
+                status=enum_status, 
+                progress_percent=progress, 
+                message=error_message
+            )
+        except ValueError:
+            logger.warning(f"Invalid status value: {status}")
+
+        return {"status": "success", "job_id": job_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to manually update job status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/ocr-results/{job_id}")

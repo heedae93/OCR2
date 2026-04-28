@@ -226,6 +226,21 @@ function JobsPageInner() {
     }
   }
 
+  const handleCancel = async (jobId: string) => {
+    if (!confirm('이 작업을 중지하시겠습니까?')) return
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/cancel/${jobId}`, { method: 'POST' })
+      if (response.ok) {
+        loadData(false)
+      } else {
+        alert('작업 중지 요청에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('Failed to cancel job:', error)
+      alert('작업 중지 중 오류가 발생했습니다.')
+    }
+  }
+
   const handleDelete = async (jobId: string) => {
     if (!confirm('정말 이 작업을 삭제하시겠습니까?')) return
     try {
@@ -272,6 +287,9 @@ function JobsPageInner() {
       case 'completed': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
       case 'processing': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
       case 'failed': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+      case 'queued':
+      case 'pending':
+      case 'uploaded': return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
       default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
     }
   }
@@ -281,7 +299,9 @@ function JobsPageInner() {
       case 'completed': return '완료'
       case 'processing': return '처리 중'
       case 'failed': return '실패'
-      case 'queued': return '대기 중'
+      case 'queued':
+      case 'pending':
+      case 'uploaded': return '대기 중'
       default: return status
     }
   }
@@ -671,12 +691,9 @@ function JobsPageInner() {
                                 </div>
                               </td>
                               <td className="px-3 py-4 text-center whitespace-nowrap">
-                                {job.status === 'uploaded'
-                                  ? <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">-</span>
-                                  : <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(job.status)}`}>
-                                      {getStatusText(job.status)}
-                                    </span>
-                                }
+                                <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(job.status)}`}>
+                                  {getStatusText(job.status)}
+                                </span>
                               </td>
                               <td className="px-3 py-4 text-right whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
                                 {job.status === 'uploaded' ? '-' : (
@@ -722,6 +739,14 @@ function JobsPageInner() {
                                         }}
                                         className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
                                         다운로드
+                                      </button>
+                                    )}
+                                    {(job.status === 'processing' || job.status === 'queued') && (
+                                      <button
+                                        onClick={() => handleCancel(job.job_id)}
+                                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-semibold"
+                                      >
+                                        중지
                                       </button>
                                     )}
                                     {(job.status === 'completed' || job.status === 'failed') && (

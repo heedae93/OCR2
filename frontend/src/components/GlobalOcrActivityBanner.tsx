@@ -38,7 +38,7 @@ function getDisplayProgress(status: 'queued' | 'processing' | 'completed' | 'fai
 }
 
 export default function GlobalOcrActivityBanner() {
-  const { trackedJobs, activeJobs, dismissFinishedJobs, clearAllTrackedJobs, cancelAllJobs } = useOcrActivity()
+  const { trackedJobs, activeJobs, dismissFinishedJobs, clearAllTrackedJobs, cancelJob, cancelAllJobs } = useOcrActivity()
   const [collapsed, setCollapsed] = useState(true)
 
   const completedCount = trackedJobs.filter(job => job.status === 'completed').length
@@ -198,10 +198,25 @@ export default function GlobalOcrActivityBanner() {
                             {getStatusText(job.status)}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-primary">
-                            <Clock3 className="w-3.5 h-3.5" />
-                            {getStatusText(job.status)} {Math.round(getDisplayProgress(job.status, job.progressPercent))}%
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 text-primary">
+                              <Clock3 className="w-3.5 h-3.5" />
+                              {getStatusText(job.status)} {Math.round(getDisplayProgress(job.status, job.progressPercent))}%
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (confirm('이 작업을 중지하시겠습니까?')) {
+                                  cancelJob(job.jobId);
+                                }
+                              }}
+                              className="p-1 rounded-md hover:bg-red-50 text-red-500 transition-colors"
+                              title="작업 중지"
+                            >
+                              <StopCircle className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>

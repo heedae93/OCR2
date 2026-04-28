@@ -28,9 +28,12 @@ export interface TrackedJob {
   subStage?: string
   message?: string
   createdAt: string
+  queuedAt?: string
   completedAt?: string
   error?: string
 }
+
+const QUEUED_TIMEOUT_MS = 90_000  // 90초 이상 queued 상태면 워커 없음으로 판단
 
 interface AddTrackedJobInput {
   jobId: string
@@ -45,6 +48,7 @@ interface OcrActivityContextValue {
   addTrackedJobs: (jobs: AddTrackedJobInput[]) => void
   dismissFinishedJobs: () => void
   clearAllTrackedJobs: () => void
+  cancelJob: (jobId: string) => Promise<void>
   cancelAllJobs: () => Promise<void>
 }
 
@@ -96,6 +100,7 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
           status: 'queued' as const,
           progressPercent: 0,
           createdAt: new Date().toISOString(),
+          queuedAt: new Date().toISOString(),
         }))
 
       return nextJobs.length > 0 ? [...nextJobs, ...prev] : prev
@@ -108,6 +113,26 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
 
   const clearAllTrackedJobs = useCallback(() => {
     setTrackedJobs([])
+  }, [])
+
+  const cancelJob = useCallback(async (jobId: string) => {
+    try {
+      await fetch(`${API_BASE}/cancel/${jobId}`, { method: 'POST' })
+      setTrackedJobs(prev =>
+        prev.map(job =>
+          job.jobId === jobId
+            ? {
+                ...job,
+                status: 'failed' as const,
+                message: '사용자에 의해 중지됨',
+                completedAt: new Date().toISOString(),
+              }
+            : job,
+        ),
+      )
+    } catch (error) {
+      console.error(`Failed to cancel job ${jobId}:`, error)
+    }
   }, [])
 
   const cancelAllJobs = useCallback(async () => {
@@ -157,8 +182,33 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
         }),
       )
 
+      const now = Date.now()
+
       setTrackedJobs(prev =>
         prev.map(job => {
+          // queued 타임아웃 체크 — 워커가 없으면 90초 후 실패 처리
+          if (job.status === 'queued' && job.queuedAt) {
+            const waitedMs = now - new Date(job.queuedAt).getTime()
+            if (waitedMs > QUEUED_TIMEOUT_MS) {
+              // 백엔드 상태도 'failed'로 동기화
+              fetch(`${API_BASE}/jobs/${job.jobId}/status`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  status: 'failed',
+                  message: '워커가 응답하지 않습니다. 워커가 실행 중인지 확인해 주세요.'
+                })
+              }).catch(err => console.error('Failed to sync timeout status to backend:', err))
+
+              return {
+                ...job,
+                status: 'failed' as const,
+                error: '워커가 응답하지 않습니다. 워커가 실행 중인지 확인해 주세요.',
+                completedAt: new Date().toISOString(),
+              }
+            }
+          }
+
           const result = results.find(
             item => item.status === 'fulfilled' && item.value.jobId === job.jobId,
           )
@@ -218,9 +268,10 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
       addTrackedJobs,
       dismissFinishedJobs,
       clearAllTrackedJobs,
+      cancelJob,
       cancelAllJobs,
     }),
-    [activeJobs, addTrackedJobs, clearAllTrackedJobs, cancelAllJobs, dismissFinishedJobs, trackedJobs],
+    [activeJobs, addTrackedJobs, clearAllTrackedJobs, cancelJob, cancelAllJobs, dismissFinishedJobs, trackedJobs],
   )
 
   return <OcrActivityContext.Provider value={value}>{children}</OcrActivityContext.Provider>

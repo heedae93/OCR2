@@ -14,6 +14,7 @@ class JobStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    UPLOADED = "uploaded"
 
 
 class JobCreate(BaseModel):
