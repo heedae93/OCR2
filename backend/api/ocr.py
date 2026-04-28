@@ -531,7 +531,7 @@ def process_job(job_id: str):
             job_manager.update_job(job_id, status=JobStatus.QUEUED, progress_percent=0.0)
 
         # Celery Worker에 작업 전달 (Redis 큐를 통해)
-        from celery_app import celery_app as _celery
+        from tasks.celery_app import celery_app as _celery
         _celery.send_task('ocr.process', args=[job_id], queue='ocr')
         logger.info(f"Dispatched job {job_id} to Celery OCR queue")
 
@@ -1114,6 +1114,17 @@ def process_job_task(job_id: str):
             job_manager.update_job(job_id, message="개인정보 감지 중...")
 
             pii_boxes = extract_pii_from_pages(ocr_pages)
+            
+            # --- [추가된 부분] 추출된 데이터 상세 로그 확인 ---
+            logger.info(f"[{job_id}] ===== 개인정보 추출 결과 상세 =====")
+            for box in pii_boxes:
+                # pii_extractor에서 'source' 값을 넘겨준다고 가정
+                source = box.get("source", "unknown (정규식 또는 NER)").upper()
+                pii_type = box.get("type", "UNKNOWN")
+                val = box.get("value", "")
+                logger.info(f"  - [출처: {source}] 유형: {pii_type:10s} | 추출된 텍스트: '{val}'")
+            logger.info("==============================================")
+            
             for box in pii_boxes:
                 box["masked_value"] = mask_value(box["type"], box["value"])
 
@@ -1510,8 +1521,8 @@ async def get_job_status(job_id: str):
                 total_pages=db_job.total_pages,
                 message=db_job.error_message,
                 pdf_url=pdf_url,
-                created_at=db_job.created_at.isoformat() if db_job.created_at else None,
-                completed_at=db_job.completed_at.isoformat() if db_job.completed_at else None,
+                created_at=db_job.created_at.strftime("%Y-%m-%d %H:%M:%S") if db_job.created_at else None,
+                completed_at=db_job.completed_at.strftime("%Y-%m-%d %H:%M:%S") if db_job.completed_at else None,
                 processing_time_seconds=db_job.processing_time_seconds,
                 total_text_blocks=db_job.total_text_blocks,
                 average_confidence=db_job.average_confidence,
@@ -1557,8 +1568,8 @@ async def get_job_status(job_id: str):
                 current_page=db_job.current_page,
                 total_pages=db_job.total_pages,
                 message=db_job.error_message,
-                created_at=db_job.created_at.isoformat() if db_job.created_at else None,
-                completed_at=db_job.completed_at.isoformat() if db_job.completed_at else None,
+                created_at=db_job.created_at.strftime("%Y-%m-%d %H:%M:%S") if db_job.created_at else None,
+                completed_at=db_job.completed_at.strftime("%Y-%m-%d %H:%M:%S") if db_job.completed_at else None,
                 processing_time_seconds=db_job.processing_time_seconds,
                 total_text_blocks=db_job.total_text_blocks,
                 average_confidence=db_job.average_confidence,

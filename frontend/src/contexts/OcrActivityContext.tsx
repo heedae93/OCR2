@@ -25,6 +25,8 @@ export interface TrackedJob {
   sourceType: TrackedSourceType
   status: TrackedJobStatus
   progressPercent: number
+  subStage?: string
+  message?: string
   createdAt: string
   completedAt?: string
   error?: string
@@ -141,7 +143,8 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
               jobId: trackedJob.jobId,
               status: data.status as TrackedJobStatus,
               progressPercent: Number(data.progress_percent ?? 0),
-              error: data.message as string | undefined,
+              subStage: data.sub_stage as string | undefined,
+              message: data.message as string | undefined,
             }
           } catch (error) {
             return {
@@ -171,7 +174,9 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
             ...job,
             status: nextStatus,
             progressPercent: nextProgress,
-            error: nextStatus === 'failed' ? result.value.error || 'OCR 작업 실패' : undefined,
+            subStage: result.value.subStage,
+            message: result.value.message,
+            error: nextStatus === 'failed' ? result.value.message || 'OCR 작업 실패' : undefined,
             completedAt:
               nextStatus === 'completed' || nextStatus === 'failed'
                 ? job.completedAt || new Date().toISOString()

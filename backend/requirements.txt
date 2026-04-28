@@ -14,14 +14,14 @@ python-multipart>=0.0.6
 
 # ── PaddleOCR + PaddleX (레이아웃 감지) ──
 paddleocr>=3.1.0
-paddlex>=3.1.0
+paddlex[ocr]>=3.1.0
 
 # ── Table Transformer (Microsoft DETR 기반 표 인식) ──
 #   paddlepaddle 와 torch 는 같은 환경에서 공존 가능합니다.
 #   GPU 환경에서는 torch+cuda 빌드를 별도 설치하면 GPU 가속이 됩니다.
 transformers>=4.30.0
 timm>=0.9.0
-torch>=2.0.0
+torch>=2.4.0
 
 # ── 이미지 처리 ──
 opencv-python>=4.8.0
@@ -60,5 +60,13 @@ redis>=5.0.0
 pymysql==1.1.2
 
 # ── KoBERT NER ──
+transformers>=4.21.0
+torch>=2.4.0
+sentencepiece>=0.1.96
+
+# OpenSearch 통신 라이브러리
+opensearch-py==3.1.0
+
 sentencepiece>=0.1.96
 duckduckgo-search>=6.0.0
+

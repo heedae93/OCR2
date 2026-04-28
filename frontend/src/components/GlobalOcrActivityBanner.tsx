@@ -180,6 +180,11 @@ export default function GlobalOcrActivityBanner() {
                         <p className="truncate text-sm font-medium text-text-primary-light dark:text-text-primary-dark">
                           {job.filename}
                         </p>
+                        {job.status === 'processing' && job.subStage && (
+                          <p className="text-[10px] text-primary font-bold mt-0.5 animate-pulse">
+                            {job.subStage}
+                          </p>
+                        )}
                       </div>
                       <div className="shrink-0 text-xs font-medium">
                         {job.status === 'failed' ? (
@@ -195,7 +200,7 @@ export default function GlobalOcrActivityBanner() {
                         ) : (
                           <span className="inline-flex items-center gap-1 text-primary">
                             <Clock3 className="w-3.5 h-3.5" />
-                            {getStatusText(job.status)}
+                            {getStatusText(job.status)} {Math.round(getDisplayProgress(job.status, job.progressPercent))}%
                           </span>
                         )}
                       </div>
@@ -228,7 +233,7 @@ export default function GlobalOcrActivityBanner() {
           작업 내역
         </Link>
         <Link href="/ocr-work" className="inline-flex items-center gap-1 font-medium text-primary hover:text-primary/80">
-          OCR 작업하기
+          문서 작업하기
           <ExternalLink className="w-3.5 h-3.5" />
         </Link>
       </div>

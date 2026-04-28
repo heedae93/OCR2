@@ -61,21 +61,20 @@ PII_PATTERNS = {
         r"\b[가-힣]{1,2}\s?\d{2,3}\s?[가-힣]\s?\d{4}\b",
     ],
     "ROAD_ADDRESS": [
-        # 도로명 주소: xxx로/길 번지 (동/층/호 선택)
-        r"\b[가-힣0-9·\- \t]+(?:로|길)\s?\d+(?:-\d+)?(?:\s?\d+[동층호실]*)?\b",
-        # 지번 주소: 시/도 + 구/군 + 동/읍/면 + 번지
-        r"\b[가-힣]+(?:특별시|광역시|특별자치시|특별자치도|시|도)\s*[가-힣]+(?:구|군)\s*[가-힣]+(?:읍|면|동|가)\s*\d+(?:-\d+)?\b",
-        # 지번 주소 (시/구 없이 동/읍/면 + 번지만)
-        r"\b[가-힣]{2,}(?:읍|면|동|가)\s+\d+(?:-\d+)?\b",
+        # 사용자의 요청에 따라 정규식으로 주소를 찾지 않고 오직 NER로만 찾습니다.
     ],
     "NAME": [
-        # 일반 레이블 뒤 이름
-        r"(?:성\s*명|이\s*름|대\s*표\s*이\s*사|대표자|원\s*장|사\s*장|담당자|신청인|보호자|환\s*자|예\s*금\s*주|배\s*통\s*자|수\s*취\s*인|송\s*금\s*인|본\s*인|세\s*대\s*주)[\s\n:：]*([가-힣]{2,4})\b",
-        # 직급/직책 레이블 뒤 이름 (인사공고, 발령 문서 등)
-        r"(?:부\s*장|차\s*장|과\s*장|대\s*리|사\s*원|수\s*석|책\s*임|선\s*임|주\s*임|팀\s*장|본\s*부\s*장|전\s*무|상\s*무|이\s*사|사\s*장|대\s*표|원\s*장|교\s*수|교\s*사|강\s*사|의\s*사|간\s*호\s*사|약\s*사|변\s*호\s*사|회\s*계\s*사)[\s\n:：]+([가-힣]{2,4})\b",
-        # 이름 뒤 경칭/서명 표시 (귀하, 님, 씨, (인), (서명) 등)
-        r"([가-힣]{2,4})\s*(?:귀하|님|씨)\b",
-        r"([가-힣]{2,4})\s*[\(\（]\s*(?:인|서명|印)\s*[\)\）]",
+        # 레이블이 명확할 때만 정규식으로 강제 추출 (NER 보완용)
+        # 한국어 이름: 레이블 뒤 2~4글자 한글
+        r"(?:성\s*명|이\s*름|대\s*표\s*이\s*사|대\s*표\s*자|대\s*표|신청인|보호자|환\s*자|예\s*금\s*주|본\s*인|세\s*대\s*주)\s*[:：]?\s*([가-힣]{2,4})\b",
+        # 영문 이름과 괄호로 병기된 한글 이름 (라벨 없이 강제 추출, 예: 이영희 (Lee Young-hee))
+        r"([가-힣]{2,4})\s*\(\s*[A-Za-z][A-Za-z\s\-]{0,20}[A-Za-z]\s*\)",
+    ],
+    "ENGLISH_NAME": [
+        # 한글/영문 레이블 뒤 영문 이름 (선택적으로 앞에 한글 이름과 괄호 포함)
+        r"(?:성\s*명|이\s*름|대\s*표\s*이\s*사|대\s*표\s*자|대\s*표|신청인|보호자|환\s*자|예\s*금\s*주|본\s*인|세\s*대\s*주|Name|Representative|Applicant|Patient|Depositor)\s*[:：]?\s*(?:[가-힣]{2,4}\s*\(\s*)?([A-Za-z][A-Za-z\s\-]{0,20}[A-Za-z])\b(?:\s*\))?",
+        # 한글 이름(2~4자) 뒤 괄호 안 영문 이름
+        r"[가-힣]{2,4}\s*\(\s*([A-Za-z][A-Za-z\s\-]{0,20}[A-Za-z])\s*\)"
     ],
 }
 
@@ -93,57 +92,35 @@ TYPE_NORMALIZE_MAP = {
     "차량번호": "CAR_NO", "자동차번호": "CAR_NO", "차량번호판": "CAR_NO", "번호판": "CAR_NO",
     "도로명주소": "ROAD_ADDRESS", "주소": "ROAD_ADDRESS",
     "이름": "NAME", "성명": "NAME",
+    "영문이름": "ENGLISH_NAME", "영어이름": "ENGLISH_NAME", "english_name": "ENGLISH_NAME",
 }
 
 ALLOWED_TYPES = {
     "PHONE", "EMAIL", "RRN", "FOREIGNER_REG_NO", "BUSINESS_REG_NO",
     "ACCOUNT_NO", "HEALTH_INSURANCE_NO", "CREDIT_CARD", "PASSPORT_NO",
-    "IP_ADDRESS", "CAR_NO", "ROAD_ADDRESS", "NAME"
-}
-
-# NAME 오탐 방지: 이름처럼 생겼지만 이름이 아닌 단어 블랙리스트
-NAME_BLACKLIST = {
-    # 레이블/키워드
-    "성명", "이름", "전화", "이메일", "주소", "직위", "직책", "부서", "팀명",
-    "담당자", "대표자", "대표이사", "원장", "사장", "담당", "신청인", "보호자",
-    "예금주", "수취인", "송금인", "본인", "세대주", "환자",
-    # 직급/직책 단어 (이사 뒤에 오는 단어가 이름으로 잡히는 오탐 방지)
-    "이사", "부장", "차장", "과장", "대리", "사원", "팀장", "본부장", "전무", "상무",
-    # 일반 조사/어미/단어
-    "이나", "와의", "에서", "으로", "에게", "한국", "서울", "부산", "대구",
-    "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남",
-    "전북", "전남", "경북", "경남", "제주", "이하", "여백", "확인", "내용",
-    "관계", "번호", "등록", "등본", "초본", "발급", "신청", "용도", "목적",
-    "정보", "처리", "동의", "거부", "철회", "권리", "의무", "책임", "규정",
-    # 업무/문서 용어 (직급 레이블 뒤에 올 수 있는 비이름 단어)
-    "해당", "기존", "변경", "없음", "있음", "이전", "신규", "현재", "현직",
-    "완료", "승인", "반려", "대상", "제외", "포함", "적용", "미적용",
-    "인사", "발령", "공고", "사항", "현황", "결과", "내역", "직급", "직책",
-    # 문서 섹션 표제어 합성어
-    "인사공고", "인적사항", "발령사항", "변경사항", "해당사항", "인사발령",
-    "직급변경", "직책변경", "인사현황", "발령현황", "직급현황",
+    "IP_ADDRESS", "CAR_NO", "ROAD_ADDRESS", "NAME", "ENGLISH_NAME"
 }
 
 # KoBERT NER 모델 초기화
 _kobert_ner_model = None
 _kobert_ner_tokenizer = None
 
-KOBERT_NAME_CONFIDENCE_MIN = 0.60
+# [수정] 모델의 문맥 판단력을 100% 신뢰하도록 하한선을 높임 (오탐 차단)
+KOBERT_NAME_CONFIDENCE_MIN = 0.85
 
 
 def _is_valid_kobert_name(value: str, score: float) -> bool:
-    collapsed = re.sub(r'\s+', '', value)
     if score < KOBERT_NAME_CONFIDENCE_MIN:
         return False
-    if not re.fullmatch(r'[가-힣]{2,4}', collapsed):
-        return False
-    if collapsed in _STANDALONE_NAME_BLACKLIST:
-        return False
-    if any(collapsed.endswith(s) for s in _NON_NAME_SUFFIXES):
-        return False
-    if len(collapsed) == 2 and re.search(r'[하되어이의을를은는가나]$', collapsed):
-        return False
-    return True
+    # 한국어 이름: 2~4글자 한글
+    if re.fullmatch(r'[가-힣]{2,4}', re.sub(r'\s+', '', value)):
+        return True
+    # 영문 이름: 하이픈·공백 제거 후 순수 알파벳 2자 이상
+    # 허용 케이스: Hong Gil-dong / HONG GILDONG / honggildong / HongGildong
+    alnum = re.sub(r'[\s\-]', '', value.strip())
+    if alnum.isalpha() and len(alnum) >= 2:
+        return True
+    return False
 
 
 def _init_kobert_ner():
@@ -154,11 +131,10 @@ def _init_kobert_ner():
     
     if _kobert_ner_model is None:
         try:
-            # 한국어 NER fine-tuned 모델 사용 (KLUE 데이터셋 기반)
             model_name = "bespin-global/klue-roberta-base-ner"
             _kobert_ner_tokenizer = AutoTokenizer.from_pretrained(model_name)
             _kobert_ner_model = AutoModelForTokenClassification.from_pretrained(model_name)
-            logger.info("KoBERT NER 모델 로드 완료")
+            logger.info("KoBERT NER 모델 로드 완료 (bespin-global/klue-roberta-base-ner)")
         except Exception as e:
             logger.error(f"KoBERT NER 모델 로드 실패: {e}")
             return False
@@ -197,8 +173,9 @@ def _extract_with_kobert_ner(text: str) -> List[Dict[str, Any]]:
                         "confidence": entity['score']
                     })
             elif entity_type in ['LOC', 'LOCATION', 'LC']:  # 장소
-                # 주소 접미사가 있는 경우만 주소로 판정 (len >= 3 조건 제거 — 오탐 방지)
-                if re.search(r'(?:로|길|동|읍|면|시|구|군|도|가)\s*\d*$', value):
+                # 도로명+번지 또는 지번 숫자가 있는 경우만 주소로 판정
+                # "서울시", "중구" 등 행정구역 단독명은 번지 없으므로 제외
+                if re.search(r'(?:로|길|동|읍|면)\s*\d+', value) or re.search(r'\d+\s*번지', value):
                     pii_items.append({
                         "type": "ROAD_ADDRESS",
                         "value": value,
@@ -249,16 +226,16 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
                         value = _get_match_value(m)
                         if not value:
                             continue
-                        # NAME 블랙리스트: 라벨/업무용어 오탐 방지 (확장 블랙리스트 사용)
-                        if pii_type == "NAME" and re.sub(r'\s+', '', value) in _STANDALONE_NAME_BLACKLIST:
-                            continue
-                        sub_bbox = _estimate_sub_bbox(value, text, bbox)
+                            
+                        # 추출된 값(value) 부분만의 정밀한 sub-bbox를 추정 (실패 시 원본 라인 bbox 사용)
+                        sub_bbox = _estimate_sub_bbox(value, text, bbox) or bbox
                         results.append({
                             "type": pii_type,
                             "value": value,
                             "page": page_num,
-                            "bbox": sub_bbox or bbox,
+                            "bbox": sub_bbox,
                             "_context": text,
+                            "source": "정규식 (1차)"
                         })
 
     results = _deduplicate(results)
@@ -282,9 +259,6 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
                         value = _get_match_value(m)
                         if not value or _is_covered(value, pii_type, results):
                             continue
-                        # NAME 블랙리스트: 라벨/업무용어 오탐 방지 (확장 블랙리스트 사용)
-                        if pii_type == "NAME" and re.sub(r'\s+', '', value) in _STANDALONE_NAME_BLACKLIST:
-                            continue
                         # 값이 어느 라인에 속하는지 먼저 확인 후 tight bbox 사용
                         # → 레이블(l1)까지 마스킹하는 문제 방지
                         # _estimate_sub_bbox는 라인 전체와 동일하면 None 반환하므로
@@ -307,70 +281,89 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
                             "page": page_num,
                             "bbox": sub_bbox,
                             "_context": l1["text"] + " " + l2["text"],
+                            "source": "정규식 (2차 병합)"
                         })
 
     results = _deduplicate(results)
     logger.info(f"[2차 인접 라인 병합] 누적 {len(results)}개")
 
     # ── 정규식 추출 NAME 규칙 검증 ───────────────────────────
-    # 정규식은 레이블 뒤 한글을 기계적으로 잡기 때문에 조사/어미 오탐 가능성이 있음.
-    # 블랙리스트/접미사/조사 패턴으로 실제 이름이 아닌 항목 제거.
     results = _validate_regex_names(results)
     logger.info(f"[NAME 규칙 검증] 완료 후 {len(results)}개")
 
+    # ── 2.5차: 공간 근접성 기반 추출 (표 구조 대응) ────────────────
+    # KoBERT NER가 없거나 표 형식으로 라벨과 값이 떨어진 경우 보완
+    results = _extract_pii_by_proximity(ocr_pages, results)
+    logger.info(f"[2.5차 공간 근접성] 누적 {len(results)}개")
+
     # ── 3차: KoBERT NER 보조 (NAME, ROAD_ADDRESS) ────────────────────────────────
-    for page in ocr_pages:
-        page_num = page["page_number"]
-        lines = page.get("lines", [])
-        page_text = "\n".join(l.get("text", "") for l in lines if l.get("text"))
-        if not page_text.strip():
-            continue
+    print("\n[진행] KoBERT NER (이름/주소) 분석을 시작합니다...")
+    if _init_kobert_ner():
+        try:
+            ner_pipeline = pipeline(
+                "ner", 
+                model=_kobert_ner_model, 
+                tokenizer=_kobert_ner_tokenizer,
+                aggregation_strategy="simple",
+                device=0 if torch.cuda.is_available() else -1
+            )
+            
+            for page in ocr_pages:
+                page_num = page["page_number"]
+                lines = page.get("lines", [])
+                
+                # 글자 수 제한 에러를 막기 위해 전체가 아닌 '한 줄씩' NER에 통과시킵니다.
+                for line in lines:
+                    text = line.get("text", "").strip()
+                    if not text: continue
+                    
+                    # 512 토큰 제한을 원천 차단 (200글자까지만 자름)
+                    safe_text = text[:200]
+                    entities = ner_pipeline(safe_text)
+                    
+                    for entity in entities:
+                        entity_type = entity['entity_group']
+                        value = entity['word'].strip()
+                        score = entity['score']
+                        
+                        if entity_type in ['PER', 'PERSON', 'PS']:
+                            if _is_valid_kobert_name(value, score):
+                                alnum = re.sub(r'[\s\-]', '', value)
+                                is_english = alnum.isalpha() and not re.search(r'[가-힣]', value)
+                                assigned_type = "ENGLISH_NAME" if is_english else "NAME"
+                                sub_bbox = _estimate_sub_bbox(value, text, line.get("bbox")) or line.get("bbox")
+                                results.append({"type": assigned_type, "value": value, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT)"})
+                                
+                        elif entity_type in ['LOC', 'LOCATION', 'LC']:
+                            idx = text.find(value)
+                            if idx != -1:
+                                # 1. 앞으로(Backward) 확장: 서울특별시, 경기도 등 행정구역이 NER 토큰에서 잘렸을 때 복원
+                                prefix = text[:idx]
+                                back_match = re.search(r'((?:[가-힣]+(?:도|시|군|구|읍|면|동)\s+)+)$', prefix)
+                                if back_match:
+                                    ext_back = back_match.group(1)
+                                    value = ext_back + value
+                                    idx = text.find(value)  # 위치 갱신
 
-        ner_items = _extract_with_kobert_ner(page_text)
+                                # 2. 뒤로(Forward) 확장: 세부 주소 및 (문래동3가) 같은 괄호 참조 주소 복원
+                                remainder = text[idx + len(value):]
+                                match = re.match(r'^[\s,.\d\-시구군읍면동층호지번길로가의A-Za-z]+(?:\s*\([가-힣A-Za-z\d\s,.-]+\))?', remainder)
+                                if match:
+                                    ext = match.group(0)
+                                    # 확장 바로 뒤 숫자+호 패턴이 이어지면 추가 보완
+                                    after = remainder[len(ext):]
+                                    ho = re.match(r'^\d+\s*호', after)
+                                    if ho:
+                                        ext = ext + ho.group(0)
+                                    value = value + ext.rstrip()
 
-        for item in ner_items:
-            if item["type"] == "NAME":
-                collapsed_val = re.sub(r'\s+', '', item["value"])
-                # NAME 블랙리스트 필터 (확장 블랙리스트 포함)
-                if collapsed_val in _STANDALONE_NAME_BLACKLIST:
-                    logger.debug(f"[NER 블랙리스트] NAME 오탐 제거: {item['value']}")
-                    continue
-                # 문서 섹션 표제어 접미사 필터
-                if any(collapsed_val.endswith(s) for s in _NON_NAME_SUFFIXES):
-                    logger.debug(f"[NER 접미사 필터] NAME 오탑 제거: {item['value']}")
-                    continue
-                # 2글자 한글이 조사/어미인 경우 제거
-                if len(collapsed_val) == 2 and re.search(r'[하되어이의을를은는가나]$', collapsed_val):
-                    logger.debug(f"[NER 블랙리스트] 조사/어미 패턴 제거: {item['value']}")
-                    continue
-
-            # 해당 value가 등장하는 모든 bbox 찾기
-            bboxes = _find_all_value_bboxes(item["value"], lines)
-            if not bboxes:
-                # bbox를 못 찾아도 pii_items 목록에는 포함 (bbox=None)
-                if not _is_covered(item["value"], item["type"], results):
-                    results.append({
-                        "type": item["type"],
-                        "value": item["value"],
-                        "page": page_num,
-                        "bbox": None,
-                    })
-            else:
-                for bbox in bboxes:
-                    # 이미 동일 bbox로 등록된 항목은 건너뜀
-                    already = any(
-                        r["type"] == item["type"]
-                        and r["value"] == item["value"]
-                        and r.get("bbox") == bbox
-                        for r in results
-                    )
-                    if not already:
-                        results.append({
-                            "type": item["type"],
-                            "value": item["value"],
-                            "page": page_num,
-                            "bbox": bbox,
-                        })
+                            if re.search(r'(?:로|길|동|읍|면)\s*\d+', value) or re.search(r'\d+\s*번지', value) or re.search(r'\d+동\s*\d+호', value):
+                                sub_bbox = _estimate_sub_bbox(value, text, line.get("bbox")) or line.get("bbox")
+                                results.append({"type": "ROAD_ADDRESS", "value": value, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT)"})
+        except Exception as e:
+            print(f"[오류] KoBERT NER 실행 중 에러: {e}")
+    else:
+        print("[경고] KoBERT NER 모델을 사용할 수 없습니다.")
 
     # 3차에서는 value+bbox 기준 중복 제거 (같은 이름이 다른 위치에 있으면 유지)
     seen = set()
@@ -382,110 +375,27 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
             deduped_results.append(r)
     results = deduped_results
 
-    logger.info(f"[3차 KoBERT NER 보조] 최종 {len(results)}개: {results}")
+    # ── 최종 추출 결과 명확하게 터미널에 출력 (print 사용) ──
+    print("\n" + "="*55)
+    print("            [개인정보 추출 최종 결과]            ")
+    print("="*55)
+    if not results:
+        print("  추출된 데이터가 없습니다.")
+    for r in results:
+        source = r.get("source", "UNKNOWN")
+        pii_type = r.get("type", "UNKNOWN")
+        val = r.get("value", "")
+        print(f"  [{source:15s}] {pii_type:15s} | '{val}'")
+    print("="*55 + "\n")
 
-    # ── 4차: 독립 라인 이름 감지 (LLM 없이 fallback) ─────────
-    results = _detect_standalone_names(ocr_pages, results)
-    logger.info(f"[4차 독립라인 이름 감지] 최종 {len(results)}개")
-
-    return results
-
-
-# 직급/직책 키워드 (인접 라인에 있으면 이름으로 판단)
-_JOB_TITLE_WORDS = {
-    "부장", "차장", "과장", "대리", "사원", "수석", "책임", "선임", "주임",
-    "팀장", "본부장", "전무", "상무", "이사", "사장", "대표", "원장",
-    "교수", "교사", "강사", "의사", "간호사", "약사", "변호사", "회계사",
-    "발령행", "발령", "직급", "직책", "수취인", "송금인", "예금주",
-}
-
-# 이름처럼 생겼지만 이름이 아닌 단어 (블랙리스트 확장)
-_STANDALONE_NAME_BLACKLIST = NAME_BLACKLIST | {
-    "인사", "공고", "개최", "결과", "아래", "같이", "변경", "현직", "사항",
-    "부장", "차장", "과장", "대리", "사원", "수석", "책임", "선임", "주임",
-    "팀장", "본부장", "전무", "상무", "이사", "사장", "대표", "원장",
-    "발령", "직급", "직책", "일자", "이하", "다음", "위와", "해당", "기존",
-    "변경", "없음", "완료", "처리", "확인", "승인", "반려", "수정", "삭제",
-    "추가", "등록", "조회", "출력", "저장", "취소", "닫기", "입력", "선택",
-    "건강", "보험", "연금", "세금", "급여", "수당", "상여", "퇴직", "휴가",
-    "출장", "교육", "훈련", "평가", "승진", "전보", "파견", "겸직", "해임",
-    "임명", "위촉", "해촉", "임기", "기간", "날짜", "제목", "내용", "비고",
-    "합계", "소계", "금액", "단위", "수량", "단가", "총액", "부가세",
-    # 문서 섹션 표제어 합성어 (개별 단어는 있지만 합성어는 없었음)
-    "인사공고", "인적사항", "발령사항", "기존이사", "변경사항", "해당사항",
-    "현황사항", "처리사항", "확인사항", "결과사항", "인사발령", "인사현황",
-    "발령현황", "직급현황", "직책현황", "인사내역", "발령내역", "직급변경",
-    "직책변경", "현직현황", "현직이사", "신규이사", "기존직급", "변경직급",
-    "사항없음", "해당없음", "내용없음", "비고없음",
-}
-
-# 이름이 아닌 단어의 접미사 (이 접미사로 끝나는 합성어는 무조건 이름 아님)
-_NON_NAME_SUFFIXES = {
-    "공고", "사항", "현황", "결과", "내역", "명단", "목록", "기준",
-    "방법", "절차", "양식", "서식", "기록", "현황표", "명세", "내용",
-}
-
-
-def _detect_standalone_names(ocr_pages: list, existing_results: list) -> list:
-    """
-    독립 라인에 2~4글자 한글만 있는 경우, 인접 라인 문맥으로 이름 여부 판단.
-    LLM 없이 동작하는 fallback 방식.
-    """
-    results = list(existing_results)
-    already_values = {(r["type"], r["value"]) for r in results}
-
-    for page in ocr_pages:
-        page_num = page["page_number"]
-        lines = [l for l in page.get("lines", []) if l.get("text") and l.get("bbox")]
-
-        for i, line in enumerate(lines):
-            raw_text = line.get("text", "").strip()
-            # OCR 공백 제거 후 순수 한글 2~4글자인지 확인
-            collapsed = re.sub(r'\s+', '', raw_text)
-            if not re.fullmatch(r'[가-힣]{2,4}', collapsed):
-                continue
-            if collapsed in _STANDALONE_NAME_BLACKLIST:
-                continue
-            # 문서 섹션 표제어 접미사로 끝나는 단어는 이름 아님
-            # 예: 인사공고(→공고), 인적사항(→사항), 발령사항(→사항)
-            if any(collapsed.endswith(s) for s in _NON_NAME_SUFFIXES):
-                continue
-
-            # 인접 라인(앞뒤 2줄) 중 직급/레이블이 있으면 이름으로 판단
-            context_lines = lines[max(0, i-2):i] + lines[i+1:min(len(lines), i+3)]
-            context_text = " ".join(l.get("text", "") for l in context_lines)
-            context_collapsed = re.sub(r'\s+', '', context_text)
-
-            is_name_context = any(kw in context_collapsed for kw in _JOB_TITLE_WORDS)
-            # 또는 인접 라인이 숫자(사번)인 경우도 이름 가능성 있음
-            if not is_name_context:
-                for cl in context_lines:
-                    ct = cl.get("text", "").strip()
-                    if re.fullmatch(r'\d{4,6}', re.sub(r'\s+', '', ct)):
-                        is_name_context = True
-                        break
-
-            if not is_name_context:
-                continue
-
-            # 이미 같은 value+bbox로 등록된 경우 스킵
-            bbox = line.get("bbox")
-            already = any(
-                r["type"] == "NAME" and r["value"] == collapsed and r.get("bbox") == bbox
-                for r in results
-            )
-            if already:
-                continue
-
-            results.append({
-                "type": "NAME",
-                "value": collapsed,
-                "page": page_num,
-                "bbox": bbox,
-            })
-            logger.info(f"[4차] 독립 이름 감지: '{collapsed}' (페이지 {page_num})")
+    # ── 4차: 독립 라인 이름 감지 (비활성화) ─────────
+    # NER(3차) 도입으로 인해 오탐(False Positive)이 잦고, 
+    # 허공에 뜬 텍스트는 향후 OCR 레이아웃 분석을 통해 보완할 예정이므로 비활성화합니다.
+    # results = _detect_standalone_names(ocr_pages, results)
+    # logger.info(f"[4차 독립라인 이름 감지] 최종 {len(results)}개")
 
     return results
+
 
 
 # ============================================================
@@ -540,16 +450,17 @@ def _find_all_value_bboxes(value: str, lines: list) -> list:
     norm_val = normalize(value)
     found = []
     for line in lines:
-        norm_line = normalize(line.get("text", ""))
+        orig_text = line.get("text", "")
+        norm_line = normalize(orig_text)
         bbox = line.get("bbox")
         if bbox and norm_val in norm_line:
-            sub_bbox = _estimate_sub_bbox(value, line.get("text", ""), bbox)
-            found.append(sub_bbox or bbox)
+                sub_bbox = _estimate_sub_bbox(value, orig_text, bbox) or bbox
+                found.append(sub_bbox)
     return found
 
 
 def _deduplicate(results: list) -> list:
-    """type 내에서 value가 부분 문자열 관계인 경우 중복 제거."""
+    """type 내에서 value가 부분 문자열 관계인 경우 중복 제거. 더 긴(완전한) 값을 유지."""
     def sc(s):
         return re.sub(r'[\s\-\n\r\t]', '', str(s))
 
@@ -557,11 +468,17 @@ def _deduplicate(results: list) -> list:
     for item in results:
         val = sc(item["value"])
         is_dup = False
-        for existing in deduped:
+        for i, existing in enumerate(deduped):
             if existing["type"] != item["type"]:
                 continue
             ex = sc(existing["value"])
-            if val == ex or val in ex or ex in val:
+            if val == ex or val in ex:
+                # 새 항목이 기존보다 같거나 짧음 → 기존 유지
+                is_dup = True
+                break
+            if ex in val:
+                # 새 항목이 기존보다 김 → 더 완전한 값으로 교체 (예: "...1203" → "...1203호")
+                deduped[i] = item
                 is_dup = True
                 break
         if not is_dup:
@@ -571,41 +488,126 @@ def _deduplicate(results: list) -> list:
 
 def _validate_regex_names(results: list) -> list:
     """
-    정규식으로 추출된 NAME 항목을 규칙 기반으로 검증.
-    블랙리스트, 접미사 패턴, 조사/어미 패턴으로 오탐 제거.
-    _context 임시 필드도 함께 정리.
-    NAME이 아닌 타입은 그대로 통과.
+    무한 블랙리스트 대신, 구조적 규칙과 AI(KoBERT) 분업을 통한 스마트 필터링.
     """
-    before_count = sum(1 for r in results if r.get("type") == "NAME")
     filtered = []
+
+    # 1. 정규식 탐지 단서로 쓴 라벨 키워드 (이 단어들은 이름 자체가 될 수 없음)
+    LABEL_KEYWORDS = {"성명", "이름", "대표이사", "대표자", "대표", "신청인", "보호자", "환자", "예금주", "본인", "세대주"}
+
     for r in results:
         r.pop("_context", None)
-        if r["type"] != "NAME":
-            filtered.append(r)
-            continue
-
-        collapsed = re.sub(r'\s+', '', r["value"])
-
-        # 블랙리스트 체크
-        if collapsed in _STANDALONE_NAME_BLACKLIST:
-            logger.debug(f"[NAME 규칙 검증] 블랙리스트 제거: {r['value']}")
-            continue
-
-        # 접미사 필터 (인사공고, 발령사항 등 문서 표제어)
-        if any(collapsed.endswith(s) for s in _NON_NAME_SUFFIXES):
-            logger.debug(f"[NAME 규칙 검증] 접미사 패턴 제거: {r['value']}")
-            continue
-
-        # 2글자이고 조사/어미로 끝나면 제거
-        if len(collapsed) == 2 and re.search(r'[하되어이의을를은는가나]$', collapsed):
-            logger.debug(f"[NAME 규칙 검증] 조사/어미 패턴 제거: {r['value']}")
-            continue
+        if r.get("type") == "NAME" and r.get("source", "").startswith("정규식"):
+            val_clean = re.sub(r'\s+', '', r.get("value", ""))
+            
+            # 규칙 A: 라벨 자체를 이름으로 오인한 경우 (예: "본인 성명") 무조건 제외
+            if val_clean in LABEL_KEYWORDS:
+                continue
+                
+            # 규칙 B: 2글자 이하 단어는 정규식에서 과감히 버림 ("확인", "서명", "없음" 등 2글자 일반명사 오탐 원천 차단)
+            # -> 공간 근접성(Table)이나 3차 KoBERT NER가 문맥으로 파악하여 살려냄
+            if len(val_clean) < 3:
+                continue
 
         filtered.append(r)
 
-    after_count = sum(1 for r in filtered if r.get("type") == "NAME")
-    logger.info(f"[NAME 규칙 검증] {before_count}개 중 {after_count}개 통과")
     return filtered
+
+
+def _extract_pii_by_proximity(ocr_pages: list, results: list) -> list:
+    """
+    라벨(성명, 주민번호 등)과 값이 표 형식으로 떨어져 있는 경우 공간적 근접성을 이용해 추출.
+    """
+    LABEL_MAP = {
+        "NAME": ["성명", "이름", "성 명", "이 름", "대표이사", "대표자", "성  명"],
+        "RRN": ["주민등록번호", "주민번호", "주민등록", "RRN"],
+        "PHONE": ["전화번호", "휴대폰", "연락처", "H.P", "연 락 처"],
+        "ACCOUNT_NO": ["계좌번호", "계좌", "입금계좌", "계 좌 번 호"]
+    }
+    # 이름 탐지에서 제외할 일반적인 명사/직급
+    EXCLUDE_NAME_WORDS = {
+        "과장", "차장", "팀장", "사원", "대리", "부장", "이사", "대표", "지원", "영업", "개발", "인사",
+        "팀", "부서", "본부", "실", "센터", "공고", "결과", "아래", "사항", "내용", "확인", "서명", "날인",
+        "성명", "이름", "본인", "대표자", "대표이사", "신청인", "보호자", "환자", "예금주", "입금", "계좌",
+        "합계", "금액", "비고", "순위", "번호", "일자", "날짜", "시간", "장소", "주소", "연락처", "전화",
+        "문의", "안내", "참조", "비고", "파일", "첨부", "제출", "작성", "승인", "검토", "완료", "진행"
+    }
+
+    def _is_overlap(b1, b2):
+        if not b1 or not b2: return False
+        return not (b1[2] < b2[0] or b1[0] > b2[2] or b1[3] < b2[1] or b1[1] > b2[3])
+
+    def _get_overlap_x(b1, b2):
+        overlap = min(b1[2], b2[2]) - max(b1[0], b2[0])
+        return max(0, overlap)
+
+    new_results = list(results)
+    
+    for page in ocr_pages:
+        page_num = page["page_number"]
+        lines = [l for l in page.get("lines", []) if l.get("text") and l.get("bbox")]
+        if not lines: continue
+
+        # 1. 라벨 헤더 식별
+        headers = []
+        for l in lines:
+            txt = re.sub(r'\s+', '', l["text"])
+            for p_type, keywords in LABEL_MAP.items():
+                if any(kw.replace(' ', '') == txt or (len(txt) < 10 and kw.replace(' ', '') in txt) for kw in keywords):
+                    headers.append({"type": p_type, "bbox": l["bbox"], "text": l["text"]})
+
+        # 2. 근접 라인 탐색
+        for header in headers:
+            pii_type = header["type"]
+            hx1, hy1, hx2, hy2 = header["bbox"]
+            h_width = hx2 - hx1
+            h_height = hy2 - hy1
+
+            for line in lines:
+                text = line["text"].strip()
+                if not text or line["bbox"] == header["bbox"]:
+                    continue
+
+                # 이미 추출된 항목인지 확인
+                if any(r["page"] == page_num and _is_overlap(r["bbox"], line["bbox"]) for r in new_results):
+                    continue
+
+                cx1, cy1, cx2, cy2 = line["bbox"]
+                
+                # 가로(우측) 근접: Y축 겹치고 X축이 라벨 우측에 있음
+                y_overlap = min(hy2, cy2) - max(hy1, cy1)
+                is_horiz = y_overlap > (min(h_height, cy2-cy1) * 0.5)
+                dist_h = cx1 - hx2
+                
+                # 세로(하단) 근접: X축 겹치고 Y축이 라벨 하단에 있음
+                x_overlap = _get_overlap_x(header["bbox"], line["bbox"])
+                is_vert = x_overlap > (min(h_width, cx2-cx1) * 0.5)
+                dist_v = cy1 - hy2
+
+                match_found = False
+                # 이름(NAME) 특화 로직
+                if pii_type == "NAME":
+                    # 한글 2~4자 (공백 허용)
+                    clean_text = re.sub(r'\s+', '', text)
+                    if 2 <= len(clean_text) <= 4 and re.match(r'^[가-힣]+$', clean_text):
+                        if not any(w in clean_text for w in EXCLUDE_NAME_WORDS):
+                            # 거리 조건: 가로는 라벨 3배 이내, 세로는 라벨 15배 이내 (표가 길 수 있음)
+                            if (is_horiz and 0 < dist_h < h_width * 3) or (is_vert and 0 < dist_v < h_height * 15):
+                                match_found = True
+                
+                # 주민번호(RRN) 등 다른 타입은 이미 1차 정규식에서 (라벨 없이도) 잡혔을 가능성이 큼
+                # 만약 안 잡혔다면 여기서 추가 가능 (필요 시)
+
+                if match_found:
+                    new_results.append({
+                        "type": pii_type,
+                        "value": text,
+                        "page": page_num,
+                        "bbox": line["bbox"],
+                        "source": "공간 근접성 (Table)"
+                    })
+
+    return _deduplicate(new_results)
 
 
 
@@ -659,7 +661,7 @@ def _preprocess_for_regex(text: str) -> str:
 # ============================================================
 
 def _char_visual_width(c: str) -> float:
-    """문자 시각적 너비 추정. 한글/한자 등 전각 문자는 2, 나머지는 1."""
+    """문자 시각적 너비 추정. 한글/한자 등 전각 문자는 2, 나머지는 1을 기준으로 세밀하게 보정."""
     cp = ord(c)
     if (0x1100 <= cp <= 0x11FF   # 한글 자모
             or 0x3000 <= cp <= 0x9FFF   # CJK 기호/한자
@@ -667,6 +669,18 @@ def _char_visual_width(c: str) -> float:
             or 0xF900 <= cp <= 0xFAFF   # CJK 호환 한자
             or 0xFF01 <= cp <= 0xFF60): # 전각 ASCII
         return 2.0
+    if c.isspace():
+        return 0.5   # 공백은 보통 매우 좁음
+    if c in '.,:;-\'\"|`!()[]{}\\/':
+        return 0.6   # 기호들도 좁음
+    if c in 'ilI1':
+        return 0.7   # 얇은 문자/숫자
+    if c.isdigit():
+        return 1.1   # 숫자는 일반 알파벳보다 살짝 넓은 경향
+    if c.isupper():
+        return 1.3   # 대문자는 소문자보다 넓음
+    if c in 'mwWM':
+        return 1.5   # 특히 넓은 알파벳
     return 1.0
 
 
@@ -833,9 +847,8 @@ def mask_value(pii_type: str, value: str) -> str:
         return v
 
     elif pii_type == "CAR_NO":
-        return re.sub(r'(\d{2,3})\s?[가-힣]\s?\d{4}', lambda m: m.group(1) + '*****', v)
+        # "12가3456" → "12가****"  길이를 value와 동일하게 유지해야 partial_bbox가 올바르게 계산됨
+        return re.sub(r'(\d{2,3}\s?[가-힣])\s?\d{4}', lambda m: m.group(1) + '****', v)
 
     half = max(1, len(v) // 2)
     return v[:half] + '*' * (len(v) - half)
-
-

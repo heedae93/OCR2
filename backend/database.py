@@ -1,7 +1,7 @@
 """
 SQLite database setup and models using SQLAlchemy
 """
-from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, text
+from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, text, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -35,6 +35,20 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+class PermissionGroup(Base):
+    """User permission group model"""
+    __tablename__ = "permission_groups"
+
+    group_key = Column(String(100), primary_key=True)
+    group_name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    masking_access_level = Column(String(20), default="masked")  # masked, original
+    masking_field_keys = Column(Text, default="[]")
+    is_system = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class User(Base):
     """User model"""
     __tablename__ = "users"
@@ -47,6 +61,8 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.now)
     last_login = Column(DateTime, nullable=True)
     type = Column(String(1), default="U")  # A: Admin, U: User
+    permission_group = Column(String(100), default="default")
+    masking_access_level = Column(String(20), default="masked")  # masked, original
     total_jobs = Column(Integer, default=0)
     storage_used_bytes = Column(Integer, default=0)
 
@@ -317,22 +333,104 @@ def init_db():
         Base.metadata.create_all(bind=engine)
         logger.info(f"Database initialized at {DATABASE_URL}")
 
-        # Migration handled manually to prevent startup deadlocks
-        pass
+        inspector = inspect(engine)
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+        migration_statements = []
+
+        if "permission_group" not in user_columns:
+            migration_statements.append(
+                text("ALTER TABLE users ADD COLUMN permission_group VARCHAR(100) DEFAULT 'default'")
+            )
+        if "masking_access_level" not in user_columns:
+            migration_statements.append(
+                text("ALTER TABLE users ADD COLUMN masking_access_level VARCHAR(20) DEFAULT 'masked'")
+            )
+        group_columns = {column["name"] for column in inspector.get_columns("permission_groups")}
+        if "masking_field_keys" not in group_columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE permission_groups ADD COLUMN masking_field_keys TEXT DEFAULT '[]'")
+                )
+            logger.info("Applied permission group masking field migration")
+
+        if migration_statements:
+            with engine.begin() as connection:
+                for statement in migration_statements:
+                    connection.execute(statement)
+            logger.info("Applied user permission schema migration")
 
         # Create default user if not exists
         db = SessionLocal()
         try:
+            default_groups = [
+                {
+                    "group_key": "default",
+                    "group_name": "기본 그룹",
+                    "description": "기본 사용자 그룹",
+                    "masking_access_level": "masked",
+                    "masking_field_keys": '["title","date","amount","vendor","address","person"]',
+                    "is_system": True,
+                },
+                {
+                    "group_key": "admins",
+                    "group_name": "관리자 그룹",
+                    "description": "관리자 및 원본 열람 가능 그룹",
+                    "masking_access_level": "original",
+                    "masking_field_keys": '["title","date","amount","vendor","address","person"]',
+                    "is_system": True,
+                },
+            ]
+            for group_data in default_groups:
+                existing_group = db.query(PermissionGroup).filter_by(group_key=group_data["group_key"]).first()
+                if not existing_group:
+                    db.add(PermissionGroup(**group_data))
+            db.commit()
+
+            known_groups = {group.group_key for group in db.query(PermissionGroup).all()}
+            users_updated = False
+            for existing_user in db.query(User).all():
+                if not existing_user.permission_group:
+                    existing_user.permission_group = "default"
+                    users_updated = True
+                if not existing_user.masking_access_level:
+                    existing_user.masking_access_level = "masked"
+                    users_updated = True
+                if existing_user.permission_group not in known_groups:
+                    db.add(PermissionGroup(
+                        group_key=existing_user.permission_group,
+                        group_name=existing_user.permission_group,
+                        description="기존 사용자 데이터에서 자동 생성된 그룹",
+                        masking_access_level=existing_user.masking_access_level or "masked",
+                        masking_field_keys='["title","date","amount","vendor","address","person"]',
+                        is_system=False,
+                    ))
+                    known_groups.add(existing_user.permission_group)
+                    users_updated = True
+            if users_updated:
+                db.commit()
+
             default_user = db.query(User).filter_by(user_id=Config.DEFAULT_USER_ID).first()
             if not default_user:
                 default_user = User(
                     user_id=Config.DEFAULT_USER_ID,
                     username=Config.DEFAULT_USER_NAME,
-                    email=Config.DEFAULT_USER_EMAIL
+                    email=Config.DEFAULT_USER_EMAIL,
+                    permission_group="admins",
+                    masking_access_level="original",
                 )
                 db.add(default_user)
                 db.commit()
                 logger.info(f"Default user created: {Config.DEFAULT_USER_ID}")
+            else:
+                changed = False
+                if not default_user.permission_group:
+                    default_user.permission_group = "admins"
+                    changed = True
+                if not default_user.masking_access_level:
+                    default_user.masking_access_level = "original"
+                    changed = True
+                if changed:
+                    db.commit()
 
             # Create default session if not exists
             default_session = db.query(Session).filter_by(session_id="default").first()

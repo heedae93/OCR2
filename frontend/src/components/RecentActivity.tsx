@@ -73,7 +73,7 @@ export default function RecentActivity() {
       case 'completed':
         return '완료됨'
       case 'processing':
-        return `처리 중... (${Math.round(job.progress_percent)}%)`
+        return job.sub_stage ? `${job.sub_stage} (${Math.round(job.progress_percent)}%)` : `처리 중... (${Math.round(job.progress_percent)}%)`
       case 'queued':
         return '대기 중...'
       case 'failed':

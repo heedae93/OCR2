@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { API_BASE_URL } from '@/lib/api'
 import {
@@ -231,9 +232,12 @@ export default function ExtractionListPage() {
                                 <FileText size={20} />
                              </div>
                              <div className="flex flex-col min-w-0">
-                                <span className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark truncate group-hover:text-primary transition-colors">
+                                <Link 
+                                  href={`/editor/${doc.job_id}`}
+                                  className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark truncate hover:text-primary transition-colors cursor-pointer"
+                                >
                                   {doc.original_filename}
-                                </span>
+                                </Link>
                                 <a 
                                   href={`${API_BASE_URL}/api/ocr/stream-pdf/${doc.job_id}?user_id=${userId}`}
                                   target="_blank"

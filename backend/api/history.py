@@ -37,7 +37,7 @@ async def list_versions(user_id: str = "", job_id: Optional[str] = None, db: Ses
                 "version_label": v.version_label,
                 "note": v.note,
                 "file_size_bytes": v.file_size_bytes,
-                "created_at": v.created_at.isoformat() if v.created_at else None,
+                "created_at": v.created_at.strftime("%Y-%m-%d %H:%M:%S") if v.created_at else None,
             })
         return result
     except Exception as e:
@@ -140,7 +140,7 @@ async def list_downloads(user_id: str = "", job_id: Optional[str] = None, db: Se
                 "filename": job.original_filename,
                 "file_type": d.file_type,
                 "version_id": d.version_id,
-                "downloaded_at": d.downloaded_at.isoformat() if d.downloaded_at else None,
+                "downloaded_at": d.downloaded_at.strftime("%Y-%m-%d %H:%M:%S") if d.downloaded_at else None,
                 "ip_address": d.ip_address,
             })
         return result

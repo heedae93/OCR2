@@ -10,7 +10,7 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 from sqlalchemy.orm import Session as DBSession
 
-from database import get_db, User
+from database import get_db, PermissionGroup, User
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -29,6 +29,26 @@ def verify_password(password: str, password_hash: str) -> bool:
         return dk.hex() == dk_hex
     except Exception:
         return False
+
+
+def build_permission_payload(user: User, db: DBSession) -> dict:
+    permission_group = (user.permission_group or "default").strip() or "default"
+    group = db.query(PermissionGroup).filter_by(group_key=permission_group).first()
+    group_name = group.group_name if group else permission_group
+    masking_access_level = (
+        (group.masking_access_level if group else user.masking_access_level) or "masked"
+    ).strip().lower() or "masked"
+    return {
+        "permission_group": permission_group,
+        "permission_group_name": group_name,
+        "masking_access_level": masking_access_level,
+        "permissions": {
+            "group": permission_group,
+            "group_name": group_name,
+            "can_view_masked_result": True,
+            "can_view_original_result": masking_access_level == "original",
+        },
+    }
 
 
 class RegisterRequest(BaseModel):
@@ -59,7 +79,12 @@ def register(body: RegisterRequest, db: DBSession = Depends(get_db)):
     db.refresh(user)
 
     logger.info(f"New user registered: {user.username} ({user.user_id})")
-    return {"user_id": user.user_id, "username": user.username, "name": user.name}
+    return {
+        "user_id": user.user_id,
+        "username": user.username,
+        "name": user.name,
+        **build_permission_payload(user, db),
+    }
 
 
 class FindPasswordRequest(BaseModel):
@@ -106,7 +131,14 @@ def update_profile(user_id: str, body: ProfileUpdateRequest, db: DBSession = Dep
         user.password_hash = hash_password(body.new_password)
 
     db.commit()
-    return {"user_id": user.user_id, "username": user.username, "name": user.name, "email": user.email, "type": user.type}
+    return {
+        "user_id": user.user_id,
+        "username": user.username,
+        "name": user.name,
+        "email": user.email,
+        "type": user.type,
+        **build_permission_payload(user, db),
+    }
 
 
 class LoginRequest(BaseModel):
@@ -125,4 +157,10 @@ def login(body: LoginRequest, db: DBSession = Depends(get_db)):
     db.commit()
 
     logger.info(f"User logged in: {user.username} ({user.user_id})")
-    return {"user_id": user.user_id, "username": user.username, "name": user.name, "type": user.type}
+    return {
+        "user_id": user.user_id,
+        "username": user.username,
+        "name": user.name,
+        "type": user.type,
+        **build_permission_payload(user, db),
+    }

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense, useMemo } from 'react'
 import Sidebar from '@/components/Sidebar'
+import PipelineProgress from '@/components/PipelineProgress'
 import { useRouter } from 'next/navigation'
 import { API_BASE_URL } from '@/lib/api'
 
@@ -10,6 +11,7 @@ interface Job {
   filename: string
   status: string
   progress_percent: number
+  sub_stage?: string | null
   total_pages: number
   created_at: string
   completed_at?: string
@@ -35,7 +37,8 @@ interface Statistics {
   storage_used_mb: number
 }
 
-const QUEUED_PROGRESS = 12
+
+const QUEUED_PROGRESS = 5
 
 function JobsPageInner() {
   const router = useRouter()
@@ -53,6 +56,7 @@ function JobsPageInner() {
   const [reprocessingJobs, setReprocessingJobs] = useState<Set<string>>(new Set())
   const [uploadingSession, setUploadingSession] = useState<string | null>(null)
   const [, setUploadProgress] = useState<Record<string, number>>({})
+  const [currentPage, setCurrentPage] = useState(0)
   const groupsRef = useRef<SessionGroup[]>([])
 
   useEffect(() => {
@@ -113,12 +117,21 @@ function JobsPageInner() {
         groupMap[key].jobs.push(job)
       }
 
-      // 세션 순서 맞춤 (세션 목록 순서 → 미지정 마지막)
+      // 세션 순서 맞춤 (최신 작업 포함 세션이 먼저 오도록 정렬, 미지정은 마지막)
       const ordered: SessionGroup[] = []
       for (const session of sessions) {
         if (groupMap[session.session_id]) ordered.push(groupMap[session.session_id])
       }
       if (groupMap['__unassigned__']) ordered.push(groupMap['__unassigned__'])
+
+      ordered.sort((a, b) => {
+        if (a.session_id === '__unassigned__') return 1;
+        if (b.session_id === '__unassigned__') return -1;
+        
+        const latestA = Math.max(...a.jobs.map(j => new Date(j.created_at || 0).getTime()));
+        const latestB = Math.max(...b.jobs.map(j => new Date(j.created_at || 0).getTime()));
+        return latestB - latestA;
+      });
 
       setGroups(ordered)
     } catch (error) {
@@ -228,6 +241,19 @@ function JobsPageInner() {
     }
   }
 
+  const handleDeleteAllFailed = async () => {
+    const failedJobs = groups.flatMap(g => g.jobs.filter(j => j.status === 'failed'))
+    if (failedJobs.length === 0) return
+    if (!confirm(`실패한 작업 ${failedJobs.length}개를 모두 삭제하시겠습니까?`)) return
+    await Promise.all(
+      failedJobs.map(job =>
+        fetch(`${API_BASE_URL}/api/jobs/${job.job_id}`, { method: 'DELETE' }).catch(() => null)
+      )
+    )
+    loadData()
+    loadStatistics()
+  }
+
   const formatDate = (dateString?: string) => {
     if (!dateString) return '-'
     return new Date(dateString).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -264,15 +290,30 @@ function JobsPageInner() {
     return Math.min(progress, 100)
   }
 
-  // 필터링
-  const filteredGroups = groups.map(g => ({
-    ...g,
-    jobs: g.jobs.filter(job => {
+  // 검색/필터 변경 시 첫 페이지로
+  useEffect(() => { setCurrentPage(0) }, [searchQuery, statusFilter])
+
+  // 필터링 (세션명 또는 파일명 검색)
+  const filteredGroups = groups.map(g => {
+    const sessionMatches = !searchQuery || g.session_name.toLowerCase().includes(searchQuery.toLowerCase())
+    const jobs = g.jobs.filter(job => {
       const matchStatus = statusFilter === 'all' || job.status === statusFilter
-      const matchSearch = !searchQuery || job.filename.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchSearch = sessionMatches || job.filename.toLowerCase().includes(searchQuery.toLowerCase())
       return matchStatus && matchSearch
     })
-  })).filter(g => g.jobs.length > 0)
+    return { ...g, jobs }
+  }).filter(g => g.jobs.length > 0).sort((a, b) => {
+    const aActive = a.jobs.some(j => j.status === 'processing' || j.status === 'queued') ? 1 : 0
+    const bActive = b.jobs.some(j => j.status === 'processing' || j.status === 'queued') ? 1 : 0
+    if (bActive !== aActive) return bActive - aActive
+    const aLatest = Math.max(...a.jobs.map(j => new Date(j.created_at).getTime()))
+    const bLatest = Math.max(...b.jobs.map(j => new Date(j.created_at).getTime()))
+    return bLatest - aLatest
+  })
+
+  const SESSIONS_PER_PAGE = 10
+  const totalPages = Math.ceil(filteredGroups.length / SESSIONS_PER_PAGE)
+  const paginatedGroups = filteredGroups.slice(currentPage * SESSIONS_PER_PAGE, (currentPage + 1) * SESSIONS_PER_PAGE)
   const inProgressGroups = useMemo(() => groups
     .map(g => ({
       ...g,
@@ -327,6 +368,15 @@ function JobsPageInner() {
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <h1 className="text-3xl font-bold text-text-primary-light dark:text-text-primary-dark">작업 내역</h1>
+            {groups.some(g => g.jobs.some(j => j.status === 'failed')) && (
+              <button
+                onClick={handleDeleteAllFailed}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg transition-colors"
+              >
+                <span className="material-symbols-outlined text-base">delete_sweep</span>
+                실패 작업 전체 삭제
+              </button>
+            )}
           </div>
 
           {/* Statistics Cards */}
@@ -351,7 +401,7 @@ function JobsPageInner() {
             <div className="flex flex-col md:flex-row gap-4">
               <input
                 type="text"
-                placeholder="파일명 검색..."
+                placeholder="파일명 / 세션명 검색..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="flex-1 px-4 py-2 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-primary-light dark:text-text-primary-dark"
@@ -374,7 +424,7 @@ function JobsPageInner() {
           </div>
 
           {/* In-progress Jobs */}
-          <section className="bg-surface-light dark:bg-surface-dark p-5 rounded-xl border border-border-light dark:border-border-dark mb-6">
+          {inProgressCount > 0 && <section className="bg-surface-light dark:bg-surface-dark p-5 rounded-xl border border-border-light dark:border-border-dark mb-6">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -466,15 +516,14 @@ function JobsPageInner() {
                                 {getStatusText(job.status)}
                               </span>
                             </div>
-                            <p className="mt-2 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                              진행률 {Math.round(job.progress_percent || 0)}% · 생성 {formatDate(job.created_at)}
+                            <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                              생성 {formatDate(job.created_at)}
                             </p>
-                            <div className="mt-2 h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700">
-                              <div
-                                className="h-1.5 rounded-full bg-primary transition-all duration-300"
-                                style={{ width: `${getDisplayProgress(job.status, job.progress_percent || 0)}%` }}
-                              />
-                            </div>
+                            <PipelineProgress
+                              status={job.status}
+                              progress={job.progress_percent || 0}
+                              subStage={job.sub_stage}
+                            />
                           </div>
                         ))}
                       </div>
@@ -483,7 +532,7 @@ function JobsPageInner() {
                 ))}
               </div>
             )}
-          </section>
+          </section>}
 
           {/* Groups */}
           {loading ? (
@@ -496,21 +545,21 @@ function JobsPageInner() {
             </div>
           ) : (
             <div className="flex flex-col gap-4">
-              {filteredGroups.map(group => (
+              {paginatedGroups.map(group => (
                 <div key={group.session_id} className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
                   {/* 세션 헤더 */}
-                  <div className="flex items-center justify-between px-6 py-4 bg-background-light dark:bg-background-dark">
+                  <div className="flex items-center justify-between gap-3 px-6 py-4 bg-background-light dark:bg-background-dark">
                     <button
                       onClick={() => toggleGroup(group.session_id)}
-                      className="flex items-center gap-3 flex-1 text-left hover:opacity-80 transition-opacity"
+                      className="flex items-center gap-3 min-w-0 flex-1 text-left hover:opacity-80 transition-opacity"
                     >
-                      <span className="material-symbols-outlined text-primary">folder_open</span>
-                      <span className="font-semibold text-text-primary-light dark:text-text-primary-dark">{group.session_name}</span>
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary font-medium">
+                      <span className="material-symbols-outlined shrink-0 text-primary">folder_open</span>
+                      <span className="font-semibold truncate text-text-primary-light dark:text-text-primary-dark">{group.session_name}</span>
+                      <span className="shrink-0 px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary font-medium">
                         {group.jobs.length}개
                       </span>
                     </button>
-                    <div className="flex items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-2">
                       <label
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors ${uploadingSession === group.session_id ? 'opacity-50 cursor-not-allowed' : 'bg-primary/10 text-primary hover:bg-primary/20'}`}
                         title="이 세션에 파일 추가"
@@ -539,32 +588,43 @@ function JobsPageInner() {
                   {/* 작업 목록 */}
                   {group.expanded && (
                     <div className="overflow-x-auto">
-                      <table className="w-full">
+                      <table className="w-full table-fixed">
+                        <colgroup>
+                          <col style={{ width: '30%' }} />
+                          <col style={{ width: '9%' }} />
+                          <col style={{ width: '9%' }} />
+                          <col style={{ width: '18%' }} />
+                          <col style={{ width: '10%' }} />
+                          <col style={{ width: '19%' }} />
+                        </colgroup>
                         <thead className="border-t border-border-light dark:border-border-dark">
                           <tr>
-                            {['파일명', '상태', '페이지', '생성일', '처리 시간', '작업'].map(h => (
-                              <th key={h} className="px-6 py-3 text-left text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
-                                {h}
-                              </th>
-                            ))}
+                            <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">파일명</th>
+                            <th className="px-3 py-3 text-center text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">상태</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">페이지</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">생성일</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">처리시간</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">작업</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border-light dark:divide-border-dark">
                           {group.jobs.map(job => (
                             <tr key={job.job_id} className="hover:bg-background-light dark:hover:bg-background-dark transition-colors">
-                              <td className="px-6 py-4">
-                                {job.status === 'uploaded'
-                                  ? <span className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">{job.filename}</span>
-                                  : <button onClick={() => router.push(`/editor/${job.job_id}`)}
-                                      className="text-sm font-medium text-primary hover:text-primary/80 text-left">
-                                      {job.filename}
-                                    </button>
-                                }
-                                {job.is_double_column && (
-                                  <span className="ml-2 px-2 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-xs">더블 컬럼</span>
-                                )}
+                              <td className="px-6 py-4 min-w-0">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {job.status === 'uploaded'
+                                    ? <span className="text-sm font-medium truncate text-text-primary-light dark:text-text-primary-dark">{job.filename}</span>
+                                    : <button onClick={() => router.push(`/editor/${job.job_id}`)}
+                                        className="text-sm font-medium text-primary hover:text-primary/80 text-left truncate min-w-0">
+                                        {job.filename}
+                                      </button>
+                                  }
+                                  {job.is_double_column && (
+                                    <span className="shrink-0 px-2 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-xs">더블컬럼</span>
+                                  )}
+                                </div>
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
+                              <td className="px-3 py-4 text-center whitespace-nowrap">
                                 {job.status === 'uploaded'
                                   ? <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">-</span>
                                   : <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(job.status)}`}>
@@ -572,21 +632,21 @@ function JobsPageInner() {
                                     </span>
                                 }
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                              <td className="px-3 py-4 text-right whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
                                 {job.status === 'uploaded' ? '-' : (
                                   <>
-                                    {job.total_pages}p
+                                    <span>{job.total_pages}p</span>
                                     {job.total_text_blocks && <div className="text-xs">{job.total_text_blocks} 블록</div>}
                                   </>
                                 )}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                              <td className="px-3 py-4 text-right whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
                                 {job.status === 'uploaded' ? '-' : formatDate(job.created_at)}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                              <td className="px-3 py-4 text-right whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
                                 {job.status === 'uploaded' ? '-' : formatDuration(job.processing_time_seconds)}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-3">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right space-x-3">
                                 {job.status === 'uploaded' ? (
                                   <>
                                     <button
@@ -642,6 +702,34 @@ function JobsPageInner() {
                   )}
                 </div>
               ))}
+              {/* 페이지네이션 */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 pt-2 pb-4">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                    disabled={currentPage === 0}
+                    className="px-3 py-1.5 rounded-lg border border-border-light dark:border-border-dark text-sm text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-base leading-none">chevron_left</span>
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setCurrentPage(i)}
+                      className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${i === currentPage ? 'bg-primary text-white' : 'border border-border-light dark:border-border-dark text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40'}`}
+                    >
+                      {i + 1}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                    disabled={currentPage === totalPages - 1}
+                    className="px-3 py-1.5 rounded-lg border border-border-light dark:border-border-dark text-sm text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-base leading-none">chevron_right</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
