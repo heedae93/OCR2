@@ -531,7 +531,7 @@ def process_job(job_id: str):
             job_manager.update_job(job_id, status=JobStatus.QUEUED, progress_percent=0.0)
 
         # Celery Worker에 작업 전달 (Redis 큐를 통해)
-        from celery_app import celery_app as _celery
+        from tasks.celery_app import celery_app as _celery
         _celery.send_task('ocr.process', args=[job_id], queue='ocr')
         logger.info(f"Dispatched job {job_id} to Celery OCR queue")
 

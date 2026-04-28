@@ -12,8 +12,8 @@ import os
 import sys
 import logging
 
-# backend 디렉토리를 Python path에 추가
-sys.path.insert(0, os.path.dirname(__file__))
+# backend 디렉토리를 Python path에 추가 (tasks 폴더이므로 부모 폴더 추가)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # ── 환경 초기화 (main.py와 동일한 순서로) ──────────────────────
 from config import Config
@@ -39,7 +39,7 @@ from core.ctc_patch import patch_ctc_decoder
 patch_ctc_decoder()
 
 # ── Celery 앱 및 로거 ──────────────────────────────────────────
-from celery_app import celery_app
+from .celery_app import celery_app
 
 logging.basicConfig(
     level=logging.INFO,
