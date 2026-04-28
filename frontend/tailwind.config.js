@@ -57,6 +57,15 @@ module.exports = {
         'gradient-light': 'linear-gradient(135deg, #F0F4F8 0%, #E2E8F0 100%)',
         'gradient-dark': 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
       },
+      keyframes: {
+        'slide-in-right': {
+          from: { transform: 'translateX(100%)' },
+          to: { transform: 'translateX(0)' },
+        },
+      },
+      animation: {
+        'slide-in-right': 'slide-in-right 0.25s ease-out',
+      },
     },
   },
   plugins: [],
