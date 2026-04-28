@@ -10,6 +10,7 @@ from sqlalchemy import desc, or_, func, cast, Date
 
 from database import get_db, Job, OCRPage, User, Session as DBSession, SessionDocument
 from models.job import JobResponse
+from utils.cancel_helper import set_cancel_flag as _set_cancel_flag
 
 logger = logging.getLogger(__name__)
 
@@ -74,13 +75,19 @@ async def list_jobs(
             if file_status:
                 file_state = file_status.get("status")
                 # If file status is different from DB, or if it's currently active, use file status
-                if job.status in ("processing", "queued", "pending") or file_state in ("failed", "completed"):
+                if job.status in ("processing", "queued", "pending", "uploaded") or file_state in ("failed", "completed"):
                     status = file_state or status
                     progress_percent = file_status.get("progress_percent", progress_percent)
                     current_page = file_status.get("current_page", current_page)
                     total_pages = file_status.get("total_pages", total_pages)
-                    if status == "failed":
+                    # Force failed status if message exists in file
+                    f_msg = file_status.get("message")
+                    if f_msg:
+                        message = f_msg
+                        status = "failed"
+                    elif status == "failed":
                         message = file_status.get("message", message)
+
 
             job_responses.append(JobResponse(
                 job_id=job.job_id,
@@ -128,13 +135,19 @@ async def get_job(job_id: str, db: Session = Depends(get_db)):
         file_status = JobManager.read_status_from_file(job.job_id)
         if file_status:
             file_state = file_status.get("status")
-            if job.status in ("processing", "queued", "pending") or file_state in ("failed", "completed"):
+            if job.status in ("processing", "queued", "pending", "uploaded") or file_state in ("failed", "completed"):
                 status = file_state or status
                 progress_percent = file_status.get("progress_percent", progress_percent)
                 current_page = file_status.get("current_page", current_page)
                 total_pages = file_status.get("total_pages", total_pages)
-                if status == "failed":
+                # Force failed status if message exists in file
+                f_msg = file_status.get("message")
+                if f_msg:
+                    message = f_msg
+                    status = "failed"
+                elif status == "failed":
                     message = file_status.get("message", message)
+
 
         return JobResponse(
             job_id=job.job_id,
@@ -239,6 +252,9 @@ async def delete_job(job_id: str, db: Session = Depends(get_db)):
             else:
                 session.updated_at = datetime.now()
 
+        # Mark as cancelled if it was active
+        _set_cancel_flag(job_id)
+        
         # Delete from database (cascade will delete pages)
         db.delete(job)
         db.commit()
@@ -252,6 +268,7 @@ async def delete_job(job_id: str, db: Session = Depends(get_db)):
         logger.error(f"Failed to delete job {job_id}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.get("/jobs/statistics/summary")
@@ -606,5 +623,62 @@ async def update_job_notes(job_id: str, notes: str, db: Session = Depends(get_db
         raise
     except Exception as e:
         logger.error(f"Failed to update notes for job {job_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/jobs/{job_id}/status")
+async def update_job_status_api(job_id: str, payload: dict, db: Session = Depends(get_db)):
+    """Update job status manually (e.g., for frontend timeout sync)"""
+    try:
+        job = db.query(Job).filter(Job.job_id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        status = payload.get("status")
+        message = payload.get("message")
+        progress = payload.get("progress_percent")
+
+        if status:
+            job.status = status
+        if message:
+            job.error_message = message
+        if progress is not None:
+            job.progress_percent = progress
+        
+        job.updated_at = datetime.now()
+        db.commit()
+
+        # Also update file-based status
+        from utils.job_manager import JobManager
+        from models.job import JobStatus as MJobStatus
+        jm = JobManager()
+        try:
+            # Map string status to JobStatus enum if possible
+            m_status = None
+            if status:
+                try:
+                    # Check if status matches any enum value
+                    for s in MJobStatus:
+                        if s.value == status:
+                            m_status = s
+                            break
+                except:
+                    pass
+            
+            jm.update_job(
+                job_id, 
+                status=m_status, 
+                message=message, 
+                progress_percent=progress
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update JobManager status for {job_id}: {e}")
+
+        return {"message": "Status updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update status for job {job_id}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))

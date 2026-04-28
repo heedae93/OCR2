@@ -19,12 +19,13 @@ celery_app.conf.update(
     accept_content=['json'],
     timezone='Asia/Seoul',
     enable_utc=True,
-    # Worker가 죽어도 Redis에 작업이 남아 재처리 가능
     task_acks_late=True,
-    # 한 번에 하나씩만 가져옴 (OCR은 GPU 집약적이라 과도한 prefetch 불필요)
     worker_prefetch_multiplier=1,
     task_track_started=True,
-    broker_connection_retry_on_startup=True,
+    # Fail fast if Redis is down
+    broker_connection_retry_on_startup=False,
+    broker_connection_max_retries=0,
+    broker_connection_timeout=1, 
     task_routes={
         'ocr.process': {'queue': 'ocr'},
     },
