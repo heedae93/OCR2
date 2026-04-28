@@ -26,7 +26,7 @@ PII_PATTERNS = {
         r"\b[2-9]\d{2}-\d{4}\b",
     ],
     "EMAIL": [
-        r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b"
+        r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+[.,][a-zA-Z]{2,}\b"
     ],
     "RRN": [
         r"\b\d{6}-?[1-4]\d{6}\b"
@@ -38,7 +38,7 @@ PII_PATTERNS = {
         r"\b\d{3}-\d{2}-\d{5}\b"
     ],
     "ACCOUNT_NO": [
-        r"\b(?!01[016789]|02-|070)\d{4,6}-\d{2,6}-\d{4,7}\b",
+        r"\b(?!01[016789]|02-|070)\d{3,6}-\d{2,6}-\d{4,7}\b",
         r"\b\d{3,4}-\d{3,4}-\d{4}-\d{2}\b",
         # 은행명 + 하이픈 없는 숫자 계좌번호 (예: 케이뱅크 1001 33370105, 기업 21302612001120)
         r"(?:케이뱅크|국민|신한|우리|하나|기업|농협|씨티|SC제일|카카오뱅크|토스뱅크|수협|우체국|새마을|부산|경남|대구|전북|광주|제주|산업|기술|외환)[\s]*(\d[\d\s]{7,19}\d)",
@@ -56,17 +56,26 @@ PII_PATTERNS = {
     "IP_ADDRESS": [
         r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b"
     ],
+    "MAC_ADDRESS": [
+        r"\b(?:[0-9A-Fa-f]{2}[:-]){5}(?:[0-9A-Fa-f]{2})\b"
+    ],
     "CAR_NO": [
         r"\b\d{2,3}\s?[가-힣]\s?\d{4}\b",
         r"\b[가-힣]{1,2}\s?\d{2,3}\s?[가-힣]\s?\d{4}\b",
     ],
+    "DRIVERS_LICENSE": [
+        r"\b\d{2}-\d{2}-\d{6}-\d{2}\b"
+    ],
     "ROAD_ADDRESS": [
-        # 사용자의 요청에 따라 정규식으로 주소를 찾지 않고 오직 NER로만 찾습니다.
+        # 줄 바꿈(2차 병합)에서도 끊어진 주소를 감지할 수 있도록 유연한 정규식 추가
+        r"(?:[가-힣]+(?:도|특별시|광역시|시|군|구)[\s\n]+)?[가-힣]+(?:구|시|군|읍|면|동|가|리)[\s\n]+[가-힣\d\s\n]+(?:로|길)[\s\n]+\d+(?:-\d+)?"
     ],
     "NAME": [
         # 레이블이 명확할 때만 정규식으로 강제 추출 (NER 보완용)
         # 한국어 이름: 레이블 뒤 2~4글자 한글
-        r"(?:성\s*명|이\s*름|대\s*표\s*이\s*사|대\s*표\s*자|대\s*표|신청인|보호자|환\s*자|예\s*금\s*주|본\s*인|세\s*대\s*주)\s*[:：]?\s*([가-힣]{2,4})\b",
+        r"(?:성\s*명|이\s*름|대\s*표\s*이\s*사|대\s*표\s*자|대\s*표|신청인|보호자|환\s*자|예\s*금\s*주|본\s*인|세\s*대\s*주|사업주|고용주|근로자|계약자|수취인|담당자|작성자|발주자|수주자|임대인|임차인|보증인|연대보증인|피보험자|수익자|피고인|원고|피고|신고인|민원인|접수자|신청자)\s*[:：]?\s*([가-힣]{2,4})\b",
+        # 회사명(주식회사/유한회사 등) 뒤 직함 뒤 이름 (예: "(주)테크솔루션 대표 김철수", "주식회사 ABC 대표이사 홍길동")
+        r"(?:주식회사|유한회사|합명회사|합자회사|\(주\)|\(유\)|\(사\))[가-힣A-Za-z\s\d]*\s+(?:대표이사|대표자|대표|이사|사장|원장|관장|이사장|부원장|부사장|전무|상무|이사)\s+([가-힣]{2,4})\b",
         # 영문 이름과 괄호로 병기된 한글 이름 (라벨 없이 강제 추출, 예: 이영희 (Lee Young-hee))
         r"([가-힣]{2,4})\s*\(\s*[A-Za-z][A-Za-z\s\-]{0,20}[A-Za-z]\s*\)",
     ],
@@ -89,7 +98,9 @@ TYPE_NORMALIZE_MAP = {
     "신용카드번호": "CREDIT_CARD", "카드번호": "CREDIT_CARD",
     "여권번호": "PASSPORT_NO",
     "ip주소": "IP_ADDRESS", "ip": "IP_ADDRESS",
+    "mac주소": "MAC_ADDRESS", "mac": "MAC_ADDRESS",
     "차량번호": "CAR_NO", "자동차번호": "CAR_NO", "차량번호판": "CAR_NO", "번호판": "CAR_NO",
+    "운전면허번호": "DRIVERS_LICENSE", "면허번호": "DRIVERS_LICENSE",
     "도로명주소": "ROAD_ADDRESS", "주소": "ROAD_ADDRESS",
     "이름": "NAME", "성명": "NAME",
     "영문이름": "ENGLISH_NAME", "영어이름": "ENGLISH_NAME", "english_name": "ENGLISH_NAME",
@@ -97,8 +108,8 @@ TYPE_NORMALIZE_MAP = {
 
 ALLOWED_TYPES = {
     "PHONE", "EMAIL", "RRN", "FOREIGNER_REG_NO", "BUSINESS_REG_NO",
-    "ACCOUNT_NO", "HEALTH_INSURANCE_NO", "CREDIT_CARD", "PASSPORT_NO",
-    "IP_ADDRESS", "CAR_NO", "ROAD_ADDRESS", "NAME", "ENGLISH_NAME"
+    "ACCOUNT_NO", "HEALTH_INSURANCE_NO", "CREDIT_CARD", "PASSPORT_NO", "IP_ADDRESS", 
+    "MAC_ADDRESS", "CAR_NO", "DRIVERS_LICENSE", "ROAD_ADDRESS", "NAME", "ENGLISH_NAME"
 }
 
 # KoBERT NER 모델 초기화
@@ -106,22 +117,36 @@ _kobert_ner_model = None
 _kobert_ner_tokenizer = None
 
 # [수정] 모델의 문맥 판단력을 100% 신뢰하도록 하한선을 높임 (오탐 차단)
-KOBERT_NAME_CONFIDENCE_MIN = 0.85
+# KOBERT_NAME_CONFIDENCE_MIN = 0.85
 
+
+# [수정] 사용자의 요청에 따라 NER의 문맥 판단을 최대한 활용하기 위해 하한선을 대폭 낮춤
+KOBERT_NAME_CONFIDENCE_MIN = 0.50
+
+def _clean_kobert_name(value: str, score: float) -> str:
+    """NER 결과를 검증하고 불필요한 기호를 제거하여 반환 (유효하지 않으면 None)"""
+    if score < KOBERT_NAME_CONFIDENCE_MIN:
+        return None
+        
+    # NER이 이름 주변의 (인), (서명) 등을 함께 잡은 경우 제거
+    clean_val = re.sub(r'\((?:인|서명|주|상호|대표)\)', '', value)
+    # 특수문자 제거 (이름 사이에 들어간 하이픈 등은 영문이름을 위해 유지)
+    clean_val = re.sub(r'[:：;;\(\)\[\]\{\}\'\"<>.,]', '', clean_val).strip()
+    
+    # 한국어 이름: 2~5글자 한글 (공백이 포함된 '홍 길 동' 처리 가능)
+    if re.fullmatch(r'[가-힣]{2,5}', re.sub(r'\s+', '', clean_val)):
+        return clean_val
+        
+    # 영문 이름: 하이픈·공백 제거 후 순수 알파벳 2자 이상
+    alnum = re.sub(r'[\s\-]', '', clean_val)
+    if alnum.isalpha() and len(alnum) >= 2:
+        return clean_val
+        
+    return None
 
 def _is_valid_kobert_name(value: str, score: float) -> bool:
-    if score < KOBERT_NAME_CONFIDENCE_MIN:
-        return False
-    # 한국어 이름: 2~4글자 한글
-    if re.fullmatch(r'[가-힣]{2,4}', re.sub(r'\s+', '', value)):
-        return True
-    # 영문 이름: 하이픈·공백 제거 후 순수 알파벳 2자 이상
-    # 허용 케이스: Hong Gil-dong / HONG GILDONG / honggildong / HongGildong
-    alnum = re.sub(r'[\s\-]', '', value.strip())
-    if alnum.isalpha() and len(alnum) >= 2:
-        return True
-    return False
-
+    # 하위 호환성 유지용
+    return _clean_kobert_name(value, score) is not None
 
 def _init_kobert_ner():
     """KoBERT NER 모델 초기화 (lazy loading)"""
@@ -166,10 +191,11 @@ def _extract_with_kobert_ner(text: str) -> List[Dict[str, Any]]:
             # NER 태그를 PII 타입으로 매핑
             # 일반적인 NER 태그: PER(인물), LOC(장소), ORG(조직)
             if entity_type in ['PER', 'PERSON', 'PS']:  # 사람
-                if _is_valid_kobert_name(value, entity['score']):
+                cleaned_name = _clean_kobert_name(value, entity['score'])
+                if cleaned_name:
                     pii_items.append({
                         "type": "NAME",
-                        "value": value,
+                        "value": cleaned_name,
                         "confidence": entity['score']
                     })
             elif entity_type in ['LOC', 'LOCATION', 'LC']:  # 장소
@@ -181,6 +207,33 @@ def _extract_with_kobert_ner(text: str) -> List[Dict[str, Any]]:
                         "value": value,
                         "confidence": entity['score']
                     })
+            
+            # 계좌번호 문맥 인식 1: 기관명(ORG) 뒤에 오는 계좌번호 탐색
+            elif entity_type in ['ORG', 'ORGANIZATION', 'OG']:
+                idx = text.find(value)
+                if idx != -1:
+                    remainder = text[idx + len(value):]
+                    # 기관명 바로 뒤에 이어지는 10~25자리 숫자 패턴 탐색 (^ 추가로 엄격하게 매칭)
+                    match = re.search(r'^[:\s]*([\d\-\s]{10,25})', remainder)
+                    if match:
+                        acc_num = match.group(1).strip()
+                        if len(re.sub(r'[\s\-]', '', acc_num)) >= 10:
+                            pii_items.append({
+                                "type": "ACCOUNT_NO",
+                                "value": acc_num,
+                                "confidence": entity['score']
+                            })
+            
+            # 계좌번호 문맥 인식 2: 수량/숫자(QT)로 인식된 값 중 계좌번호 형태이면서 문맥 키워드가 있는 경우
+            elif entity_type in ['QT', 'QUANTITY', 'AF', 'ARTIFACT']:
+                clean_val = re.sub(r'[\s\-]', '', value)
+                if clean_val.isdigit() and 10 <= len(clean_val) <= 20:
+                    if re.search(r'(은행|뱅크|농협|수협|우체국|새마을|증권|투자|계좌)', text):
+                        pii_items.append({
+                            "type": "ACCOUNT_NO",
+                            "value": value,
+                            "confidence": entity['score']
+                        })
             # 필요시 다른 태그 추가 (ORG → BUSINESS_REG_NO 등)
         
         logger.info(f"[KoBERT NER] {len(pii_items)}개 추출")
@@ -296,8 +349,8 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
     results = _extract_pii_by_proximity(ocr_pages, results)
     logger.info(f"[2.5차 공간 근접성] 누적 {len(results)}개")
 
-    # ── 3차: KoBERT NER 보조 (NAME, ROAD_ADDRESS) ────────────────────────────────
-    print("\n[진행] KoBERT NER (이름/주소) 분석을 시작합니다...")
+    # ── 3차: KoBERT NER 보조 (NAME, ROAD_ADDRESS, ACCOUNT_NO) ────────────────────
+    print("\n[진행] KoBERT NER (이름/주소/계좌번호) 분석을 시작합니다...")
     if _init_kobert_ner():
         try:
             ner_pipeline = pipeline(
@@ -327,12 +380,27 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
                         score = entity['score']
                         
                         if entity_type in ['PER', 'PERSON', 'PS']:
-                            if _is_valid_kobert_name(value, score):
-                                alnum = re.sub(r'[\s\-]', '', value)
-                                is_english = alnum.isalpha() and not re.search(r'[가-힣]', value)
+                            cleaned_name = _clean_kobert_name(value, score)
+                            if cleaned_name:
+                                # [추가] 문맥을 확인하여 명백한 오탐(False Positive) 필터링
+                                idx = text.find(cleaned_name)
+                                if idx != -1:
+                                    before_text = text[:idx]
+                                    after_text = text[idx + len(cleaned_name):]
+                                    
+                                    # 1. 문서 제목의 일부로 오인된 경우 (예: "프준근" + "로계약서")
+                                    if re.match(r'^(?:로|의|에)?\s*(?:계약서|신청서|동의서|보고서|명세서|증명서|확인서|설명서|계획서|제안서|영수증)', after_text):
+                                        continue
+                                        
+                                    # 2. 영문 이름 파편화 방지 (예: Hong Gil-dong 에서 '-dong'만 잡히는 현상)
+                                    if re.match(r'^[a-zA-Z]+$', cleaned_name) and before_text.rstrip().endswith('-'):
+                                        continue
+
+                                alnum = re.sub(r'[\s\-]', '', cleaned_name)
+                                is_english = alnum.isalpha() and not re.search(r'[가-힣]', cleaned_name)
                                 assigned_type = "ENGLISH_NAME" if is_english else "NAME"
-                                sub_bbox = _estimate_sub_bbox(value, text, line.get("bbox")) or line.get("bbox")
-                                results.append({"type": assigned_type, "value": value, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT)"})
+                                sub_bbox = _estimate_sub_bbox(cleaned_name, text, line.get("bbox")) or line.get("bbox")
+                                results.append({"type": assigned_type, "value": cleaned_name, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT)"})
                                 
                         elif entity_type in ['LOC', 'LOCATION', 'LC']:
                             idx = text.find(value)
@@ -360,10 +428,66 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
                             if re.search(r'(?:로|길|동|읍|면)\s*\d+', value) or re.search(r'\d+\s*번지', value) or re.search(r'\d+동\s*\d+호', value):
                                 sub_bbox = _estimate_sub_bbox(value, text, line.get("bbox")) or line.get("bbox")
                                 results.append({"type": "ROAD_ADDRESS", "value": value, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT)"})
+                                
+                        # 계좌번호 문맥 인식 1: 기관명(ORG) 뒤에 오는 계좌번호 탐색
+                        elif entity_type in ['ORG', 'ORGANIZATION', 'OG']:
+                            idx = text.find(value)
+                            if idx != -1:
+                                remainder = text[idx + len(value):]
+                                # 기관명 바로 뒤에 이어지는 10~25자리 숫자 패턴 탐색 (^ 추가로 엄격하게 매칭)
+                                match = re.search(r'^[:\s]*([\d\-\s]{10,25})', remainder)
+                                if match:
+                                    acc_num = match.group(1).strip()
+                                    if len(re.sub(r'[\s\-]', '', acc_num)) >= 10:
+                                        sub_bbox = _estimate_sub_bbox(acc_num, text, line.get("bbox")) or line.get("bbox")
+                                        results.append({"type": "ACCOUNT_NO", "value": acc_num, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT 문맥)"})
+                                # 기관명(회사) 뒤 직함+이름 탐색 (예: "(주)테크솔루션 대표 김철수")
+                                name_match = re.search(
+                                    r'^[\s]*(?:대표이사|대표자|대표|이사|사장|원장|관장|이사장|부사장|전무|상무)\s+([가-힣]{2,4})\b',
+                                    remainder
+                                )
+                                if name_match:
+                                    org_name = name_match.group(1)
+                                    if not _is_covered(org_name, "NAME", results):
+                                        sub_bbox = _estimate_sub_bbox(org_name, text, line.get("bbox")) or line.get("bbox")
+                                        results.append({"type": "NAME", "value": org_name, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT 문맥)"})
+                        
+                        # 계좌번호 문맥 인식 2: 수량/숫자(QT)로 인식된 값 중 계좌번호 형태이면서 문맥 키워드가 있는 경우
+                        elif entity_type in ['QT', 'QUANTITY', 'AF', 'ARTIFACT']:
+                            clean_val = re.sub(r'[\s\-]', '', value)
+                            if clean_val.isdigit() and 10 <= len(clean_val) <= 20:
+                                if re.search(r'(은행|뱅크|농협|수협|우체국|새마을|증권|투자|계좌)', text):
+                                    sub_bbox = _estimate_sub_bbox(value, text, line.get("bbox")) or line.get("bbox")
+                                    results.append({"type": "ACCOUNT_NO", "value": value, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT 문맥)"})
         except Exception as e:
             print(f"[오류] KoBERT NER 실행 중 에러: {e}")
     else:
         print("[경고] KoBERT NER 모델을 사용할 수 없습니다.")
+
+    # ── 3.5차: 이름 전파 (Name Propagation) ──────────────────────────────────────
+    print("\n[진행] 이름 전파(Name Propagation) 분석을 시작합니다...")
+    found_names = set()
+    # 기존에 확실하게 찾은 이름들 수집
+    for r in results:
+        if r.get("type") in ("NAME", "ENGLISH_NAME") and r.get("value"):
+            val = r["value"].strip()
+            if len(val) >= 2:  # 2글자 이상인 이름만 전파 (1글자는 오탐 위험)
+                found_names.add((r["type"], val))
+
+    if found_names:
+        for page in ocr_pages:
+            page_num = page["page_number"]
+            for line in page.get("lines", []):
+                text = line.get("text", "")
+                line_bbox = line.get("bbox")
+                if not text or not line_bbox:
+                    continue
+                
+                # 텍스트 내에 수집된 이름이 존재하면 위치를 추정하여 마스킹 추가
+                for name_type, name_val in found_names:
+                    if name_val in text:
+                        sub_bbox = _estimate_sub_bbox(name_val, text, line_bbox) or line_bbox
+                        results.append({"type": name_type, "value": name_val, "page": page_num, "bbox": sub_bbox, "source": "이름 전파 (Propagation)"})
 
     # 3차에서는 value+bbox 기준 중복 제거 (같은 이름이 다른 위치에 있으면 유지)
     seen = set()
@@ -460,7 +584,9 @@ def _find_all_value_bboxes(value: str, lines: list) -> list:
 
 
 def _deduplicate(results: list) -> list:
-    """type 내에서 value가 부분 문자열 관계인 경우 중복 제거. 더 긴(완전한) 값을 유지."""
+    """type 내에서 value가 부분 문자열 관계인 경우 중복 제거. 더 긴(완전한) 값을 유지.
+    NAME/ENGLISH_NAME은 위치(page+bbox)가 다르면 같은 value라도 독립 항목으로 유지한다.
+    (같은 이름이 문서의 여러 곳에 등장하면 각 위치를 모두 마스킹해야 하기 때문)"""
     def sc(s):
         return re.sub(r'[\s\-\n\r\t]', '', str(s))
 
@@ -471,6 +597,17 @@ def _deduplicate(results: list) -> list:
         for i, existing in enumerate(deduped):
             if existing["type"] != item["type"]:
                 continue
+
+            # NAME/ENGLISH_NAME: 위치가 다르면 중복 체크를 건너뜀
+            # → 같은 이름이 여러 위치에 있어도 각각 마스킹 대상으로 유지
+            if item["type"] in ("NAME", "ENGLISH_NAME"):
+                same_loc = (
+                    item.get("page") == existing.get("page") and
+                    str(item.get("bbox")) == str(existing.get("bbox"))
+                )
+                if not same_loc:
+                    continue
+
             ex = sc(existing["value"])
             if val == ex or val in ex:
                 # 새 항목이 기존보다 같거나 짧음 → 기존 유지
@@ -493,7 +630,7 @@ def _validate_regex_names(results: list) -> list:
     filtered = []
 
     # 1. 정규식 탐지 단서로 쓴 라벨 키워드 (이 단어들은 이름 자체가 될 수 없음)
-    LABEL_KEYWORDS = {"성명", "이름", "대표이사", "대표자", "대표", "신청인", "보호자", "환자", "예금주", "본인", "세대주"}
+    LABEL_KEYWORDS = {"성명", "이름", "대표이사", "대표자", "대표", "신청인", "보호자", "환자", "예금주", "본인", "세대주", "품목", "품목명", "단가", "수량", "금액", "이메일", "주소", "계좌"}
 
     for r in results:
         r.pop("_context", None)
@@ -530,7 +667,8 @@ def _extract_pii_by_proximity(ocr_pages: list, results: list) -> list:
         "팀", "부서", "본부", "실", "센터", "공고", "결과", "아래", "사항", "내용", "확인", "서명", "날인",
         "성명", "이름", "본인", "대표자", "대표이사", "신청인", "보호자", "환자", "예금주", "입금", "계좌",
         "합계", "금액", "비고", "순위", "번호", "일자", "날짜", "시간", "장소", "주소", "연락처", "전화",
-        "문의", "안내", "참조", "비고", "파일", "첨부", "제출", "작성", "승인", "검토", "완료", "진행"
+        "문의", "안내", "참조", "비고", "파일", "첨부", "제출", "작성", "승인", "검토", "완료", "진행",
+        "품목", "품목명", "단가", "수량", "이메일"
     }
 
     def _is_overlap(b1, b2):
@@ -699,7 +837,7 @@ def _estimate_sub_bbox(pii_value: str, line_text_orig: str, line_bbox: list):
         return None
 
     ocr_map = {'0': '[0Oo]', '1': '[1lI]', 'O': '[0Oo]', 'o': '[0Oo]',
-               'l': '[1lI]', 'I': '[1lI]'}
+               'l': '[1lI]', 'I': '[1lI]', '.': '[.,]', ',': '[.,]'}
     pattern_parts = []
     for orig_c in pii_value:
         if orig_c in ocr_map:
@@ -762,6 +900,8 @@ def mask_value(pii_type: str, value: str) -> str:
       CREDIT_CARD     PCI-DSS: 중간 4+4자리 ****     9430-2000-****-2391
       ACCOUNT_NO      뒤 5자리 *                     430-20-1*****
       IP_ADDRESS      첫 옥텟 ***                    ***.8.7.12
+      MAC_ADDRESS     뒤 3자리 옥텟 **                00:0A:95:**:**:**
+      DRIVERS_LICENSE 중간 6자리 ******              11-12-******-12
       BUSINESS_REG_NO 앞 3자리 제외 **-*****          123-**-*****
       HEALTH_INSURANCE_NO 뒤 4자리 ****              123456****
       CAR_NO          한글+뒤 4자리 마스킹             19*****
@@ -833,6 +973,17 @@ def mask_value(pii_type: str, value: str) -> str:
 
     elif pii_type == "IP_ADDRESS":
         return re.sub(r'^\d+', '***', v)
+
+    elif pii_type == "MAC_ADDRESS":
+        parts = re.split(r'[:-]', v)
+        if len(parts) == 6:
+            sep = ':' if ':' in v else '-'
+            return sep.join(parts[:3]) + sep + "**" + sep + "**" + sep + "**"
+        return v
+
+    elif pii_type == "DRIVERS_LICENSE":
+        # 11-12-123456-12 -> 11-12-******-12
+        return re.sub(r'(\d{2}-\d{2}-)\d{6}(-\d{2})', r'\1******\2', v)
 
     elif pii_type == "BUSINESS_REG_NO":
         return re.sub(r'(\d{3})-\d{2}-\d{5}', r'\1-**-*****', v)
