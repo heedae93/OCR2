@@ -545,11 +545,16 @@ async def get_monthly_pages(user_id: str = "default", db: Session = Depends(get_
 
 
 @router.get("/jobs/statistics/sessions")
-async def get_session_statistics(user_id: str = "default", db: Session = Depends(get_db)):
+async def get_session_statistics(
+    user_id: str = "default",
+    include_empty: bool = False,
+    db: Session = Depends(get_db)
+):
     """Get session-based work statistics"""
     try:
         sessions = db.query(DBSession).filter(DBSession.user_id == user_id).all()
         result = []
+        from utils.job_manager import JobManager
 
         for session in sessions:
             docs = db.query(SessionDocument).filter(
@@ -557,22 +562,89 @@ async def get_session_statistics(user_id: str = "default", db: Session = Depends
             ).all()
             job_ids = [d.job_id for d in docs]
             if not job_ids:
+                if include_empty:
+                    last_activity = session.updated_at or session.created_at
+                    result.append({
+                        "session_id": session.session_id,
+                        "session_name": session.session_name,
+                        "description": session.description,
+                        "total": 0,
+                        "completed": 0,
+                        "failed": 0,
+                        "processing": 0,
+                        "queued": 0,
+                        "pending": 0,
+                        "uploaded": 0,
+                        "active": 0,
+                        "total_pages": 0,
+                        "completion_rate": 0,
+                        "created_at": session.created_at.strftime("%Y-%m-%d %H:%M:%S") if session.created_at else None,
+                        "updated_at": session.updated_at.strftime("%Y-%m-%d %H:%M:%S") if session.updated_at else None,
+                        "last_activity": last_activity.strftime("%Y-%m-%d %H:%M:%S") if last_activity else None,
+                    })
                 continue
 
             jobs = db.query(Job).filter(Job.job_id.in_(job_ids)).all()
             total = len(jobs)
-            completed = sum(1 for j in jobs if j.status == "completed")
-            failed = sum(1 for j in jobs if j.status == "failed")
-            last_job = max((j.created_at for j in jobs if j.created_at), default=None)
+            status_counts = {
+                "completed": 0,
+                "failed": 0,
+                "processing": 0,
+                "queued": 0,
+                "pending": 0,
+                "uploaded": 0,
+            }
+            total_pages = 0
+            last_job = None
+
+            for job in jobs:
+                status = job.status or "unknown"
+                if status in ("processing", "queued", "pending", "uploaded"):
+                    file_status = JobManager.read_status_from_file(job.job_id)
+                    if file_status:
+                        # message가 존재한다고 무조건 failed로 판정하지 않음.
+                        # 실제 실패 여부는 file_status['status'] 값 기준으로 판단해야 UI 오탐이 줄어듭니다.
+                        file_state = file_status.get("status") or status
+                        if file_state == "failed":
+                            status = "failed"
+                        else:
+                            status = file_state
+
+                if status in status_counts:
+                    status_counts[status] += 1
+
+                total_pages += job.total_pages or 0
+                for candidate in (job.completed_at, job.created_at):
+                    if candidate and (last_job is None or candidate > last_job):
+                        last_job = candidate
+
+            completed = status_counts["completed"]
+            failed = status_counts["failed"]
+            active = (
+                status_counts["processing"]
+                + status_counts["queued"]
+                + status_counts["pending"]
+                + status_counts["uploaded"]
+            )
+            last_activity = last_job or session.updated_at or session.created_at
 
             result.append({
                 "session_id": session.session_id,
                 "session_name": session.session_name,
+                "description": session.description,
                 "total": total,
                 "completed": completed,
                 "failed": failed,
+                "processing": status_counts["processing"],
+                "queued": status_counts["queued"],
+                "pending": status_counts["pending"],
+                "uploaded": status_counts["uploaded"],
+                "active": active,
+                "total_pages": total_pages,
                 "completion_rate": round(completed / total * 100, 1) if total else 0,
-                "last_activity": last_job.strftime("%Y-%m-%d %H:%M:%S") if last_job else None
+                "created_at": session.created_at.strftime("%Y-%m-%d %H:%M:%S") if session.created_at else None,
+                "updated_at": session.updated_at.strftime("%Y-%m-%d %H:%M:%S") if session.updated_at else None,
+                "last_activity": last_activity.strftime("%Y-%m-%d %H:%M:%S") if last_activity else None
             })
 
         result.sort(key=lambda x: x["last_activity"] or "", reverse=True)

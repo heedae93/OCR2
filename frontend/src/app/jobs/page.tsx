@@ -1,812 +1,693 @@
 'use client'
 
-import { useState, useEffect, useRef, Suspense, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState, Suspense } from 'react'
 import Sidebar from '@/components/Sidebar'
-import PipelineProgress from '@/components/PipelineProgress'
 import { useRouter } from 'next/navigation'
 import { API_BASE_URL } from '@/lib/api'
 
-interface Job {
-  job_id: string
-  filename: string
-  status: string
-  progress_percent: number
-  sub_stage?: string | null
-  total_pages: number
-  created_at: string
-  completed_at?: string
-  processing_time_seconds?: number
-  total_text_blocks?: number
-  average_confidence?: number
-  is_double_column?: boolean
-  pdf_url?: string
-}
-
-interface SessionGroup {
+interface SessionSummary {
   session_id: string
   session_name: string
-  jobs: Job[]
-  expanded: boolean
+  description?: string | null
+  total: number
+  completed: number
+  failed: number
+  processing?: number
+  queued?: number
+  pending?: number
+  uploaded?: number
+  active?: number
+  total_pages?: number
+  completion_rate: number
+  created_at?: string | null
+  updated_at?: string | null
+  last_activity?: string | null
 }
 
-interface Statistics {
-  total_jobs: number
-  status_counts: { [key: string]: number }
-  total_pages_processed: number
-  average_processing_time_seconds: number
-  storage_used_mb: number
+interface JobListItem {
+  job_id: string
 }
 
+type StatusFilter = 'all' | 'active' | 'completed' | 'failed' | 'empty'
+type SortBy = 'latest' | 'oldest' | 'name' | 'progress'
 
-const QUEUED_PROGRESS = 5
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
 function JobsPageInner() {
   const router = useRouter()
-  console.log('API_BASE_URL:', API_BASE_URL)
 
-  const [groups, setGroups] = useState<SessionGroup[]>([])
-  const [statistics, setStatistics] = useState<Statistics | null>(null)
+  const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [inProgressExpanded, setInProgressExpanded] = useState(false)
-  const [inProgressSessionExpanded, setInProgressSessionExpanded] = useState<Record<string, boolean>>({})
-  const [focusSessionName, setFocusSessionName] = useState<string | null>(null)
-  const [openInProgress, setOpenInProgress] = useState(false)
-  const [reprocessingJobs, setReprocessingJobs] = useState<Set<string>>(new Set())
-  const [uploadingSession, setUploadingSession] = useState<string | null>(null)
-  const [, setUploadProgress] = useState<Record<string, number>>({})
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [sortBy, setSortBy] = useState<SortBy>('latest')
+  const [pageSize, setPageSize] = useState(20)
   const [currentPage, setCurrentPage] = useState(0)
-  const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'status'>('date_desc')
-  const [pageSize, setPageSize] = useState(5)
-  const groupsRef = useRef<SessionGroup[]>([])
+  const [uploadingSession, setUploadingSession] = useState<string | null>(null)
+  const [deletingFailed, setDeletingFailed] = useState(false)
+  const [focusSessionName, setFocusSessionName] = useState<string | null>(null)
+
+  const sessionsRef = useRef<SessionSummary[]>([])
 
   useEffect(() => {
-    groupsRef.current = groups
-  }, [groups])
+    sessionsRef.current = sessions
+  }, [sessions])
 
   useEffect(() => {
     loadData()
-    loadStatistics()
-  }, [statusFilter])
+  }, [])
 
-  // 처리 중인 작업이 있으면 3초마다 자동 새로고침 (interval은 한 번만 생성)
   useEffect(() => {
     const timer = setInterval(() => {
-      const hasProcessing = groupsRef.current.some(g => g.jobs.some(j => j.status === 'processing' || j.status === 'queued'))
-      if (hasProcessing) {
+      const hasActive = sessionsRef.current.some(session => getActiveCount(session) > 0)
+      if (hasActive) {
         loadData(false)
-        loadStatistics()
       }
     }, 3000)
+
     return () => clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const sessionName = params.get('sessionName')
+    setFocusSessionName(sessionName)
+    if (params.get('inProgress') === '1') {
+      setStatusFilter('active')
+    }
+  }, [])
+
+  const getUserId = () => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}')
+      return user.user_id || ''
+    } catch {
+      return ''
+    }
+  }
 
   const loadData = async (showLoading = true) => {
     try {
       if (showLoading) setLoading(true)
-      const user = JSON.parse(localStorage.getItem('user') || '{}')
-      const userId = user.user_id || ''
-      console.log('[DEBUG] Requesting data for userId:', userId)
+      const userId = getUserId()
+      const params = new URLSearchParams({ user_id: userId, include_empty: 'true' })
+      const response = await fetch(`${API_BASE_URL}/api/jobs/statistics/sessions?${params}`)
 
-      // 세션 목록과 작업 목록 동시 로드
-      const [sessionsRes, jobsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/sessions?user_id=${userId}`),
-        fetch(`${API_BASE_URL}/api/jobs?${new URLSearchParams({ user_id: userId, limit: '100' })}`)
-      ])
-
-      const sessions = sessionsRes.ok ? await sessionsRes.json() : []
-      const jobs: Job[] = jobsRes.ok ? await jobsRes.json() : []
-
-      // job_id → session 매핑
-      const jobToSession: Record<string, { session_id: string; session_name: string }> = {}
-      for (const session of sessions) {
-        for (const doc of session.documents || []) {
-          jobToSession[doc.job_id] = { session_id: session.session_id, session_name: session.session_name }
-        }
+      if (!response.ok) {
+        throw new Error(`Failed to load session summaries: ${response.status}`)
       }
 
-      // 세션별 그룹핑
-      const groupMap: Record<string, SessionGroup> = {}
-      for (const job of jobs) {
-        const sessionInfo = jobToSession[job.job_id]
-        const key = sessionInfo ? sessionInfo.session_id : '__unassigned__'
-        const name = sessionInfo ? sessionInfo.session_name : '세션 미지정'
-        if (!groupMap[key]) {
-          const existing = groupsRef.current.find(g => g.session_id === key)
-          groupMap[key] = { session_id: key, session_name: name, jobs: [], expanded: existing ? existing.expanded : true }
-        }
-        groupMap[key].jobs.push(job)
-      }
-
-      // 세션 순서 맞춤 (최신 작업 포함 세션이 먼저 오도록 정렬, 미지정은 마지막)
-      const ordered: SessionGroup[] = []
-      for (const session of sessions) {
-        if (groupMap[session.session_id]) ordered.push(groupMap[session.session_id])
-      }
-      if (groupMap['__unassigned__']) ordered.push(groupMap['__unassigned__'])
-
-      ordered.sort((a, b) => {
-        if (a.session_id === '__unassigned__') return 1;
-        if (b.session_id === '__unassigned__') return -1;
-        
-        const latestA = Math.max(...a.jobs.map(j => new Date(j.created_at || 0).getTime()));
-        const latestB = Math.max(...b.jobs.map(j => new Date(j.created_at || 0).getTime()));
-        return latestB - latestA;
-      });
-
-      setGroups(ordered)
+      const data: SessionSummary[] = await response.json()
+      setSessions(data.map(normalizeSession))
+      setLoadError(null)
     } catch (error) {
-      console.error('Failed to load data:', error)
+      console.error('Failed to load session summaries:', error)
+      setSessions([])
+      setLoadError(
+        error instanceof Error ? error.message : '서버에 연결할 수 없습니다. 백엔드(6015)가 실행 중인지 확인하세요.'
+      )
     } finally {
       if (showLoading) setLoading(false)
     }
   }
 
-  const loadStatistics = async () => {
-    try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}')
-      const response = await fetch(`${API_BASE_URL}/api/jobs/statistics/summary?user_id=${user.user_id || ''}`)
-      const data = await response.json()
-      setStatistics(data)
-    } catch (error) {
-      console.error('Failed to load statistics:', error)
-    }
-  }
+  const normalizeSession = (session: SessionSummary): SessionSummary => {
+    const total = Number(session.total || 0)
+    const completed = Number(session.completed || 0)
+    const failed = Number(session.failed || 0)
+    const active = session.active ?? Math.max(total - completed - failed, 0)
 
-  const toggleGroup = (sessionId: string) => {
-    setGroups(prev => prev.map(g => g.session_id === sessionId ? { ...g, expanded: !g.expanded } : g))
+    return {
+      ...session,
+      total,
+      completed,
+      failed,
+      active,
+      processing: Number(session.processing || 0),
+      queued: Number(session.queued || 0),
+      pending: Number(session.pending || 0),
+      uploaded: Number(session.uploaded || 0),
+      total_pages: Number(session.total_pages || 0),
+      completion_rate: Number(session.completion_rate || 0),
+    }
   }
 
   const handleUpload = async (sessionId: string, files: FileList | null) => {
     if (!files || files.length === 0) return
-    const user = JSON.parse(localStorage.getItem('user') || '{}')
-    const userId = user.user_id || ''
 
-    for (const file of Array.from(files)) {
-      const formData = new FormData()
-      formData.append('file', file)
+    const userId = getUserId()
+    setUploadingSession(sessionId)
 
-      const uploadKey = `${sessionId}_${file.name}_${Date.now()}`
-      setUploadingSession(sessionId)
-      setUploadProgress(prev => ({ ...prev, [uploadKey]: 0 }))
+    try {
+      for (const file of Array.from(files)) {
+        const formData = new FormData()
+        formData.append('file', file)
 
-      try {
-        const res = await fetch(
+        const response = await fetch(
           `${API_BASE_URL}/api/upload?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(sessionId)}`,
           { method: 'POST', body: formData }
         )
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}))
-          alert(`업로드 실패: ${err.detail || file.name}`)
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}))
+          alert(`업로드 실패: ${error.detail || file.name}`)
           continue
         }
-        setUploadProgress(prev => ({ ...prev, [uploadKey]: 100 }))
-      } catch (e) {
-        alert(`업로드 중 오류: ${file.name}`)
-      } finally {
-        setUploadProgress(prev => { const s = { ...prev }; delete s[uploadKey]; return s })
       }
-    }
 
-    setUploadingSession(null)
-    loadData(false)
-    loadStatistics()
-  }
-
-  const handleReprocess = async (jobId: string) => {
-    if (!confirm('OCR을 다시 처리하시겠습니까?\n기존 결과가 초기화됩니다.')) return
-    setReprocessingJobs(prev => new Set(prev).add(jobId))
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/process/${jobId}`, { method: 'POST' })
-      if (response.ok) {
-        loadData(false)
-      } else {
-        alert('재처리 요청에 실패했습니다.')
-      }
+      loadData(false)
     } catch (error) {
-      console.error('Failed to reprocess job:', error)
-      alert('재처리 요청 중 오류가 발생했습니다.')
+      console.error('Failed to upload files:', error)
+      alert('업로드 중 오류가 발생했습니다.')
     } finally {
-      setReprocessingJobs(prev => { const s = new Set(prev); s.delete(jobId); return s })
+      setUploadingSession(null)
     }
   }
 
-  const handleStartOCR = async (jobId: string) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/process/${jobId}`, { method: 'POST' })
-      if (res.ok) {
-        loadData(false)
-      } else {
-        const err = await res.json().catch(() => ({}))
-        alert(`OCR 시작 실패: ${err.detail || res.statusText}`)
-      }
-    } catch {
-      alert('OCR 시작 중 오류가 발생했습니다.')
-    }
-  }
+  const fetchAllFailedJobs = async () => {
+    const userId = getUserId()
+    const failedJobs: JobListItem[] = []
 
-  const handleCancel = async (jobId: string) => {
-    if (!confirm('이 작업을 중지하시겠습니까?')) return
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/cancel/${jobId}`, { method: 'POST' })
-      if (response.ok) {
-        loadData(false)
-      } else {
-        alert('작업 중지 요청에 실패했습니다.')
-      }
-    } catch (error) {
-      console.error('Failed to cancel job:', error)
-      alert('작업 중지 중 오류가 발생했습니다.')
-    }
-  }
+    for (let offset = 0; ; offset += 100) {
+      const params = new URLSearchParams({
+        user_id: userId,
+        status: 'failed',
+        limit: '100',
+        offset: String(offset),
+      })
+      const response = await fetch(`${API_BASE_URL}/api/jobs?${params}`)
 
-  const handleDelete = async (jobId: string) => {
-    if (!confirm('정말 이 작업을 삭제하시겠습니까?')) return
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}`, { method: 'DELETE' })
-      if (response.ok) {
-        loadData()
-        loadStatistics()
-      } else {
-        const err = await response.json().catch(() => ({}))
-        alert(`삭제 실패: ${err.detail || response.statusText}`)
+      if (!response.ok) {
+        throw new Error(`Failed to load failed jobs: ${response.status}`)
       }
-    } catch (error) {
-      console.error('Failed to delete job:', error)
-      alert('삭제 중 오류가 발생했습니다.')
+
+      const jobs: JobListItem[] = await response.json()
+      failedJobs.push(...jobs)
+
+      if (jobs.length < 100) break
     }
+
+    return failedJobs
   }
 
   const handleDeleteAllFailed = async () => {
-    const failedJobs = groups.flatMap(g => g.jobs.filter(j => j.status === 'failed'))
-    if (failedJobs.length === 0) return
-    if (!confirm(`실패한 작업 ${failedJobs.length}개를 모두 삭제하시겠습니까?`)) return
-    await Promise.all(
-      failedJobs.map(job =>
-        fetch(`${API_BASE_URL}/api/jobs/${job.job_id}`, { method: 'DELETE' }).catch(() => null)
+    const failedCount = totals.failed
+    if (failedCount === 0) return
+    if (!confirm(`실패한 작업 ${failedCount}개를 모두 삭제하시겠습니까?`)) return
+
+    try {
+      setDeletingFailed(true)
+      const failedJobs = await fetchAllFailedJobs()
+      await Promise.all(
+        failedJobs.map(job =>
+          fetch(`${API_BASE_URL}/api/jobs/${job.job_id}`, { method: 'DELETE' }).catch(() => null)
+        )
       )
-    )
-    loadData()
-    loadStatistics()
-  }
-
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '-'
-    return new Date(dateString).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-  }
-
-  const formatDuration = (seconds?: number) => {
-    if (!seconds) return '-'
-    if (seconds < 60) return `${seconds.toFixed(1)}초`
-    return `${Math.floor(seconds / 60)}분 ${Math.floor(seconds % 60)}초`
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-      case 'processing': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-      case 'failed': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-      case 'queued':
-      case 'pending':
-      case 'uploaded': return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+      loadData()
+    } catch (error) {
+      console.error('Failed to delete failed jobs:', error)
+      alert('실패 작업 삭제 중 오류가 발생했습니다.')
+    } finally {
+      setDeletingFailed(false)
     }
   }
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'completed': return '완료'
-      case 'processing': return '처리 중'
-      case 'failed': return '실패'
-      case 'queued':
-      case 'pending':
-      case 'uploaded': return '대기 중'
-      default: return status
-    }
+  const openSession = (sessionId: string) => {
+    router.push(`/jobs/${encodeURIComponent(sessionId)}`)
   }
 
-  const getDisplayProgress = (status: string, progress: number) => {
-    if (status === 'queued') return QUEUED_PROGRESS
-    if (status === 'processing') return Math.max(QUEUED_PROGRESS, Math.min(progress, 100))
-    return Math.min(progress, 100)
-  }
+  const totals = useMemo(() => {
+    const totalDocuments = sessions.reduce((sum, session) => sum + session.total, 0)
+    const completed = sessions.reduce((sum, session) => sum + session.completed, 0)
+    const failed = sessions.reduce((sum, session) => sum + session.failed, 0)
+    const active = sessions.reduce((sum, session) => sum + getActiveCount(session), 0)
+    const totalPages = sessions.reduce((sum, session) => sum + (session.total_pages || 0), 0)
 
-
-  // 검색/필터 변경 시 첫 페이지로
-  useEffect(() => { setCurrentPage(0) }, [searchQuery, statusFilter, sortBy, pageSize])
-
-  // 필터링 (세션명 또는 파일명 검색)
-  const filteredGroups = groups.map(g => {
-    const sessionMatches = !searchQuery || g.session_name.toLowerCase().includes(searchQuery.toLowerCase())
-    const jobs = g.jobs.filter(job => {
-      const matchStatus = statusFilter === 'all' || job.status === statusFilter
-      const matchSearch = sessionMatches || job.filename.toLowerCase().includes(searchQuery.toLowerCase())
-      return matchStatus && matchSearch
-    })
-    return { ...g, jobs }
-  }).filter(g => g.jobs.length > 0).sort((a, b) => {
-    if (sortBy === 'date_asc') {
-      const aLatest = Math.max(...a.jobs.map(j => new Date(j.created_at).getTime()))
-      const bLatest = Math.max(...b.jobs.map(j => new Date(j.created_at).getTime()))
-      return aLatest - bLatest
+    return {
+      sessions: sessions.length,
+      totalDocuments,
+      completed,
+      failed,
+      active,
+      totalPages,
+      completionRate: totalDocuments > 0 ? Math.round((completed / totalDocuments) * 100) : 0,
     }
-    if (sortBy === 'status') {
-      const statusPriority = (g: typeof a) => {
-        if (g.jobs.some(j => j.status === 'processing')) return 0
-        if (g.jobs.some(j => j.status === 'queued')) return 1
-        if (g.jobs.some(j => j.status === 'failed')) return 2
-        if (g.jobs.some(j => j.status === 'completed')) return 3
-        return 4
-      }
-      return statusPriority(a) - statusPriority(b)
-    }
-    // date_desc (default): 처리 중/대기 우선, 이후 최신순
-    const aActive = a.jobs.some(j => j.status === 'processing' || j.status === 'queued') ? 1 : 0
-    const bActive = b.jobs.some(j => j.status === 'processing' || j.status === 'queued') ? 1 : 0
-    if (bActive !== aActive) return bActive - aActive
-    const aLatest = Math.max(...a.jobs.map(j => new Date(j.created_at).getTime()))
-    const bLatest = Math.max(...b.jobs.map(j => new Date(j.created_at).getTime()))
-    return bLatest - aLatest
-  })
+  }, [sessions])
 
-  const totalPages = Math.ceil(filteredGroups.length / pageSize)
-  const paginatedGroups = filteredGroups.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
-  const inProgressGroups = useMemo(() => groups
-    .map(g => ({
-      ...g,
-      jobs: g.jobs.filter(job => job.status === 'queued' || job.status === 'processing'),
-    }))
-    .filter(g => g.jobs.length > 0), [groups])
-  const inProgressCount = inProgressGroups.reduce((acc, g) => acc + g.jobs.length, 0)
+  const filteredSessions = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const params = new URLSearchParams(window.location.search)
-    setFocusSessionName(params.get('sessionName'))
-    setOpenInProgress(params.get('inProgress') === '1')
-  }, [])
+    return sessions
+      .filter(session => {
+        const matchesSearch =
+          !query ||
+          session.session_name.toLowerCase().includes(query) ||
+          (session.description || '').toLowerCase().includes(query)
 
-  useEffect(() => {
-    if (!openInProgress) return
-    setInProgressExpanded(true)
-  }, [openInProgress])
+        if (!matchesSearch) return false
 
-  useEffect(() => {
-    setInProgressSessionExpanded(prev => {
-      let changed = false
-      const next: Record<string, boolean> = { ...prev }
-      for (const group of inProgressGroups) {
-        if (next[group.session_id] === undefined) {
-          next[group.session_id] = true
-          changed = true
+        if (statusFilter === 'active') return getActiveCount(session) > 0
+        if (statusFilter === 'completed') return session.total > 0 && session.completed === session.total && session.failed === 0
+        if (statusFilter === 'failed') return session.failed > 0
+        if (statusFilter === 'empty') return session.total === 0
+        return true
+      })
+      .sort((a, b) => {
+        if (sortBy === 'name') {
+          return a.session_name.localeCompare(b.session_name, 'ko-KR')
         }
-      }
-      return changed ? next : prev
-    })
-  }, [inProgressGroups])
+
+        if (sortBy === 'progress') {
+          return b.completion_rate - a.completion_rate
+        }
+
+        const aTime = getSessionTime(a)
+        const bTime = getSessionTime(b)
+        return sortBy === 'oldest' ? aTime - bTime : bTime - aTime
+      })
+  }, [sessions, searchQuery, statusFilter, sortBy])
 
   useEffect(() => {
-    if (!openInProgress || !focusSessionName || !inProgressExpanded) return
-    const targetId = `in-progress-${focusSessionName}`
+    setCurrentPage(0)
+  }, [searchQuery, statusFilter, sortBy, pageSize])
+
+  useEffect(() => {
+    if (!focusSessionName) return
+    const targetIndex = filteredSessions.findIndex(session => session.session_name === focusSessionName)
+    if (targetIndex >= 0) {
+      setCurrentPage(Math.floor(targetIndex / pageSize))
+    }
+  }, [filteredSessions, focusSessionName, pageSize])
+
+  useEffect(() => {
+    if (!focusSessionName) return
+    const target = filteredSessions.find(session => session.session_name === focusSessionName)
+    if (!target) return
+
     const timer = setTimeout(() => {
-      const target = document.getElementById(targetId)
-      if (target) {
-        target.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      }
+      document.getElementById(`session-${target.session_id}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      })
     }, 150)
+
     return () => clearTimeout(timer)
-  }, [focusSessionName, inProgressExpanded, inProgressGroups, openInProgress])
+  }, [filteredSessions, focusSessionName, currentPage])
+
+  const totalPages = Math.max(1, Math.ceil(filteredSessions.length / pageSize))
+  const paginatedSessions = filteredSessions.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
 
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen">
       <Sidebar />
       <main className="ml-64 p-6 lg:p-10">
         <div className="w-full max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-8">
-            <h1 className="text-3xl font-bold text-text-primary-light dark:text-text-primary-dark">작업 내역</h1>
-            {groups.some(g => g.jobs.some(j => j.status === 'failed')) && (
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-text-primary-light dark:text-text-primary-dark">작업 내역</h1>
+              <p className="mt-2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                세션을 선택하면 해당 세션의 파일 목록을 확인할 수 있습니다.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={handleDeleteAllFailed}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg transition-colors"
+                onClick={() => loadData()}
+                className="inline-flex items-center gap-2 rounded-lg border border-border-light dark:border-border-dark px-4 py-2 text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 transition-colors"
               >
-                <span className="material-symbols-outlined text-base">delete_sweep</span>
-                실패 작업 전체 삭제
+                <span className="material-symbols-outlined text-base">refresh</span>
+                새로고침
               </button>
-            )}
-          </div>
-
-          {/* Statistics Cards — 임시 숨김 */}
-          {statistics && false && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-              {[
-                { label: '총 작업 수', value: statistics!.total_jobs },
-                { label: '처리된 페이지', value: statistics!.total_pages_processed },
-                { label: '평균 처리 시간', value: formatDuration(statistics!.average_processing_time_seconds) },
-                { label: '사용 용량', value: `${statistics!.storage_used_mb} MB` },
-              ].map(({ label, value }) => (
-                <div key={label} className="bg-surface-light dark:bg-surface-dark p-6 rounded-xl border border-border-light dark:border-border-dark">
-                  <div className="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-1">{label}</div>
-                  <div className="text-2xl font-bold text-text-primary-light dark:text-text-primary-dark">{value}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Search and Filter */}
-          <div className="bg-surface-light dark:bg-surface-dark p-4 rounded-xl border border-border-light dark:border-border-dark mb-6">
-            <div className="flex flex-col md:flex-row gap-4">
-              <input
-                type="text"
-                placeholder="파일명 / 세션명 검색..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="flex-1 px-4 py-2 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-primary-light dark:text-text-primary-dark"
-              />
-              <button onClick={() => loadData()} className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
-                검색
-              </button>
-            </div>
-          </div>
-
-          {/* In-progress Jobs */}
-          {inProgressCount > 0 && <section className="bg-surface-light dark:bg-surface-dark p-5 rounded-xl border border-border-light dark:border-border-dark mb-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-semibold text-text-primary-light dark:text-text-primary-dark">진행 중 작업</h2>
-                  <span className="inline-flex items-center justify-center min-w-[2rem] px-2 py-0.5 rounded-full bg-primary text-white text-xs font-bold">
-                    {inProgressCount}
-                  </span>
-                </div>
-                <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mt-1">
-                  큐 대기/처리 중 작업 수
-                </p>
-                {focusSessionName && (
-                  <p className="mt-1 text-xs text-primary font-medium">
-                    선택 세션: {focusSessionName}
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
+              {totals.failed > 0 && (
                 <button
-                  onClick={() => loadData()}
-                  className="px-3 py-1.5 text-sm bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors"
+                  onClick={handleDeleteAllFailed}
+                  disabled={deletingFailed}
+                  className="inline-flex items-center gap-2 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  새로고침
+                  <span className="material-symbols-outlined text-base">delete_sweep</span>
+                  {deletingFailed ? '삭제 중...' : '실패 작업 전체 삭제'}
                 </button>
-                <button
-                  onClick={() => setInProgressExpanded(prev => !prev)}
-                  className="flex items-center justify-center rounded-lg border border-border-light dark:border-border-dark px-2.5 py-1.5 text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/30 transition-colors"
-                  aria-label={inProgressExpanded ? '진행 중 작업 접기' : '진행 중 작업 펼치기'}
-                  title={inProgressExpanded ? '접기' : '펼치기'}
-                >
-                  <span className="material-symbols-outlined text-lg leading-none">
-                    {inProgressExpanded ? 'expand_less' : 'expand_more'}
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            {!inProgressExpanded ? null : inProgressCount === 0 ? (
-              <div className="mt-4 rounded-lg border border-dashed border-border-light dark:border-border-dark px-4 py-6 text-sm text-text-secondary-light dark:text-text-secondary-dark text-center">
-                현재 진행 중인 작업이 없습니다.
-              </div>
-            ) : (
-              <div className="mt-4 flex flex-col gap-4">
-                {inProgressGroups.map(group => (
-                  <div
-                    key={`in-progress-${group.session_id}`}
-                    id={`in-progress-${group.session_name}`}
-                    className="rounded-xl border border-border-light dark:border-border-dark overflow-hidden"
-                  >
-                    <div className="flex items-center justify-between gap-3 px-4 py-3 bg-background-light dark:bg-background-dark border-b border-border-light dark:border-border-dark">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="material-symbols-outlined text-primary text-base">folder_open</span>
-                        <p className="truncate text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">
-                          {group.session_name}
-                        </p>
-                      </div>
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary font-medium">
-                        {group.jobs.length}개
-                      </span>
-                    </div>
-                    <button
-                      onClick={() =>
-                        setInProgressSessionExpanded(prev => ({
-                          ...prev,
-                          [group.session_id]: !(prev[group.session_id] ?? true),
-                        }))
-                      }
-                      className="w-full flex items-center justify-center gap-1.5 py-2 text-xs text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                    >
-                      <span className="material-symbols-outlined text-base leading-none">
-                        {(inProgressSessionExpanded[group.session_id] ?? true) ? 'expand_less' : 'expand_more'}
-                      </span>
-                      {(inProgressSessionExpanded[group.session_id] ?? true) ? '접기' : '펼치기'}
-                    </button>
-                    {(inProgressSessionExpanded[group.session_id] ?? true) && (
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 p-3">
-                        {group.jobs.map(job => (
-                          <div
-                            key={job.job_id}
-                            className="rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark px-4 py-3"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">
-                                  {job.filename}
-                                </p>
-                              </div>
-                              <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(job.status)}`}>
-                                {getStatusText(job.status)}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                              생성 {formatDate(job.created_at)}
-                            </p>
-                            <PipelineProgress
-                              status={job.status}
-                              progress={job.progress_percent || 0}
-                              subStage={job.sub_stage}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>}
-
-          {/* Groups 헤더: 필터 + 총 작업수 */}
-          {!loading && (
-            <div className="flex items-center justify-end gap-3 mb-3">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-1.5 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark"
-              >
-                <option value="all">모든 상태</option>
-                <option value="completed">완료</option>
-                <option value="processing">처리 중</option>
-                <option value="failed">실패</option>
-                <option value="queued">대기 중</option>
-              </select>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="px-3 py-1.5 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark"
-              >
-                <option value="date_desc">최신순</option>
-                <option value="date_asc">오래된순</option>
-                <option value="status">상태별</option>
-              </select>
-              <select
-                value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                className="px-3 py-1.5 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark"
-              >
-                <option value={5}>5개씩</option>
-                <option value={10}>10개씩</option>
-                <option value={20}>20개씩</option>
-                <option value={50}>50개씩</option>
-              </select>
-              {filteredGroups.length > 0 && (
-                <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark whitespace-nowrap">
-                  총 <span className="text-primary text-base font-bold">{filteredGroups.reduce((acc, g) => acc + g.jobs.length, 0)}</span>개 작업
-                </span>
               )}
             </div>
-          )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+            <SummaryCard icon="folder_open" label="총 세션" value={`${totals.sessions}개`} />
+            <SummaryCard icon="description" label="총 문서" value={`${totals.totalDocuments}개`} subValue={`${totals.totalPages}p`} />
+            <SummaryCard icon="sync" label="진행/대기" value={`${totals.active}개`} />
+            <SummaryCard icon="check_circle" label="완료율" value={`${totals.completionRate}%`} subValue={`완료 ${totals.completed}개`} />
+          </div>
+
+          <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-4 mb-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="relative flex-1">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary-light dark:text-text-secondary-dark text-lg">
+                  search
+                </span>
+                <input
+                  type="text"
+                  placeholder="세션명 검색..."
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-sm text-text-primary-light dark:text-text-primary-dark outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+                  className="px-3 py-2.5 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark outline-none"
+                >
+                  <option value="all">모든 상태</option>
+                  <option value="active">진행/대기</option>
+                  <option value="completed">완료</option>
+                  <option value="failed">실패 포함</option>
+                  <option value="empty">빈 세션</option>
+                </select>
+
+                <select
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value as SortBy)}
+                  className="px-3 py-2.5 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark outline-none"
+                >
+                  <option value="latest">최근 작업순</option>
+                  <option value="oldest">오래된순</option>
+                  <option value="name">이름순</option>
+                  <option value="progress">완료율순</option>
+                </select>
+
+                <select
+                  value={pageSize}
+                  onChange={(event) => setPageSize(Number(event.target.value))}
+                  className="px-3 py-2.5 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark outline-none"
+                >
+                  {PAGE_SIZE_OPTIONS.map(size => (
+                    <option key={size} value={size}>{size}개씩</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark">
+              총 <span className="text-primary font-bold">{filteredSessions.length}</span>개 세션
+            </p>
+            {focusSessionName && (
+              <p className="text-xs font-medium text-primary">
+                선택 세션: {focusSessionName}
+              </p>
+            )}
+          </div>
+
           {loading ? (
             <div className="flex items-center justify-center p-16">
               <span className="material-symbols-outlined animate-spin text-primary text-4xl">progress_activity</span>
             </div>
-          ) : filteredGroups.length === 0 ? (
+          ) : filteredSessions.length === 0 ? (
             <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-16 text-center text-text-secondary-light dark:text-text-secondary-dark">
-              작업 내역이 없습니다
+              {loadError ? (
+                <>
+                  <p className="text-red-600 dark:text-red-400 font-medium">목록을 불러오지 못했습니다</p>
+                  <p className="mt-2 text-sm opacity-90">{loadError}</p>
+                </>
+              ) : (
+                '작업 내역이 없습니다'
+              )}
             </div>
           ) : (
-            <div className="flex flex-col gap-4">
-              {paginatedGroups.map(group => (
-                <div key={group.session_id} className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
-                  {/* 세션 헤더 */}
-                  <div className="flex items-center justify-between gap-3 px-6 py-4 bg-background-light dark:bg-background-dark">
-                    <button
-                      onClick={() => toggleGroup(group.session_id)}
-                      className="flex items-center gap-3 min-w-0 flex-1 text-left hover:opacity-80 transition-opacity"
-                    >
-                      <span className="material-symbols-outlined shrink-0 text-primary">folder_open</span>
-                      <span className="font-semibold truncate text-text-primary-light dark:text-text-primary-dark">{group.session_name}</span>
-                      <span className="shrink-0 px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary font-medium">
-                        {group.jobs.length}개
-                      </span>
-                    </button>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <label
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors ${uploadingSession === group.session_id ? 'opacity-50 cursor-not-allowed' : 'bg-primary/10 text-primary hover:bg-primary/20'}`}
-                        title="이 세션에 파일 추가"
-                      >
-                        <span className="material-symbols-outlined text-base">upload_file</span>
-                        <span>파일 추가</span>
-                        <input
-                          type="file"
-                          multiple
-                          accept=".pdf,.png,.jpg,.jpeg"
-                          className="hidden"
-                          disabled={uploadingSession === group.session_id}
-                          onChange={(e) => handleUpload(group.session_id, e.target.files)}
-                          onClick={(e) => { (e.target as HTMLInputElement).value = '' }}
-                        />
-                      </label>
-                      <span className={`material-symbols-outlined text-text-secondary-light dark:text-text-secondary-dark transition-transform duration-200 ${group.expanded ? 'rotate-180' : ''}`}
-                        onClick={() => toggleGroup(group.session_id)}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        expand_more
-                      </span>
-                    </div>
-                  </div>
+            <>
+              <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] table-fixed">
+                    <colgroup>
+                      <col style={{ width: '30%' }} />
+                      <col style={{ width: '13%' }} />
+                      <col style={{ width: '14%' }} />
+                      <col style={{ width: '19%' }} />
+                      <col style={{ width: '14%' }} />
+                      <col style={{ width: '10%' }} />
+                    </colgroup>
+                    <thead className="bg-background-light dark:bg-background-dark border-b border-border-light dark:border-border-dark">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">세션</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">상태</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">문서</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">완료율</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">마지막 작업</th>
+                        <th className="px-6 py-3 text-right text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">작업</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-light dark:divide-border-dark">
+                      {paginatedSessions.map(session => {
+                        const status = getSessionStatus(session)
+                        const activeCount = getActiveCount(session)
+                        const isFocused = focusSessionName === session.session_name
 
-                  {/* 작업 목록 */}
-                  {group.expanded && (
-                    <div className="overflow-x-auto">
-                      <table className="w-full table-fixed">
-                        <colgroup>
-                          <col style={{ width: '30%' }} />
-                          <col style={{ width: '9%' }} />
-                          <col style={{ width: '9%' }} />
-                          <col style={{ width: '18%' }} />
-                          <col style={{ width: '10%' }} />
-                          <col style={{ width: '19%' }} />
-                        </colgroup>
-                        <thead className="border-t border-border-light dark:border-border-dark">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">파일명</th>
-                            <th className="px-3 py-3 text-center text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">상태</th>
-                            <th className="px-3 py-3 text-right text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">페이지</th>
-                            <th className="px-3 py-3 text-right text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">생성일</th>
-                            <th className="px-3 py-3 text-right text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">처리시간</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">작업</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border-light dark:divide-border-dark">
-                          {group.jobs.map(job => (
-                            <tr key={job.job_id} className="hover:bg-background-light dark:hover:bg-background-dark transition-colors">
-                              <td className="px-6 py-4 min-w-0">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  {job.status === 'uploaded'
-                                    ? <span className="text-sm font-medium truncate text-text-primary-light dark:text-text-primary-dark">{job.filename}</span>
-                                    : <button onClick={() => router.push(`/editor/${job.job_id}`)}
-                                        className="text-sm font-medium text-primary hover:text-primary/80 text-left truncate min-w-0">
-                                        {job.filename}
-                                      </button>
-                                  }
-                                  {job.is_double_column && (
-                                    <span className="shrink-0 px-2 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-xs">더블컬럼</span>
+                        return (
+                          <tr
+                            key={session.session_id}
+                            id={`session-${session.session_id}`}
+                            tabIndex={0}
+                            onClick={() => openSession(session.session_id)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                openSession(session.session_id)
+                              }
+                            }}
+                            className={`cursor-pointer transition-colors hover:bg-primary/5 focus:outline-none focus:bg-primary/10 ${isFocused ? 'bg-primary/10' : ''}`}
+                          >
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span className="material-symbols-outlined shrink-0 text-primary">folder_open</span>
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">
+                                    {session.session_name}
+                                  </p>
+                                  {session.description && (
+                                    <p className="mt-1 truncate text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                                      {session.description}
+                                    </p>
                                   )}
                                 </div>
-                              </td>
-                              <td className="px-3 py-4 text-center whitespace-nowrap">
-                                <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(job.status)}`}>
-                                  {getStatusText(job.status)}
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-center">
+                              <span className={`inline-flex items-center justify-center rounded-full px-2.5 py-1 text-xs font-semibold ${status.color}`}>
+                                {status.label}
+                              </span>
+                              {activeCount > 0 && (
+                                <p className="mt-1 text-[11px] text-text-secondary-light dark:text-text-secondary-dark">
+                                  {activeCount}개 진행
+                                </p>
+                              )}
+                            </td>
+                            <td className="px-4 py-4 text-right text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                              <div className="font-semibold text-text-primary-light dark:text-text-primary-dark">
+                                {session.total}개
+                              </div>
+                              <div className="text-xs">
+                                완료 {session.completed} · 실패 {session.failed}
+                              </div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="h-2 flex-1 rounded-full bg-background-light dark:bg-background-dark overflow-hidden">
+                                  <div
+                                    className="h-full bg-primary transition-all"
+                                    style={{ width: `${Math.min(session.completion_rate, 100)}%` }}
+                                  />
+                                </div>
+                                <span className="w-12 text-right text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">
+                                  {session.completion_rate.toFixed(0)}%
                                 </span>
-                              </td>
-                              <td className="px-3 py-4 text-right whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                                {job.status === 'uploaded' ? '-' : (
-                                  <>
-                                    <span>{job.total_pages}p</span>
-                                    {job.total_text_blocks && <div className="text-xs">{job.total_text_blocks} 블록</div>}
-                                  </>
-                                )}
-                              </td>
-                              <td className="px-3 py-4 text-right whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                                {job.status === 'uploaded' ? '-' : formatDate(job.created_at)}
-                              </td>
-                              <td className="px-3 py-4 text-right whitespace-nowrap text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                                {job.status === 'uploaded' ? '-' : formatDuration(job.processing_time_seconds)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right space-x-3">
-                                {job.status === 'uploaded' ? (
-                                  <>
-                                    <button
-                                      onClick={() => handleStartOCR(job.job_id)}
-                                      className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 font-semibold"
-                                    >
-                                      OCR 시작
-                                    </button>
-                                    <button onClick={() => handleDelete(job.job_id)}
-                                      className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">
-                                      삭제
-                                    </button>
-                                  </>
-                                ) : (
-                                  <>
-                                    {job.status === 'completed' && job.pdf_url && (
-                                      <button
-                                        onClick={async () => {
-                                          const url = `${API_BASE_URL}${job.pdf_url}`
-                                          const res = await fetch(url)
-                                          const blob = await res.blob()
-                                          const a = document.createElement('a')
-                                          a.href = window.URL.createObjectURL(blob)
-                                          a.download = job.filename || `${job.job_id}.pdf`
-                                          a.click()
-                                          window.URL.revokeObjectURL(a.href)
-                                        }}
-                                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
-                                        다운로드
-                                      </button>
-                                    )}
-                                    {(job.status === 'processing' || job.status === 'queued') && (
-                                      <button
-                                        onClick={() => handleCancel(job.job_id)}
-                                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-semibold"
-                                      >
-                                        중지
-                                      </button>
-                                    )}
-                                    {(job.status === 'completed' || job.status === 'failed') && (
-                                      <button
-                                        onClick={() => handleReprocess(job.job_id)}
-                                        disabled={reprocessingJobs.has(job.job_id)}
-                                        className="text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                                      >
-                                        {reprocessingJobs.has(job.job_id) ? '요청 중...' : 'OCR 재처리'}
-                                      </button>
-                                    )}
-                                    <button onClick={() => handleDelete(job.job_id)}
-                                      className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">
-                                      삭제
-                                    </button>
-                                  </>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                              </div>
+                              <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                                총 {session.total_pages || 0}p
+                              </p>
+                            </td>
+                            <td className="px-4 py-4 text-right text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                              {formatDate(session.last_activity || session.updated_at || session.created_at)}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center justify-end gap-2">
+                                <label
+                                  onClick={(event) => event.stopPropagation()}
+                                  className={`inline-flex items-center justify-center rounded-lg border border-border-light dark:border-border-dark p-2 text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 transition-colors ${uploadingSession === session.session_id ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                                  title="이 세션에 파일 추가"
+                                >
+                                  <span className="material-symbols-outlined text-lg leading-none">upload_file</span>
+                                  <input
+                                    type="file"
+                                    multiple
+                                    accept=".pdf,.png,.jpg,.jpeg"
+                                    className="hidden"
+                                    disabled={uploadingSession === session.session_id}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      ;(event.target as HTMLInputElement).value = ''
+                                    }}
+                                    onChange={(event) => {
+                                      event.stopPropagation()
+                                      handleUpload(session.session_id, event.target.files)
+                                    }}
+                                  />
+                                </label>
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    openSession(session.session_id)
+                                  }}
+                                  className="inline-flex items-center justify-center rounded-lg bg-primary/10 p-2 text-primary hover:bg-primary hover:text-white transition-colors"
+                                  title="세션 상세 보기"
+                                >
+                                  <span className="material-symbols-outlined text-lg leading-none">chevron_right</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              ))}
-              {/* 페이지네이션 */}
-              {totalPages >= 1 && (
-                <div className="flex items-center justify-center gap-2 pt-2 pb-4">
+              </div>
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 pt-5 pb-4">
                   <button
-                    onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                    onClick={() => setCurrentPage(page => Math.max(0, page - 1))}
                     disabled={currentPage === 0}
-                    className="px-3 py-1.5 rounded-lg border border-border-light dark:border-border-dark text-sm text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-light dark:border-border-dark text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
                     <span className="material-symbols-outlined text-base leading-none">chevron_left</span>
                   </button>
-                  {Array.from({ length: totalPages }, (_, i) => (
+
+                  {getVisiblePages(currentPage, totalPages).map(page => (
                     <button
-                      key={i}
-                      onClick={() => setCurrentPage(i)}
-                      className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${i === currentPage ? 'bg-primary text-white' : 'border border-border-light dark:border-border-dark text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40'}`}
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`h-9 min-w-9 rounded-lg px-3 text-sm font-medium transition-colors ${page === currentPage ? 'bg-primary text-white' : 'border border-border-light dark:border-border-dark text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40'}`}
                     >
-                      {i + 1}
+                      {page + 1}
                     </button>
                   ))}
+
                   <button
-                    onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                    onClick={() => setCurrentPage(page => Math.min(totalPages - 1, page + 1))}
                     disabled={currentPage === totalPages - 1}
-                    className="px-3 py-1.5 rounded-lg border border-border-light dark:border-border-dark text-sm text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-light dark:border-border-dark text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
                     <span className="material-symbols-outlined text-base leading-none">chevron_right</span>
                   </button>
                 </div>
               )}
-            </div>
+            </>
           )}
         </div>
       </main>
     </div>
   )
+}
+
+function SummaryCard({
+  icon,
+  label,
+  value,
+  subValue,
+}: {
+  icon: string
+  label: string
+  value: string
+  subValue?: string
+}) {
+  return (
+    <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{label}</p>
+          <p className="mt-1 text-2xl font-bold text-text-primary-light dark:text-text-primary-dark">{value}</p>
+          {subValue && <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">{subValue}</p>}
+        </div>
+        <span className="material-symbols-outlined text-primary">{icon}</span>
+      </div>
+    </div>
+  )
+}
+
+function getActiveCount(session: SessionSummary) {
+  return session.active ?? Math.max(session.total - session.completed - session.failed, 0)
+}
+
+function getSessionStatus(session: SessionSummary) {
+  const active = getActiveCount(session)
+
+  if (session.total === 0) {
+    return {
+      label: '빈 세션',
+      color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+    }
+  }
+
+  if (active > 0) {
+    return {
+      label: '진행/대기',
+      color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
+    }
+  }
+
+  if (session.failed > 0) {
+    return {
+      label: session.completed > 0 ? '부분 실패' : '실패',
+      color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
+    }
+  }
+
+  if (session.completed === session.total) {
+    return {
+      label: '완료',
+      color: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200',
+    }
+  }
+
+  return {
+    label: '대기 중',
+    color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+  }
+}
+
+function getSessionTime(session: SessionSummary) {
+  const value = session.last_activity || session.updated_at || session.created_at
+  if (!value) return 0
+
+  const time = new Date(value).getTime()
+  return Number.isNaN(time) ? 0 : time
+}
+
+function formatDate(dateString?: string | null) {
+  if (!dateString) return '-'
+
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime())) return '-'
+
+  return date.toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function getVisiblePages(currentPage: number, totalPages: number) {
+  const start = Math.max(0, currentPage - 2)
+  const end = Math.min(totalPages, start + 5)
+  const adjustedStart = Math.max(0, end - 5)
+
+  return Array.from({ length: end - adjustedStart }, (_, index) => adjustedStart + index)
 }
 
 export default function JobsPage() {

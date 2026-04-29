@@ -5,7 +5,6 @@ import Sidebar from '@/components/Sidebar'
 import { API_BASE_URL } from '@/lib/api'
 import {
   Search as SearchIcon,
-  Filter as FilterIcon,
   FileText,
   ExternalLink,
   ChevronLeft as ChevronLeftIcon,
@@ -114,12 +113,13 @@ function EditPanel({ doc, userId, categories, onClose, onSaved }: EditPanelProps
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm"
+      // Sidebar(좌측) 제외한 메인 영역의 중앙에 오도록 left-64/right-0로 오버레이를 제한
+      className="fixed inset-y-0 left-64 right-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
       onClick={handleBackdrop}
     >
       <div
         ref={panelRef}
-        className="w-full max-w-lg h-full bg-surface-light dark:bg-surface-dark shadow-2xl flex flex-col animate-slide-in-right overflow-hidden"
+        className="w-full max-w-3xl h-[90vh] bg-surface-light dark:bg-surface-dark shadow-2xl flex flex-col rounded-2xl overflow-hidden transform translate-x-6"
       >
         {/* 헤더 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light dark:border-border-dark flex-shrink-0">
@@ -272,7 +272,6 @@ export default function ExtractionListPage() {
   const [pageSize] = useState(15)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [docTypeFilter, setDocTypeFilter] = useState('')
   const [categories, setCategories] = useState<string[]>([])
   const [editingDoc, setEditingDoc] = useState<MetaDoc | null>(null)
 
@@ -305,7 +304,6 @@ export default function ExtractionListPage() {
         page: String(page),
         page_size: String(pageSize),
         search: search,
-        doc_type: docTypeFilter,
         sort_by: 'created_at',
         sort_dir: 'desc'
       })
@@ -320,7 +318,7 @@ export default function ExtractionListPage() {
     } finally {
       setLoading(false)
     }
-  }, [userId, page, pageSize, search, docTypeFilter])
+  }, [userId, page, pageSize, search])
 
   useEffect(() => {
     fetchDocs()
@@ -372,28 +370,25 @@ export default function ExtractionListPage() {
 
         {/* Filters/Search */}
         <div className="px-8 py-4 border-b border-border-light dark:border-border-dark flex items-center gap-4 bg-surface-light/10 dark:bg-surface-dark/10">
-          <div className="relative flex-1 max-w-md">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary-light" size={18} />
-            <input 
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="파일명으로 검색..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark outline-none focus:border-primary/50 text-sm font-medium transition-all"
-            />
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark">
-             <FilterIcon size={16} className="text-text-secondary-light" />
-             <select 
-               value={docTypeFilter} 
-               onChange={e => setDocTypeFilter(e.target.value)}
-               className="bg-transparent text-sm font-bold outline-none text-text-primary-light dark:text-text-primary-dark cursor-pointer"
-             >
-               <option value="">모든 카테고리</option>
-               <option value="영수증">영수증</option>
-               <option value="계약서">계약서</option>
-               <option value="공문서">공문서</option>
-               <option value="기타">기타</option>
-             </select>
+          <div className="flex-1 max-w-md flex items-center gap-2">
+            <div className="relative flex-1">
+              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary-light" size={18} />
+              <input 
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="파일명으로 검색..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark outline-none focus:border-primary/50 text-sm font-medium transition-all"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={fetchDocs}
+              disabled={loading}
+              className="px-4 py-2.5 rounded-xl border border-border-light dark:border-border-dark text-sm font-bold hover:bg-white/5 dark:hover:bg-white/5 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+              aria-label="검색"
+            >
+              검색
+            </button>
           </div>
           <div className="ml-auto text-xs font-bold text-text-secondary-light">
              총 <span className="text-primary">{total}</span> 건의 데이터

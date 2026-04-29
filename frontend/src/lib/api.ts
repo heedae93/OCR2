@@ -5,9 +5,9 @@ const getApiUrl = () => {
   if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL
   if (typeof window !== 'undefined') {
     const { hostname } = window.location
-    return `http://${hostname}:6016`
+    return `http://${hostname}:6015`
   }
-  return 'http://localhost:6016'
+  return 'http://localhost:6015'
 }
 
 export const API_BASE_URL = getApiUrl()

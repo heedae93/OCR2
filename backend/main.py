@@ -223,11 +223,29 @@ async def worker_health():
     """Celery 워커 상태 확인"""
     try:
         from tasks.celery_app import celery_app
-        inspector = celery_app.control.inspect(timeout=2.0)
-        ping_result = inspector.ping()
-        available = bool(ping_result)
-        workers = list(ping_result.keys()) if ping_result else []
-        return {"available": available, "workers": workers}
+        inspector = celery_app.control.inspect(timeout=4.0)
+
+        # 1) Fast path: ping
+        ping_result = inspector.ping() or {}
+        if ping_result:
+            workers = list(ping_result.keys())
+            return {"available": True, "workers": workers, "source": "ping"}
+
+        # 2) Fallbacks: some Windows/solo-pool setups intermittently fail ping
+        stats_result = inspector.stats() or {}
+        active_result = inspector.active() or {}
+        registered_result = inspector.registered() or {}
+
+        worker_names = set()
+        worker_names.update(stats_result.keys())
+        worker_names.update(active_result.keys())
+        worker_names.update(registered_result.keys())
+
+        workers = sorted(worker_names)
+        if workers:
+            return {"available": True, "workers": workers, "source": "fallback"}
+
+        return {"available": False, "workers": [], "source": "none"}
     except Exception as e:
         return {"available": False, "workers": [], "error": str(e)}
 
