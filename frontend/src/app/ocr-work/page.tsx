@@ -57,7 +57,7 @@ import PipelineProgress from '@/components/PipelineProgress'
 
 
 export default function OcrWorkPage() {
-  const { addTrackedJobs, cancelJob, cancelAllJobs, activeJobs, trackedJobs } = useOcrActivity()
+  const { addTrackedJobs, trackedJobs } = useOcrActivity()
   const [sessionName, setSessionName] = useState('')
   const [defaultDocType, setDefaultDocType] = useState('미분류')
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
@@ -324,10 +324,11 @@ export default function OcrWorkPage() {
       }
 
       for (const queueFile of files) {
+        let jobId: string | undefined
         try {
           updateFile(queueFile.id, { status: 'uploading', progress: 0 })
 
-          const jobId = await new Promise<string>((resolve, reject) => {
+          jobId = await new Promise<string>((resolve, reject) => {
             const xhr = new XMLHttpRequest()
             const params = new URLSearchParams()
             if (userId) params.set('user_id', userId)
@@ -383,9 +384,9 @@ export default function OcrWorkPage() {
             throw new Error('Redis 큐 서버가 비정상입니다. 작업을 등록할 수 없습니다.')
           }
 
-          updateFile(queueFile.id, { status: 'queued', progress: 100, jobId })
+          updateFile(queueFile.id, { status: 'queued', progress: 100, jobId: jobId! })
           queuedJobs.push({
-            jobId,
+            jobId: jobId!,
             filename: queueFile.displayName,
             sessionName: queueFile.sessionName,
             sourceType: queueFile.sourceType,
@@ -399,7 +400,7 @@ export default function OcrWorkPage() {
           })
           
           // If jobId exists, try to notify backend that it failed
-          if (queueFile.jobId || (typeof jobId !== 'undefined' && jobId)) {
+          if (queueFile.jobId || jobId) {
             const finalJobId = queueFile.jobId || jobId
             try {
               console.log(`Notifying backend of failure for job ${finalJobId}`)
@@ -627,7 +628,7 @@ export default function OcrWorkPage() {
                   <div className="flex items-center justify-around gap-2">
                     {[
                       { label: '대기', value: pendingCount, color: 'text-primary' },
-                      { label: '완료', value: queue.filter(f => f.status === 'completed').length, color: 'text-green-500' },
+                      { label: '완료', value: queue.filter(f => trackedJobs.find(tj => tj.jobId === f.jobId)?.status === 'completed').length, color: 'text-green-500' },
                       { label: '실패', value: queue.filter(f => f.status === 'failed').length, color: 'text-red-500' },
                       { label: '전체', value: queue.length, color: 'text-text-primary-light dark:text-text-primary-dark' }
                     ].map((item, idx) => (
@@ -703,7 +704,7 @@ export default function OcrWorkPage() {
                     {paginatedGroups.map(([sName, files]) => {
                       const isExpanded = expandedSessions[sName] ?? true
                       const pendingInSession = files.filter(f => f.status === 'pending').length
-                      const doneInSession = files.filter(f => f.status === 'completed').length
+                      const doneInSession = files.filter(f => trackedJobs.find(tj => tj.jobId === f.jobId)?.status === 'completed').length
                       const failedInSession = files.filter(f => f.status === 'failed').length
                       
                       const visibleLimit = visibleCounts[sName] || 20
@@ -831,9 +832,10 @@ export default function OcrWorkPage() {
                                               
                                               {(effectiveStatus === 'queued' || effectiveStatus === 'processing') && (
                                                 <button
-                                                  onClick={() => {
-                                                    if (confirm('이 작업을 중지하시겠습니까?')) {
-                                                      cancelJob(file.jobId)
+                                                  onClick={async () => {
+                                                    if (file.jobId && confirm('이 작업을 중지하시겠습니까?')) {
+                                                      await fetch(`${API_BASE}/cancel/${file.jobId}`, { method: 'POST' })
+                                                      updateFile(file.id, { status: 'failed', error: '사용자가 중지했습니다.' })
                                                     }
                                                   }}
                                                   className="p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500 transition-all opacity-0 group-hover/item:opacity-100"
