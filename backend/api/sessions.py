@@ -237,6 +237,7 @@ async def list_sessions(
                 progress_percent = job.progress_percent or 0
                 current_page = job.current_page or 0
                 total_pages = job.total_pages or 0
+                message = job.error_message if job.status == "failed" else None
 
                 # Check file status for any non-completed job (processing, queued, etc.)
                 if job.status in ("processing", "queued", "pending", "uploaded"):
@@ -247,7 +248,7 @@ async def list_sessions(
                         progress_percent = file_status.get("progress_percent", progress_percent)
                         current_page = file_status.get("current_page", current_page)
                         total_pages = file_status.get("total_pages", total_pages)
-                        
+
                         # Override status if message exists
                         file_msg = file_status.get("message")
                         if file_msg:
