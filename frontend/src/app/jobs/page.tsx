@@ -341,7 +341,7 @@ function JobsPageInner() {
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen">
       <Sidebar />
-      <main className="ml-64 p-6 lg:p-10">
+      <main className="ml-64 mt-14 p-6 lg:p-10">
         <div className="w-full max-w-7xl mx-auto">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-8">
             <div>

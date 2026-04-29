@@ -760,7 +760,7 @@ export default function OcrWorkPage() {
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen">
       <Sidebar />
-      <main className="flex-1 ml-64 flex flex-col p-6 lg:p-10 min-w-0">
+      <main className="flex-1 ml-64 mt-14 flex flex-col p-6 lg:p-10 min-w-0">
         <div className="w-full max-w-7xl mx-auto flex flex-col gap-6">
           <div className="flex items-start justify-between">
             <div className="flex-1 min-w-0 pr-4">

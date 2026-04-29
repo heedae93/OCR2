@@ -2,10 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useState, useRef, useEffect, useMemo } from "react";
+import { usePathname } from "next/navigation";
+import { useState, useEffect, useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import { useOcrActivity } from "@/contexts/OcrActivityContext";
+import Header from "@/components/Header";
 
 interface NavItem {
   href: string;
@@ -59,8 +60,6 @@ const bottomNavItems: NavItem[] = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
   const { trackedJobs } = useOcrActivity();
   const [user, setUser] = useState<{
@@ -70,7 +69,6 @@ export default function Sidebar() {
     user_id?: string;
   } | null>(null);
   const [todayCount, setTodayCount] = useState(0);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   const isProcessing = useMemo(
     () =>
@@ -102,18 +100,7 @@ export default function Sidebar() {
     });
   }, [pathname, user?.type]);
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setUserMenuOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const fetchTodayCount = async (userId: string) => {
+const fetchTodayCount = async (userId: string) => {
     try {
       const { API_BASE_URL } = await import("@/lib/api");
       const res = await fetch(
@@ -145,6 +132,7 @@ export default function Sidebar() {
   };
 
   return (
+    <>
     <aside className="fixed left-0 top-0 z-[300] flex h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-border-light bg-surface-light pointer-events-auto dark:border-border-dark dark:bg-surface-dark">
       <div className="flex min-h-full flex-col gap-4 p-4">
         <Link
@@ -328,62 +316,9 @@ export default function Sidebar() {
           </div>
         </div>
 
-        <div
-          ref={menuRef}
-          className="flex flex-col gap-1 border-t border-border-light pt-4 dark:border-border-dark"
-        >
-          <div
-            onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 transition-all duration-200 hover:bg-black/5 dark:hover:bg-white/5"
-          >
-            <div className="relative">
-              <div className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/70 text-sm font-semibold text-white shadow-md">
-                {(user?.name || user?.username || "U")[0].toUpperCase()}
-              </div>
-              <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface-light bg-green-500 dark:border-surface-dark" />
-            </div>
-            <div className="flex min-w-0 flex-1 flex-col">
-              <p className="truncate text-sm font-semibold leading-tight text-text-primary-light dark:text-text-primary-dark">
-                {user?.name || "사용자"}
-              </p>
-              <p className="truncate text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                {user?.username || ""}
-              </p>
-            </div>
-            <span
-              className={`material-symbols-outlined text-lg text-text-secondary-light transition-transform duration-200 dark:text-text-secondary-dark ${userMenuOpen ? "rotate-180" : ""}`}
-            >
-              expand_more
-            </span>
-          </div>
-
-          {userMenuOpen && (
-            <div className="mt-1 overflow-hidden rounded-xl border border-border-light bg-surface-light shadow-lg dark:border-border-dark dark:bg-surface-dark">
-              <button
-                onClick={() => {
-                  setUserMenuOpen(false);
-                  router.push("/mypage");
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-text-primary-light transition-colors duration-150 hover:bg-black/5 dark:text-text-primary-dark dark:hover:bg-white/5"
-              >
-                <span className="material-symbols-outlined text-lg">
-                  manage_accounts
-                </span>
-                마이페이지
-              </button>
-              <button
-                onClick={() => router.push("/logout")}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-500 transition-colors duration-150 hover:bg-red-50 dark:hover:bg-red-500/10"
-              >
-                <span className="material-symbols-outlined text-lg">
-                  logout
-                </span>
-                로그아웃
-              </button>
-            </div>
-          )}
-        </div>
       </div>
     </aside>
+    <Header />
+    </>
   );
 }
