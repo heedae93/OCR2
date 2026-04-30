@@ -17,7 +17,7 @@ interface NavItem {
 }
 
 const baseNavItems: NavItem[] = [
-  { href: "/", icon: "dashboard", label: "대시보드" },
+  { href: "/dashboard", icon: "dashboard", label: "대시보드" },
   {
     href: "/metadata-management",
     icon: "schema",
@@ -121,7 +121,7 @@ const fetchTodayCount = async (userId: string) => {
       : bottomNavItems.filter((item) => item.href !== "/settings");
 
   const isActive = (path: string) =>
-    pathname === path || (path !== "/" && pathname.startsWith(path));
+    pathname === path || (path !== "/" && path !== "/dashboard" && pathname.startsWith(path));
 
   const toggleMenu = (label: string) => {
     setExpandedMenus((prev) =>
@@ -200,9 +200,6 @@ const fetchTodayCount = async (userId: string) => {
                         : "text-text-secondary-light hover:bg-black/5 hover:text-text-primary-light dark:text-text-secondary-dark dark:hover:bg-white/5 dark:hover:text-text-primary-dark"
                     }`}
                   >
-                    {active && (
-                      <div className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
-                    )}
                     <span
                       className={`material-symbols-outlined text-xl transition-all duration-200 ${
                         active ? "fill text-primary" : "group-hover:scale-110"

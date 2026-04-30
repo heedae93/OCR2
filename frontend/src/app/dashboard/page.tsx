@@ -8,10 +8,8 @@ export default function HomePage() {
     <div className="bg-background-light dark:bg-background-dark min-h-screen">
       <Sidebar />
 
-      <main className="flex-1 ml-64 mt-14 p-6 lg:p-10">
-        <div className="w-full max-w-7xl mx-auto">
-          <Dashboard />
-        </div>
+      <main className="flex-1 ml-64 mt-14 p-6">
+        <Dashboard />
       </main>
     </div>
   )

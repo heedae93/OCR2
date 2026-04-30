@@ -654,6 +654,28 @@ async def get_session_statistics(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/jobs/statistics/user-workload")
+async def get_user_workload(db: Session = Depends(get_db)):
+    """Get job counts per user from jobs table"""
+    try:
+        rows = db.query(Job.user_id, func.count(Job.job_id)).group_by(Job.user_id).all()
+        from database import User
+        result = []
+        for user_id, count in rows:
+            user = db.query(User).filter(User.user_id == user_id).first()
+            result.append({
+                "user_id": user_id,
+                "name": user.name or user.username if user else user_id,
+                "username": user.username if user else user_id,
+                "total_jobs": count
+            })
+        result.sort(key=lambda x: x["total_jobs"], reverse=True)
+        return result
+    except Exception as e:
+        logger.error(f"Failed to get user workload: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/jobs/{job_id}/tags")
 async def update_job_tags(job_id: str, tags: List[str], db: Session = Depends(get_db)):
     """Update job tags"""
