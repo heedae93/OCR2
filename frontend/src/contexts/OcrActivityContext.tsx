@@ -22,6 +22,7 @@ export interface TrackedJob {
   jobId: string
   filename: string
   sessionName: string
+  sessionKey?: string
   sourceType: TrackedSourceType
   status: TrackedJobStatus
   progressPercent: number
@@ -40,6 +41,7 @@ interface AddTrackedJobInput {
   jobId: string
   filename: string
   sessionName: string
+  sessionKey?: string
   sourceType: TrackedSourceType
   userId?: string
 }
@@ -114,6 +116,7 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
           jobId: job.jobId,
           filename: job.filename,
           sessionName: job.sessionName,
+          sessionKey: job.sessionKey,
           sourceType: job.sourceType,
           userId: job.userId || currentUserId,
           status: 'queued' as const,

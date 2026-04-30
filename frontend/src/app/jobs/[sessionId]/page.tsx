@@ -186,7 +186,7 @@ export default function SessionDetailPage() {
                   </tr>
                 ) : (
                   filteredJobs.map(job => (
-                    <tr key={job.job_id} className="group hover:bg-primary/5 transition-colors">
+                    <tr key={job.job_id} className="hover:bg-primary/5 transition-colors">
                       <td className="px-6 py-5">
                         <div className="flex flex-col">
                           <button 
@@ -214,7 +214,7 @@ export default function SessionDetailPage() {
                         {job.total_pages > 0 ? `${job.total_pages}p` : '-'}
                       </td>
                       <td className="px-6 py-5">
-                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center justify-end gap-2">
                           {job.status === 'uploaded' ? (
                             <button 
                               onClick={() => handleStartOCR(job.job_id)}
@@ -228,27 +228,30 @@ export default function SessionDetailPage() {
                                 <a 
                                   href={`${API_BASE_URL}${job.pdf_url}`} 
                                   download
-                                  className="p-2 bg-blue-500/10 text-blue-600 rounded-lg hover:bg-blue-500 hover:text-white transition-all"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-500/10 text-blue-600 rounded-lg text-xs font-bold hover:bg-blue-500 hover:text-white transition-all"
                                 >
                                   <span className="material-symbols-outlined text-lg">download</span>
+                                  다운로드
                                 </a>
                               )}
                               {(job.status === 'completed' || job.status === 'failed') && (
                                 <button 
                                   onClick={() => handleReprocess(job.job_id)}
                                   disabled={reprocessingJobs.has(job.job_id)}
-                                  className="p-2 bg-orange-500/10 text-orange-600 rounded-lg hover:bg-orange-500 hover:text-white transition-all"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-orange-500/10 text-orange-600 rounded-lg text-xs font-bold hover:bg-orange-500 hover:text-white transition-all disabled:opacity-50"
                                 >
                                   <span className="material-symbols-outlined text-lg">refresh</span>
+                                  재실행
                                 </button>
                               )}
                             </>
                           )}
                           <button 
                             onClick={() => handleDeleteJob(job.job_id)}
-                            className="p-2 bg-red-500/10 text-red-600 rounded-lg hover:bg-red-500 hover:text-white transition-all"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-red-500/10 text-red-600 rounded-lg text-xs font-bold hover:bg-red-500 hover:text-white transition-all"
                           >
                             <span className="material-symbols-outlined text-lg">delete</span>
+                            삭제
                           </button>
                         </div>
                       </td>
