@@ -14,7 +14,7 @@ import {
 const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/api`
 const STORAGE_KEY = 'ocr-activity-tracker'
 
-export type TrackedJobStatus = 'pending' | 'uploaded' | 'queued' | 'processing' | 'completed' | 'failed'
+export type TrackedJobStatus = 'pending' | 'uploaded' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled'
 export type TrackedSourceType = 'file' | 'folder'
 
 export interface TrackedJob {
@@ -238,7 +238,8 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
             return job
           }
 
-          const nextStatus = result.value.status
+          const rawNextStatus = result.value.status
+          const nextStatus: TrackedJobStatus = rawNextStatus === 'cancelled' ? 'failed' : rawNextStatus
           const nextProgress = nextStatus === 'completed' ? 100 : result.value.progressPercent
 
           return {
@@ -247,7 +248,10 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
             progressPercent: nextProgress,
             subStage: result.value.subStage,
             message: result.value.message,
-            error: nextStatus === 'failed' ? result.value.message || 'OCR 작업 실패' : undefined,
+            error:
+              nextStatus === 'failed'
+                ? result.value.message || (rawNextStatus === 'cancelled' ? '사용자가 중지했습니다.' : 'OCR 작업 실패')
+                : undefined,
             completedAt:
               nextStatus === 'completed' || nextStatus === 'failed'
                 ? job.completedAt || new Date().toISOString()

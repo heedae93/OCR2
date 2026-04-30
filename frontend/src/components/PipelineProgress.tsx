@@ -16,8 +16,10 @@ export function getActivePipelineStage(status: string, progress: number, subStag
   if (status === 'completed') return PIPELINE_STAGES.length
   // 로컬 대기만 있고 서버 업로드/큐 등록 전 — 앞 단계를 완료로 치면 안 됨
   if (status === 'pending') return PIPELINE_IDLE
-  // 업로드(XHR) 중에도 UI는 '대기열'과 동일 단계로만 표시(별도 업로드 단계·100% 채움 생략)
-  if (status === 'queued' || status === 'uploading') return 1
+  // 업로드(XHR) 중에는 항상 대기열 단계
+  if (status === 'uploading') return 1
+  // queued라도 progress/subStage가 들어오면 다음 단계로 진행 표시
+  if (status === 'queued' && !subStage && progress < 1) return 1
   const sub = (subStage || '').toLowerCase()
   if (sub.includes('converting')) return 2
   if (sub.includes('ocr') || sub.includes('layout')) return 3
@@ -95,13 +97,13 @@ export default function PipelineProgress({ status, progress, subStage, failedSta
         <div className={`flex-1 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700 ${compact ? 'h-1' : 'h-1.5'}`}>
           <div
             className={`h-full rounded-full transition-all duration-500 ${
-              isFailed ? 'bg-red-500' : isCompleted ? 'bg-green-500' : 'bg-primary'
+              isFailed ? 'bg-red-500' : isCompleted ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-primary'
             }`}
             style={{ width: `${displayProgress}%` }}
           />
         </div>
         <span className={`font-semibold tabular-nums text-right ${compact ? 'w-7 text-[11px]' : 'w-8 text-xs'} ${
-          isFailed ? 'text-red-500' : isCompleted ? 'text-green-500' : 'text-primary'
+          isFailed ? 'text-red-500' : isCompleted ? 'text-text-secondary-light dark:text-text-secondary-dark' : 'text-primary'
         }`}>
           {Math.round(displayProgress)}%
         </span>
