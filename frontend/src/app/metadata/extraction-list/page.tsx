@@ -400,11 +400,11 @@ export default function ExtractionListPage() {
            <div className="rounded-2xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark shadow-sm overflow-hidden">
               <table className="w-full text-left border-collapse table-fixed">
                 <colgroup>
-                  <col className="w-[18%]" />
-                  <col className="w-[7%]" />
-                  <col className="w-[42%]" />
-                  <col className="w-[25%]" />
-                  <col className="w-[8%]" />
+                  <col className="w-[26%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[35%]" />
+                  <col className="w-[23%]" />
+                  <col className="w-[6%]" />
                 </colgroup>
                 <thead>
                   <tr className="bg-black/5 dark:bg-white/5 text-[11px] font-black uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark border-b border-border-light dark:border-border-dark">
@@ -443,15 +443,15 @@ export default function ExtractionListPage() {
                       return (
                         <tr key={doc.job_id} className="hover:bg-primary/5 transition-colors group cursor-default">
                           {/* 문서 정보 */}
-                          <td className="px-6 py-4">
-                            <div className="flex items-center justify-start gap-3">
+                          <td className="px-6 py-4 align-top">
+                            <div className="flex items-start justify-start gap-3 min-w-0">
                               <div className="p-1.5 rounded-lg bg-primary/10 text-primary shrink-0">
                                 <FileText size={16} />
                               </div>
                               <div className="flex flex-col min-w-0">
                                 <button
                                   onClick={() => setEditingDoc(doc)}
-                                  className="text-xs font-bold text-text-primary-light dark:text-text-primary-dark hover:text-primary transition-colors text-left line-clamp-2 leading-snug"
+                                  className="text-xs font-bold text-text-primary-light dark:text-text-primary-dark hover:text-primary transition-colors text-left line-clamp-3 leading-snug break-words"
                                 >
                                   {doc.original_filename}
                                 </button>
@@ -465,8 +465,8 @@ export default function ExtractionListPage() {
                             </div>
                           </td>
                           {/* 문서 유형 */}
-                          <td className="px-4 py-4 text-center">
-                            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300 text-[10px] font-black border border-blue-200 dark:border-blue-800 inline-block truncate max-w-full">
+                          <td className="px-3 py-4 text-center align-top">
+                            <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300 text-[10px] font-black border border-blue-200 dark:border-blue-800 inline-block max-w-full whitespace-normal break-words text-center leading-tight">
                               {doc.doc_type || '미분류'}
                             </span>
                           </td>

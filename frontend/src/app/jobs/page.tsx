@@ -46,6 +46,8 @@ function JobsPageInner() {
   const [currentPage, setCurrentPage] = useState(0)
   const [uploadingSession, setUploadingSession] = useState<string | null>(null)
   const [deletingFailed, setDeletingFailed] = useState(false)
+  const [deletingSessions, setDeletingSessions] = useState(false)
+  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set())
   const [focusSessionName, setFocusSessionName] = useState<string | null>(null)
 
   const sessionsRef = useRef<SessionSummary[]>([])
@@ -214,6 +216,40 @@ function JobsPageInner() {
     }
   }
 
+  const toggleSessionSelected = (sessionId: string, selected: boolean) => {
+    setSelectedSessionIds(prev => {
+      const next = new Set(prev)
+      if (selected) next.add(sessionId)
+      else next.delete(sessionId)
+      return next
+    })
+  }
+
+  const handleDeleteSessions = async (sessionIds: string[]) => {
+    if (sessionIds.length === 0) return
+    if (!confirm(`세션 ${sessionIds.length}개를 삭제하시겠습니까?`)) return
+
+    try {
+      setDeletingSessions(true)
+      await Promise.all(
+        sessionIds.map(sessionId =>
+          fetch(`${API_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }).catch(() => null),
+        ),
+      )
+      setSelectedSessionIds(prev => {
+        const next = new Set(prev)
+        sessionIds.forEach(id => next.delete(id))
+        return next
+      })
+      loadData(false)
+    } catch (error) {
+      console.error('Failed to delete sessions:', error)
+      alert('세션 삭제 중 오류가 발생했습니다.')
+    } finally {
+      setDeletingSessions(false)
+    }
+  }
+
   const openSession = (sessionId: string) => {
     router.push(`/jobs/${encodeURIComponent(sessionId)}`)
   }
@@ -298,6 +334,9 @@ function JobsPageInner() {
 
   const totalPages = Math.max(1, Math.ceil(filteredSessions.length / pageSize))
   const paginatedSessions = filteredSessions.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
+  const allPageSelected =
+    paginatedSessions.length > 0 &&
+    paginatedSessions.every(session => selectedSessionIds.has(session.session_id))
 
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen">
@@ -308,7 +347,7 @@ function JobsPageInner() {
             <div>
               <h1 className="text-3xl font-bold text-text-primary-light dark:text-text-primary-dark">작업 내역</h1>
               <p className="mt-2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                세션을 선택하면 해당 세션의 파일 목록을 확인할 수 있습니다.
+                작업을 선택하면 해당 작업의 파일 목록을 확인할 수 있습니다.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -318,6 +357,14 @@ function JobsPageInner() {
               >
                 <span className="material-symbols-outlined text-base">refresh</span>
                 새로고침
+              </button>
+              <button
+                onClick={() => handleDeleteSessions(Array.from(selectedSessionIds))}
+                disabled={selectedSessionIds.size === 0 || deletingSessions}
+                className="inline-flex items-center gap-2 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <span className="material-symbols-outlined text-base">delete</span>
+                {deletingSessions ? '삭제 중...' : `선택 항목 삭제 (${selectedSessionIds.size})`}
               </button>
               {totals.failed > 0 && (
                 <button
@@ -333,7 +380,7 @@ function JobsPageInner() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-            <SummaryCard icon="folder_open" label="총 세션" value={`${totals.sessions}개`} />
+            <SummaryCard icon="folder_open" label="총 작업" value={`${totals.sessions}개`} />
             <SummaryCard icon="description" label="총 문서" value={`${totals.totalDocuments}개`} subValue={`${totals.totalPages}p`} />
             <SummaryCard icon="sync" label="진행/대기" value={`${totals.active}개`} />
             <SummaryCard icon="check_circle" label="완료율" value={`${totals.completionRate}%`} subValue={`완료 ${totals.completed}개`} />
@@ -347,7 +394,7 @@ function JobsPageInner() {
                 </span>
                 <input
                   type="text"
-                  placeholder="세션명 검색..."
+                  placeholder="작업명 검색..."
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-sm text-text-primary-light dark:text-text-primary-dark outline-none focus:ring-2 focus:ring-primary/20"
@@ -393,11 +440,11 @@ function JobsPageInner() {
 
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark">
-              총 <span className="text-primary font-bold">{filteredSessions.length}</span>개 세션
+              총 <span className="text-primary font-bold">{filteredSessions.length}</span>개 작업
             </p>
             {focusSessionName && (
               <p className="text-xs font-medium text-primary">
-                선택 세션: {focusSessionName}
+                선택 작업: {focusSessionName}
               </p>
             )}
           </div>
@@ -421,23 +468,44 @@ function JobsPageInner() {
             <>
               <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[980px] table-fixed">
+                  <table className="w-full min-w-[1080px] table-fixed">
                     <colgroup>
-                      <col style={{ width: '30%' }} />
-                      <col style={{ width: '13%' }} />
-                      <col style={{ width: '14%' }} />
-                      <col style={{ width: '19%' }} />
-                      <col style={{ width: '14%' }} />
+                      <col style={{ width: '4%' }} />
+                      <col style={{ width: '27%' }} />
                       <col style={{ width: '10%' }} />
+                      <col style={{ width: '11%' }} />
+                      <col style={{ width: '16%' }} />
+                      <col style={{ width: '20%' }} />
+                      <col style={{ width: '12%' }} />
                     </colgroup>
                     <thead className="bg-background-light dark:bg-background-dark border-b border-border-light dark:border-border-dark">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">세션</th>
-                        <th className="px-4 py-3 text-center text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">상태</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">문서</th>
+                        <th className="px-3 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={allPageSelected}
+                            onChange={(event) => {
+                              const checked = event.target.checked
+                              setSelectedSessionIds(prev => {
+                                const next = new Set(prev)
+                                paginatedSessions.forEach(session => {
+                                  if (checked) next.add(session.session_id)
+                                  else next.delete(session.session_id)
+                                })
+                                return next
+                              })
+                            }}
+                            onClick={(event) => event.stopPropagation()}
+                            className="h-4 w-4 accent-primary cursor-pointer"
+                            aria-label="현재 페이지 세션 전체 선택"
+                          />
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">작업</th>
+                        <th className="px-3 py-3 text-center text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">상태</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">문서</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">완료율</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">마지막 작업</th>
-                        <th className="px-6 py-3 text-right text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">작업</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider whitespace-nowrap">마지막 작업</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider whitespace-nowrap">작업</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border-light dark:divide-border-dark">
@@ -460,6 +528,16 @@ function JobsPageInner() {
                             }}
                             className={`cursor-pointer transition-colors hover:bg-primary/5 focus:outline-none focus:bg-primary/10 ${isFocused ? 'bg-primary/10' : ''}`}
                           >
+                            <td className="px-3 py-4 text-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedSessionIds.has(session.session_id)}
+                                onChange={(event) => toggleSessionSelected(session.session_id, event.target.checked)}
+                                onClick={(event) => event.stopPropagation()}
+                                className="h-4 w-4 accent-primary cursor-pointer"
+                                aria-label={`${session.session_name} 선택`}
+                              />
+                            </td>
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3 min-w-0">
                                 <span className="material-symbols-outlined shrink-0 text-primary">folder_open</span>
@@ -475,7 +553,7 @@ function JobsPageInner() {
                                 </div>
                               </div>
                             </td>
-                            <td className="px-4 py-4 text-center">
+                            <td className="px-3 py-4 text-center">
                               <span className={`inline-flex items-center justify-center rounded-full px-2.5 py-1 text-xs font-semibold ${status.color}`}>
                                 {status.label}
                               </span>
@@ -485,7 +563,7 @@ function JobsPageInner() {
                                 </p>
                               )}
                             </td>
-                            <td className="px-4 py-4 text-right text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                            <td className="px-3 py-4 text-right text-sm text-text-secondary-light dark:text-text-secondary-dark">
                               <div className="font-semibold text-text-primary-light dark:text-text-primary-dark">
                                 {session.total}개
                               </div>
@@ -510,10 +588,15 @@ function JobsPageInner() {
                               </p>
                             </td>
                             <td className="px-4 py-4 text-right text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                              {formatDate(session.last_activity || session.updated_at || session.created_at)}
+                              <span
+                                className="inline-block max-w-full truncate align-middle whitespace-nowrap"
+                                title={formatDate(session.last_activity || session.updated_at || session.created_at)}
+                              >
+                                {formatDate(session.last_activity || session.updated_at || session.created_at)}
+                              </span>
                             </td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center justify-end gap-2">
+                            <td className="px-4 py-4">
+                              <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                                 <label
                                   onClick={(event) => event.stopPropagation()}
                                   className={`inline-flex items-center justify-center rounded-lg border border-border-light dark:border-border-dark p-2 text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 transition-colors ${uploadingSession === session.session_id ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
@@ -545,6 +628,17 @@ function JobsPageInner() {
                                   title="세션 상세 보기"
                                 >
                                   <span className="material-symbols-outlined text-lg leading-none">chevron_right</span>
+                                </button>
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    void handleDeleteSessions([session.session_id])
+                                  }}
+                                  disabled={deletingSessions}
+                                  className="inline-flex items-center justify-center rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50 transition-colors"
+                                  title="세션 개별 삭제"
+                                >
+                                  <span className="material-symbols-outlined text-lg leading-none">delete</span>
                                 </button>
                               </div>
                             </td>
