@@ -59,6 +59,25 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function queueStatusLabel(status: FileStatus): string {
+  switch (status) {
+    case 'pending':
+      return '대기'
+    case 'uploading':
+      return '업로드'
+    case 'queued':
+      return '대기열'
+    case 'processing':
+      return '처리중'
+    case 'completed':
+      return '완료'
+    case 'failed':
+      return '실패'
+    default:
+      return status
+  }
+}
+
 import PipelineProgress from '@/components/PipelineProgress'
 
 
@@ -826,15 +845,17 @@ export default function OcrWorkPage() {
             <div className="xl:col-start-2 xl:row-span-2 min-h-[620px]">
               <section className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark flex-1 h-[620px] flex flex-col overflow-hidden">
                 {/* Queue Header with Bulk Controls */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-border-light dark:border-border-dark bg-gray-50/50 dark:bg-gray-800/30">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border-light dark:border-border-dark bg-gradient-to-r from-gray-50/90 to-surface-light/80 dark:from-gray-900/40 dark:to-surface-dark/80">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-primary/10">
+                    <div className="p-2.5 rounded-xl bg-primary/15 ring-1 ring-primary/10 shadow-sm">
                       <FileText className="w-4 h-4 text-primary" />
                     </div>
                     <div className="flex items-center gap-3">
                       <div>
-                        <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">작업 목록</h3>
-                        <p className="text-[10px] text-text-secondary-light dark:text-text-secondary-dark">총 {queue.length}개의 파일이 준비되었습니다</p>
+                        <h3 className="text-base font-extrabold tracking-tight text-text-primary-light dark:text-text-primary-dark">작업 목록</h3>
+                        <p className="text-[11px] text-text-secondary-light dark:text-text-secondary-dark font-medium tabular-nums">
+                          총 {queue.length}개 파일 · 세션 {groupedQueueArray.length}개
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -864,17 +885,30 @@ export default function OcrWorkPage() {
                     </button>
                   </div>
                 </div>
-                <div className="px-4 py-3 border-b border-border-light dark:border-border-dark bg-background-light/40 dark:bg-background-dark/30">
+                <div className="sticky top-0 z-10 px-4 py-3 border-b border-border-light dark:border-border-dark bg-background-light/85 dark:bg-background-dark/85 backdrop-blur-md shadow-sm">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     {[
-                      { label: '대기', value: pendingCount, color: 'text-primary' },
-                      { label: '진행', value: workingCount, color: 'text-blue-500' },
-                      { label: '완료', value: completedCount, color: 'text-green-500' },
-                      { label: '실패', value: failedCount, color: 'text-red-500' },
+                      { label: '대기', value: pendingCount, color: 'text-primary', bar: 'bg-primary/70' },
+                      { label: '진행', value: workingCount, color: 'text-blue-500', bar: 'bg-blue-500/80' },
+                      { label: '완료', value: completedCount, color: 'text-emerald-600 dark:text-emerald-400', bar: 'bg-emerald-500/80' },
+                      { label: '실패', value: failedCount, color: 'text-red-500', bar: 'bg-red-500/70' },
                     ].map(item => (
-                      <div key={item.label} className="rounded-lg border border-border-light dark:border-border-dark px-3 py-2 bg-white/80 dark:bg-gray-900/60">
-                        <p className="text-[10px] font-semibold text-text-secondary-light dark:text-text-secondary-dark">{item.label}</p>
-                        <p className={`text-base font-black ${item.color}`}>{item.value}</p>
+                      <div
+                        key={item.label}
+                        className="rounded-xl border border-border-light/80 dark:border-border-dark/80 px-3 py-2.5 bg-white/90 dark:bg-gray-950/70 shadow-sm"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-text-secondary-light dark:text-text-secondary-dark">{item.label}</p>
+                          <p className={`text-lg font-black tabular-nums leading-none ${item.color}`}>{item.value}</p>
+                        </div>
+                        <div className="mt-2 h-1 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${item.bar}`}
+                            style={{
+                              width: `${queue.length ? Math.min(100, (item.value / queue.length) * 100) : 0}%`,
+                            }}
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -918,209 +952,285 @@ export default function OcrWorkPage() {
                           key={sName}
                           className={`flex flex-col rounded-2xl border border-border-light dark:border-border-dark bg-white dark:bg-gray-900 shadow-sm hover:shadow-md transition-shadow ${isExpanded ? 'overflow-hidden' : 'overflow-visible'}`}
                         >
-                          {/* Session Header (Accordion Toggle) */}
-                          <div className={`flex flex-col sm:flex-row sm:items-center justify-between px-5 py-4 bg-gray-50/30 dark:bg-gray-800/20 ${isExpanded ? 'border-b border-border-light dark:border-border-dark' : ''}`}>
-                            <button 
-                              onClick={() => setExpandedSessions(prev => ({ ...prev, [sName]: !isExpanded }))}
-                              className="flex items-center gap-3 min-w-0 flex-1 text-left group"
-                            >
-                              <span className={`material-symbols-outlined !text-xl transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''} text-text-secondary-light dark:text-text-secondary-dark`}>
-                                expand_more
-                              </span>
-                              <div className="flex items-center gap-2 min-w-0">
-                                <FolderOpen className="w-4 h-4 text-primary shrink-0" />
-                                <span className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark truncate">
-                                  {isUnnamedSession ? '' : sName}
+                          {/* Session header */}
+                          <div
+                            className={`px-4 sm:px-5 py-4 bg-gradient-to-br from-gray-50/90 to-white dark:from-gray-900/60 dark:to-gray-900 ${isExpanded ? 'border-b border-border-light dark:border-border-dark' : ''}`}
+                          >
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedSessions(prev => ({ ...prev, [sName]: !isExpanded }))}
+                                className="flex items-start gap-2 sm:gap-3 min-w-0 flex-1 text-left rounded-xl -m-1 p-1 hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-colors"
+                              >
+                                <span
+                                  className={`material-symbols-outlined !text-xl shrink-0 mt-0.5 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''} text-text-secondary-light dark:text-text-secondary-dark`}
+                                >
+                                  expand_more
                                 </span>
-                                {isUnnamedSession && (
-                                  <div className="inline-flex items-center gap-2">
-                                    <span
-                                      aria-label="작업명 입력 필요"
-                                      title="작업명 입력 필요"
-                                      className="inline-block h-5 w-20 rounded-md border border-amber-300/80 bg-amber-200/70 dark:border-amber-700 dark:bg-amber-800/40 animate-pulse"
-                                    >
-                                      {' '}
+                                <div className="min-w-0 flex-1 space-y-2">
+                                  <div className="flex flex-wrap items-center gap-2 min-w-0">
+                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                                      <FolderOpen className="w-4 h-4" />
                                     </span>
-                                    <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300">
-                                      작업명을 입력해 주세요
+                                    {!isUnnamedSession ? (
+                                      <span className="text-base font-bold tracking-tight text-text-primary-light dark:text-text-primary-dark truncate">
+                                        {sName}
+                                      </span>
+                                    ) : (
+                                      <div className="inline-flex flex-wrap items-center gap-2 min-w-0">
+                                        <span
+                                          aria-label="작업명 입력 필요"
+                                          title="작업명 입력 필요"
+                                          className="inline-block h-5 w-24 rounded-md border border-amber-300/80 bg-amber-200/70 dark:border-amber-700 dark:bg-amber-800/40 animate-pulse"
+                                        >
+                                          {' '}
+                                        </span>
+                                        <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                                          작업명을 입력해 주세요
+                                        </span>
+                                      </div>
+                                    )}
+                                    <span className="text-[11px] font-semibold text-text-secondary-light dark:text-text-secondary-dark tabular-nums sm:ml-1">
+                                      {files.length}개 파일
                                     </span>
                                   </div>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1.5 ml-2 shrink-0">
-                                {pendingInSession > 0 && <span className="px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/30 text-[10px] font-bold text-orange-600 dark:text-orange-400">대기 {pendingInSession}건</span>}
-                                {workingInSession > 0 && <span className="px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/30 text-[10px] font-bold text-blue-600 dark:text-blue-400">작업중 {workingInSession}건</span>}
-                                {doneInSession > 0 && <span className="px-2 py-0.5 rounded-md bg-green-100 dark:bg-green-900/30 text-[10px] font-bold text-green-600 dark:text-green-400">완료 {doneInSession}건</span>}
-                                {failedInSession > 0 && <span className="px-2 py-0.5 rounded-md bg-red-100 dark:bg-red-900/30 text-[10px] font-bold text-red-600 dark:text-red-400">실패 {failedInSession}건</span>}
-                              </div>
-                            </button>
-
-                            <div className="flex items-center gap-3 mt-3 sm:mt-0 ml-8 sm:ml-0">
-                              <div
-                                data-bulk-type-menu
-                                className="relative flex items-center gap-2 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark px-2 py-1.5 rounded-lg min-h-8"
-                              >
-                                <span className="text-[11px] font-semibold text-text-secondary-light dark:text-text-secondary-dark leading-none whitespace-nowrap">
-                                  문서 유형 일괄 선택
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setOpenBulkTypeMenu(prev => (prev === sName ? null : sName))}
-                                  disabled={isSubmitting || pendingInSession === 0}
-                                  className="inline-flex items-center gap-1.5 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-md pl-2 pr-2.5 py-1 text-[11px] font-medium text-text-primary-light dark:text-text-primary-dark hover:border-primary/40 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  <span>{selectedBulkTypeLabel}</span>
-                                  <span className="material-symbols-outlined !text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                                    {openBulkTypeMenu === sName ? 'expand_less' : 'expand_more'}
-                                  </span>
-                                </button>
-                                {openBulkTypeMenu === sName && (
-                                  <div className="absolute right-0 top-full z-20 mt-2 w-44 overflow-hidden rounded-lg border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark shadow-lg">
-                                    <div className="max-h-56 overflow-y-auto py-1">
-                                      {allDocTypes.map(type => (
-                                        <button
-                                          key={type}
-                                          type="button"
-                                          onClick={() => {
-                                            updateSessionDocType(sName, type)
-                                            setOpenBulkTypeMenu(null)
+                                  <div className="flex flex-col gap-2 min-w-0 sm:flex-row sm:items-center sm:gap-4">
+                                    <div className="flex min-w-0 flex-1 max-w-md items-center gap-2">
+                                      <div className="h-2 min-w-[64px] flex-1 overflow-hidden rounded-full bg-gray-200/90 ring-1 ring-black/5 dark:bg-gray-700/80 dark:ring-white/10">
+                                        <div
+                                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500"
+                                          style={{
+                                            width: `${files.length ? Math.round((doneInSession / files.length) * 100) : 0}%`,
                                           }}
-                                          className="w-full px-3 py-2 text-left text-xs text-text-primary-light dark:text-text-primary-dark hover:bg-primary/10"
-                                        >
-                                          {type}
-                                        </button>
-                                      ))}
+                                        />
+                                      </div>
+                                      <span className="shrink-0 text-xs font-bold tabular-nums text-text-secondary-light dark:text-text-secondary-dark">
+                                        {doneInSession}/{files.length} 완료
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      {pendingInSession > 0 && (
+                                        <span className="inline-flex items-center rounded-full border border-orange-200/80 bg-orange-50/90 px-2 py-0.5 text-[10px] font-bold text-orange-700 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300">
+                                          대기 {pendingInSession}
+                                        </span>
+                                      )}
+                                      {workingInSession > 0 && (
+                                        <span className="inline-flex items-center rounded-full border border-blue-200/80 bg-blue-50/90 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+                                          진행 {workingInSession}
+                                        </span>
+                                      )}
+                                      {doneInSession > 0 && (
+                                        <span className="inline-flex items-center rounded-full border border-emerald-200/80 bg-emerald-50/90 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                                          완료 {doneInSession}
+                                        </span>
+                                      )}
+                                      {failedInSession > 0 && (
+                                        <span className="inline-flex items-center rounded-full border border-red-200/80 bg-red-50/90 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
+                                          실패 {failedInSession}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
-                                )}
-                              </div>
-                              <button
-                                onClick={() => removeSession(sName)}
-                                disabled={isSubmitting}
-                                className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-text-secondary-light hover:text-red-500 transition-all disabled:opacity-30"
-                                title="작업 전체 삭제"
-                              >
-                                <Trash2 className="w-4 h-4" />
+                                </div>
                               </button>
+
+                              <div className="flex shrink-0 items-center justify-end gap-2 lg:pt-1">
+                                <div
+                                  data-bulk-type-menu
+                                  className="relative flex items-center gap-2 rounded-xl border border-border-light/90 bg-white/70 px-2.5 py-1.5 shadow-sm dark:border-border-dark/90 dark:bg-gray-950/50"
+                                >
+                                  <span className="hidden text-[11px] font-semibold text-text-secondary-light dark:text-text-secondary-dark sm:inline whitespace-nowrap">
+                                    유형 일괄
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenBulkTypeMenu(prev => (prev === sName ? null : sName))}
+                                    disabled={isSubmitting || pendingInSession === 0}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-border-light bg-surface-light px-2.5 py-1 text-[11px] font-semibold text-text-primary-light hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-50 dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark"
+                                  >
+                                    <span className="max-w-[7rem] truncate">{selectedBulkTypeLabel}</span>
+                                    <span className="material-symbols-outlined !text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                                      {openBulkTypeMenu === sName ? 'expand_less' : 'expand_more'}
+                                    </span>
+                                  </button>
+                                  {openBulkTypeMenu === sName && (
+                                    <div className="absolute right-0 top-full z-20 mt-2 w-44 overflow-hidden rounded-lg border border-border-light bg-surface-light shadow-lg dark:border-border-dark dark:bg-surface-dark">
+                                      <div className="max-h-56 overflow-y-auto py-1">
+                                        {allDocTypes.map(type => (
+                                          <button
+                                            key={type}
+                                            type="button"
+                                            onClick={() => {
+                                              updateSessionDocType(sName, type)
+                                              setOpenBulkTypeMenu(null)
+                                            }}
+                                            className="w-full px-3 py-2 text-left text-xs text-text-primary-light hover:bg-primary/10 dark:text-text-primary-dark"
+                                          >
+                                            {type}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeSession(sName)}
+                                  disabled={isSubmitting}
+                                  className="rounded-xl border border-transparent p-2.5 text-text-secondary-light transition-all hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-30 dark:hover:border-red-900/50 dark:hover:bg-red-500/10"
+                                  title="작업 전체 삭제"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                           </div>
                           
                           {/* File List for Session */}
                           {isExpanded && (
-                            <div className="bg-white dark:bg-gray-900 p-2">
-                              <ul className="divide-y divide-border-light dark:divide-border-dark max-h-[400px] overflow-y-auto [scrollbar-gutter:stable] scrollbar-thin">
+                            <div className="bg-gradient-to-b from-gray-50/50 to-white p-2 sm:p-3 dark:from-gray-950/40 dark:to-gray-900">
+                              <ul className="space-y-2">
                                 {visibleFiles.map(file => {
                                   const tracked = trackedJobs.find(tj => tj.jobId === file.jobId)
                                   // UI 표시 상태는 backend sync 결과인 file.status를 우선 사용
                                   const effectiveStatus = file.status
                                   const errorMessage = tracked?.message || file.error
-                                  
-                                  return (
-                                    <li key={file.id} className="group/item px-5 py-3 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                      <div className="flex items-center gap-4">
-                                        <div className="flex-shrink-0 size-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                                          {effectiveStatus === 'pending' && <Clock className="w-4 h-4 text-gray-400" />}
-                                          {effectiveStatus === 'uploading' && <Loader2 className="w-4 h-4 text-primary animate-spin" />}
-                                          {effectiveStatus === 'processing' && <Loader2 className="w-4 h-4 text-orange-500 animate-spin" />}
-                                          {effectiveStatus === 'queued' && <Clock className="w-4 h-4 text-blue-600 animate-pulse" />}
-                                          {effectiveStatus === 'completed' && <CheckCircle className="w-4 h-4 text-green-500" />}
-                                          {effectiveStatus === 'failed' && <AlertCircle className="w-4 h-4 text-red-500" />}
-                                        </div>
+                                  const statusMuted =
+                                    effectiveStatus === 'completed'
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : effectiveStatus === 'failed'
+                                        ? 'text-red-600 dark:text-red-400'
+                                        : effectiveStatus === 'pending'
+                                          ? 'text-gray-500 dark:text-gray-400'
+                                          : 'text-blue-600 dark:text-blue-400'
 
-                                        <div className="flex-1 min-w-0 flex items-center justify-between gap-3">
-                                          <div className="min-w-0 flex-1">
+                                  return (
+                                    <li
+                                      key={file.id}
+                                      className="group/item rounded-xl border border-border-light/80 bg-white/95 px-3 py-3 shadow-sm transition-all hover:border-primary/25 hover:shadow-md dark:border-border-dark/80 dark:bg-gray-950/50 sm:px-4 sm:py-3.5 dark:hover:border-primary/30"
+                                    >
+                                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                                        <div className="flex min-w-0 gap-3">
+                                          <div className="flex w-14 shrink-0 flex-col items-center gap-1 pt-0.5">
+                                            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gray-100 ring-1 ring-black/[0.04] dark:bg-gray-800 dark:ring-white/10">
+                                              {effectiveStatus === 'pending' && <Clock className="h-4 w-4 text-gray-400" />}
+                                              {effectiveStatus === 'uploading' && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                                              {effectiveStatus === 'processing' && <Loader2 className="h-4 w-4 animate-spin text-orange-500" />}
+                                              {effectiveStatus === 'queued' && <Clock className="h-4 w-4 animate-pulse text-blue-600" />}
+                                              {effectiveStatus === 'completed' && <CheckCircle className="h-4 w-4 text-emerald-500" />}
+                                              {effectiveStatus === 'failed' && <AlertCircle className="h-4 w-4 text-red-500" />}
+                                            </div>
+                                            <span className={`text-[10px] font-extrabold uppercase tracking-wide ${statusMuted}`}>
+                                              {queueStatusLabel(effectiveStatus)}
+                                            </span>
+                                          </div>
+
+                                          <div className="min-w-0 flex-1 space-y-2">
                                             <div className="min-w-0">
                                               {effectiveStatus === 'completed' ? (
-                                                <Link href="/jobs" className="text-sm font-semibold text-primary hover:underline underline-offset-2 truncate block">
+                                                <Link
+                                                  href="/jobs"
+                                                  className="block text-[15px] font-bold leading-snug text-primary hover:underline underline-offset-2 line-clamp-2 sm:truncate sm:line-clamp-none"
+                                                >
                                                   {file.displayName}
                                                 </Link>
                                               ) : (
-                                                <p className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark truncate">
+                                                <p className="text-[15px] font-bold leading-snug text-text-primary-light line-clamp-2 dark:text-text-primary-dark sm:truncate sm:line-clamp-none">
                                                   {file.displayName}
                                                 </p>
                                               )}
                                             </div>
-
-                                            <div className="flex items-center gap-3 mt-1">
-                                              <p className="text-[11px] text-text-secondary-light dark:text-text-secondary-dark font-medium">
-                                                {file.trackedOnly ? '진행중 작업' : formatBytes(file.fileSize)} · {file.sourceType === 'folder' ? '폴더' : '파일'}
-                                              </p>
-                                              <div className="h-2 w-px bg-border-light dark:bg-border-dark" />
-                                              <div className="flex-1">
-                                                {effectiveStatus === 'pending' && <span className="text-[11px] font-medium text-gray-400 italic">작업 시작 대기 중</span>}
-                                                {(effectiveStatus === 'uploading' || effectiveStatus === 'queued' || effectiveStatus === 'processing' || effectiveStatus === 'completed') && (
+                                            <p className="text-[11px] font-medium text-text-secondary-light dark:text-text-secondary-dark">
+                                              {file.trackedOnly ? '진행중 작업' : formatBytes(file.fileSize)} · {file.sourceType === 'folder' ? '폴더' : '파일'}
+                                            </p>
+                                            <div className="min-w-0">
+                                              {effectiveStatus === 'pending' && (
+                                                <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500">작업 시작 대기 중</span>
+                                              )}
+                                              {(effectiveStatus === 'uploading' ||
+                                                effectiveStatus === 'queued' ||
+                                                effectiveStatus === 'processing' ||
+                                                effectiveStatus === 'completed') && (
+                                                <PipelineProgress
+                                                  status={effectiveStatus}
+                                                  progress={file.progress || 0}
+                                                  subStage={tracked?.subStage}
+                                                />
+                                              )}
+                                              {effectiveStatus === 'failed' && (
+                                                <div className="flex flex-col gap-1">
                                                   <PipelineProgress
-                                                    status={effectiveStatus}
+                                                    status="failed"
                                                     progress={file.progress || 0}
                                                     subStage={tracked?.subStage}
+                                                    failedStage={file.failedStage ?? undefined}
                                                   />
-                                                )}
-                                                {effectiveStatus === 'failed' && (
-                                                  <div className="flex flex-col gap-1">
-                                                    <PipelineProgress
-                                                      status="failed"
-                                                      progress={file.progress || 0}
-                                                      subStage={tracked?.subStage}
-                                                      failedStage={file.failedStage ?? undefined}
-                                                    />
-                                                    {errorMessage && (
-                                                      <div className="flex items-center gap-1 mt-0.5">
-                                                        <span className="material-symbols-outlined !text-xs text-red-500">error_outline</span>
-                                                        <span className="text-[10px] text-red-500 font-bold truncate">{errorMessage}</span>
-                                                      </div>
-                                                    )}
-                                                  </div>
-                                                )}
-                                              </div>
+                                                  {errorMessage && (
+                                                    <div className="mt-0.5 flex items-center gap-1">
+                                                      <span className="material-symbols-outlined !text-xs text-red-500">error_outline</span>
+                                                      <span className="truncate text-[10px] font-bold text-red-500">{errorMessage}</span>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex min-w-[10rem] flex-wrap items-center justify-end gap-2 lg:min-w-[12rem]">
+                                          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border-light/90 bg-background-light/90 px-2.5 py-1.5 dark:border-border-dark/90 dark:bg-background-dark/50 sm:flex-initial">
+                                            <span className="hidden whitespace-nowrap text-[11px] font-semibold text-text-secondary-light dark:text-text-secondary-dark sm:inline">
+                                              문서 유형
+                                            </span>
+                                            <span className="whitespace-nowrap text-[11px] font-semibold text-text-secondary-light dark:text-text-secondary-dark sm:hidden">
+                                              유형
+                                            </span>
+                                            <div className="relative flex flex-1 items-center sm:flex-initial">
+                                              <select
+                                                value={file.docType}
+                                                disabled={isSubmitting || file.status !== 'pending'}
+                                                onChange={event => updateFile(file.id, { docType: event.target.value })}
+                                                className="w-full appearance-none rounded-lg border border-border-light bg-surface-light py-1.5 pl-2 pr-7 text-[11px] font-semibold text-text-primary-light focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark sm:w-auto sm:min-w-[6.5rem]"
+                                              >
+                                                {allDocTypes.map(type => (
+                                                  <option key={type} value={type}>
+                                                    {type}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                              <span className="material-symbols-outlined pointer-events-none absolute right-1 top-1/2 !text-xs -translate-y-1/2 text-text-secondary-light dark:text-text-secondary-dark">
+                                                expand_more
+                                              </span>
                                             </div>
                                           </div>
 
-                                          <div className="flex items-center gap-3 flex-shrink-0 self-center">
-                                              <div className="flex items-center gap-2 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark px-2 py-1.5 rounded-lg min-h-8">
-                                                <span className="text-[11px] font-semibold text-text-secondary-light dark:text-text-secondary-dark leading-none whitespace-nowrap">
-                                                  문서 유형 선택
-                                                </span>
-                                                <div className="relative flex items-center">
-                                                  <select
-                                                    value={file.docType}
-                                                    disabled={isSubmitting || file.status !== 'pending'}
-                                                    onChange={event => updateFile(file.id, { docType: event.target.value })}
-                                                    className="appearance-none bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-md pl-2 pr-6 py-1 text-[11px] font-medium text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 leading-none"
-                                                  >
-                                                    {allDocTypes.map(type => (
-                                                      <option key={type} value={type}>{type}</option>
-                                                    ))}
-                                                  </select>
-                                                  <span className="material-symbols-outlined pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 !text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                                                    expand_more
-                                                  </span>
-                                                </div>
-                                              </div>
+                                          <div className="flex items-center gap-1">
+                                            {(file.status === 'pending' || effectiveStatus === 'failed' || effectiveStatus === 'completed') && !isSubmitting && (
+                                              <button
+                                                type="button"
+                                                onClick={() => removeFile(file.id)}
+                                                className="rounded-lg p-2 text-text-secondary-light opacity-70 transition-all hover:bg-red-50 hover:text-red-500 group-hover/item:opacity-100 dark:hover:bg-red-500/10"
+                                                title="삭제"
+                                              >
+                                                <X className="h-3.5 w-3.5" />
+                                              </button>
+                                            )}
 
-                                              {(file.status === 'pending' || effectiveStatus === 'failed' || effectiveStatus === 'completed') && !isSubmitting && (
-                                                <button
-                                                  onClick={() => removeFile(file.id)}
-                                                  className="p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 text-text-secondary-light hover:text-red-500 transition-all opacity-0 group-hover/item:opacity-100"
-                                                  title="삭제"
-                                                >
-                                                  <X className="w-3.5 h-3.5" />
-                                                </button>
-                                              )}
-                                              
-                                              {(effectiveStatus === 'queued' || effectiveStatus === 'processing') && (
-                                                <button
-                                                  onClick={async () => {
-                                                    if (file.jobId && confirm('이 작업을 중지하시겠습니까?')) {
-                                                      await fetch(`${API_BASE}/cancel/${file.jobId}`, { method: 'POST' })
-                                                      updateFile(file.id, { status: 'failed', error: '사용자가 중지했습니다.' })
-                                                    }
-                                                  }}
-                                                  className="p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500 transition-all opacity-0 group-hover/item:opacity-100"
-                                                  title="중지"
-                                                >
-                                                  <StopCircle className="w-3.5 h-3.5" />
-                                                </button>
-                                              )}
+                                            {(effectiveStatus === 'queued' || effectiveStatus === 'processing') && (
+                                              <button
+                                                type="button"
+                                                onClick={async () => {
+                                                  if (file.jobId && confirm('이 작업을 중지하시겠습니까?')) {
+                                                    await fetch(`${API_BASE}/cancel/${file.jobId}`, { method: 'POST' })
+                                                    updateFile(file.id, { status: 'failed', error: '사용자가 중지했습니다.' })
+                                                  }
+                                                }}
+                                                className="rounded-lg p-2 text-red-500 opacity-70 transition-all hover:bg-red-50 group-hover/item:opacity-100 dark:hover:bg-red-500/10"
+                                                title="중지"
+                                              >
+                                                <StopCircle className="h-3.5 w-3.5" />
+                                              </button>
+                                            )}
                                           </div>
                                         </div>
                                       </div>
@@ -1129,17 +1239,17 @@ export default function OcrWorkPage() {
                                 })}
                               </ul>
                               {hasMore && (
-                                <button 
+                                <button
+                                  type="button"
                                   onClick={() => setVisibleCounts(prev => ({ ...prev, [sName]: (prev[sName] || 20) + 50 }))}
-                                  className="w-full py-3 text-xs font-bold text-primary hover:bg-primary/5 border-t border-border-light transition-colors"
+                                  className="mt-2 w-full rounded-xl border border-dashed border-primary/30 py-3 text-xs font-bold text-primary transition-colors hover:bg-primary/5 dark:border-primary/40"
                                 >
-                                  파일 {files.length - visibleLimit}개 더 보기...
+                                  파일 {files.length - visibleLimit}개 더 보기
                                 </button>
                               )}
-                              <div className="px-5 py-2 text-center bg-gray-50/50 dark:bg-gray-800/30 border-t border-border-light dark:border-border-dark">
-                                <p className="text-[10px] text-text-secondary-light font-bold italic">
-                                  {files.length > visibleLimit ? `현재 ${visibleLimit}개 표시 중 / ` : ''}
-                                  총 {files.length}개의 파일
+                              <div className="mt-2 rounded-lg border border-border-light/60 bg-gray-50/80 px-4 py-2 text-center dark:border-border-dark/60 dark:bg-gray-800/40">
+                                <p className="text-[10px] font-semibold text-text-secondary-light dark:text-text-secondary-dark">
+                                  {files.length > visibleLimit ? `표시 ${visibleLimit} / ` : ''}총 {files.length}개 파일
                                 </p>
                               </div>
                             </div>
