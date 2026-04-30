@@ -30,6 +30,9 @@ const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/
 const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타', '미분류']
 const UNNAMED_SESSION_LABEL = '__UNNAMED_SESSION__'
 
+/** Windows에서 HWP MIME이 비어 있거나 표준과 달라도 드롭·선택이 되도록 확장자로만 판별 */
+const OCR_WORK_FILE_RE = /\.(pdf|png|jpe?g|hwp|hwpx)$/i
+
 type FileStatus = 'pending' | 'uploading' | 'queued' | 'processing' | 'completed' | 'failed'
 type SourceType = 'file' | 'folder'
 
@@ -277,7 +280,7 @@ export default function OcrWorkPage() {
   const createQueueItems = useCallback(
     (files: File[], sourceType: SourceType) =>
       files
-        .filter(file => /\.(pdf|png|jpe?g)$/i.test(file.name))
+        .filter(file => OCR_WORK_FILE_RE.test(file.name))
         .map(file => ({
           id: `${Date.now()}-${Math.random()}`,
           file,
@@ -297,7 +300,7 @@ export default function OcrWorkPage() {
     (files: File[], sourceType: SourceType) => {
       if (isSubmitting) return
       if (!sessionName.trim()) {
-        setQueueWarning('세션 이름을 입력해 주세요.')
+        setQueueWarning('작업 이름을 입력해 주세요.')
       } else {
         setQueueWarning('')
       }
@@ -306,7 +309,7 @@ export default function OcrWorkPage() {
       setSubmitMessage('')
       setQueue(prev => [...prev, ...items])
       
-      // 파일 추가 시 해당 세션은 자동으로 펼침
+      // 파일 추가 시 해당 작업은 자동으로 펼침
       if (items.length > 0) {
         const sName = items[0].sessionName
         setExpandedSessions(prev => ({ ...prev, [sName]: true }))
@@ -318,11 +321,14 @@ export default function OcrWorkPage() {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: acceptedFiles => addFiles(acceptedFiles, 'file'),
     noClick: true,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'image/png': ['.png'],
-      'image/jpeg': ['.jpg', '.jpeg'],
-    },
+    /* MIME 기반 accept는 Windows 한글(.hwp)에서 type 이 "" 이거나 비표준이면 전부 거절됨 → 확장자만 검사 */
+    validator: file =>
+      OCR_WORK_FILE_RE.test(file.name)
+        ? null
+        : {
+            code: 'file-invalid-type',
+            message: 'PDF, PNG, JPG, HWP, HWPX만 추가할 수 있습니다.',
+          },
   })
 
   const removeFile = useCallback((id: string) => {
@@ -354,7 +360,7 @@ export default function OcrWorkPage() {
     if (isSubmitting) return
     const currentSessionLabel = sessionName.trim() || UNNAMED_SESSION_LABEL
 
-    // 삭제한 세션이 현재 입력값이라면 세션명 입력도 같이 비우고 localStorage도 제거
+    // 삭제한 작업이 현재 입력값이라면 작업명 입력도 같이 비우고 localStorage도 제거
     if (sName === currentSessionLabel) {
       try {
         const savedUser = localStorage.getItem('user')
@@ -458,9 +464,10 @@ export default function OcrWorkPage() {
       filename: string
       sessionName: string
       sourceType: SourceType
+      userId?: string
     }> = []
 
-    // 제출 시점의 sessionName state를 우선 사용 (파일 추가 후 세션명 변경 시에도 반영)
+    // 제출 시점의 sessionName state를 우선 사용 (파일 추가 후 작업명 변경 시에도 반영)
     const currentSession = sessionName.trim() || UNNAMED_SESSION_LABEL
     const pendingBySession = pendingFiles.reduce((acc, file) => {
       const name = currentSession
@@ -480,13 +487,13 @@ export default function OcrWorkPage() {
 
         if (!sessionResponse.ok) {
           const errorPayload = await sessionResponse.json().catch(() => ({}))
-          throw new Error(errorPayload?.detail || `세션 생성 실패 (${sessionResponse.status})`)
+          throw new Error(errorPayload?.detail || `작업 생성 실패 (${sessionResponse.status})`)
         }
         sessionId = (await sessionResponse.json()).session_id
       } catch (error) {
-        const message = sName === UNNAMED_SESSION_LABEL ? '(세션명 미입력)' : sName
+        const message = sName === UNNAMED_SESSION_LABEL ? '(작업명 미입력)' : sName
         const detail = error instanceof Error ? error.message : '알 수 없는 오류'
-        alert(`세션 '${message}' 생성에 실패했습니다.\n${detail}`)
+        alert(`작업 '${message}' 생성에 실패했습니다.\n${detail}`)
         continue
       }
 
@@ -543,7 +550,7 @@ export default function OcrWorkPage() {
           })
 
           if (!documentResponse.ok) {
-            throw new Error('세션 문서 등록 실패')
+            throw new Error('작업 문서 등록 실패')
           }
 
           const processResponse = await fetch(`${API_BASE}/process/${jobId}`, { method: 'POST' })
@@ -555,7 +562,7 @@ export default function OcrWorkPage() {
             status: 'queued',
             progress: 100,
             jobId: jobId!,
-            // 실제로 생성한 세션명(sName)을 queue item에도 반영
+            // 실제로 생성한 작업명(sName)을 queue item에도 반영
             sessionName: sName,
           })
           queuedJobs.push({
@@ -571,7 +578,7 @@ export default function OcrWorkPage() {
             status: 'failed',
             error: errMsg,
             failedStage: 0,
-            // 실패해도 사용자 입력 세션명을 유지
+            // 실패해도 사용자 입력 작업명을 유지
             sessionName: sName,
           })
           
@@ -606,7 +613,7 @@ export default function OcrWorkPage() {
     setSubmitMessage('작업내역에서 확인')
   }, [addTrackedJobs, queue, updateFile, sessionName, defaultDocType])
 
-  // 표시용 카운트(세션 카드와 동일하게 file.status 기준)
+  // 표시용 카운트(작업 카드와 동일하게 file.status 기준)
   const pendingCount = useMemo(
     () => queue.filter(file => file.status === 'pending').length,
     [queue],
@@ -644,7 +651,7 @@ export default function OcrWorkPage() {
   const resolveQueueSessionName = useCallback(
     (file: QueueFile) => {
       // 업로드 전(파일 객체 보유) 대기 항목만 현재 입력값을 따라가고,
-      // 이미 등록된 작업(jobId/trackedOnly)은 원래 세션명을 유지한다.
+      // 이미 등록된 작업(jobId/trackedOnly)은 원래 작업명을 유지한다.
       if (file.status === 'pending' && !file.jobId && !file.trackedOnly) {
         return sessionName.trim() || UNNAMED_SESSION_LABEL
       }
@@ -720,13 +727,13 @@ export default function OcrWorkPage() {
             <aside className="space-y-4 xl:sticky xl:top-6 xl:col-start-1">
               <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-4">
                 <label className="block text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark mb-2 uppercase tracking-wider">
-                  세션 이름
+                  작업 이름
                 </label>
                 <input
                   type="text"
                   value={sessionName}
                   onChange={event => setSessionName(event.target.value)}
-                  placeholder="세션 이름을 입력하세요"
+                  placeholder="작업 이름을 입력하세요"
                   disabled={isSubmitting}
                   className={`w-full px-3 py-2 text-sm border rounded-lg bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all ${
                     !sessionName.trim() && pendingUploadCount > 0
@@ -735,7 +742,7 @@ export default function OcrWorkPage() {
                   }`}
                 />
                 <p className="mt-2 text-[11px] text-text-secondary-light dark:text-text-secondary-dark">
-                  선택/업로드한 파일은 현재 세션명으로 작업 내역에 묶여 등록됩니다.
+                  선택/업로드한 파일은 현재 작업명으로 작업 내역에 묶여 등록됩니다.
                 </p>
 
               </div>
@@ -758,7 +765,7 @@ export default function OcrWorkPage() {
                       {isDragActive ? '여기에 놓으세요' : '파일 추가'}
                     </p>
                     <p className="text-[10px] text-text-secondary-light dark:text-text-secondary-dark mt-1">
-                      PDF, PNG, JPG 지원
+                      PDF, PNG, JPG, 한글(HWP/HWPX) 지원
                     </p>
                   </div>
                   <div className="flex flex-col w-full gap-1.5 mt-2">
@@ -769,7 +776,7 @@ export default function OcrWorkPage() {
                         ref={fileInputRef}
                         type="file"
                         multiple
-                        accept=".pdf,.png,.jpg,.jpeg"
+                        accept=".pdf,.png,.jpg,.jpeg,.hwp,.hwpx,.HWP,.HWPX,application/pdf,image/png,image/jpeg,application/vnd.hancom.hwp,application/vnd.hancom.hwpx,application/x-hwp"
                         className="hidden"
                         disabled={isSubmitting}
                         onChange={event => handleFileSelect(event, 'file')}
@@ -928,14 +935,14 @@ export default function OcrWorkPage() {
                                 {isUnnamedSession && (
                                   <div className="inline-flex items-center gap-2">
                                     <span
-                                      aria-label="세션명 입력 필요"
-                                      title="세션명 입력 필요"
+                                      aria-label="작업명 입력 필요"
+                                      title="작업명 입력 필요"
                                       className="inline-block h-5 w-20 rounded-md border border-amber-300/80 bg-amber-200/70 dark:border-amber-700 dark:bg-amber-800/40 animate-pulse"
                                     >
                                       {' '}
                                     </span>
                                     <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300">
-                                      세션명을 입력해 주세요
+                                      작업명을 입력해 주세요
                                     </span>
                                   </div>
                                 )}
@@ -991,7 +998,7 @@ export default function OcrWorkPage() {
                                 onClick={() => removeSession(sName)}
                                 disabled={isSubmitting}
                                 className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-text-secondary-light hover:text-red-500 transition-all disabled:opacity-30"
-                                title="세션 전체 삭제"
+                                title="작업 전체 삭제"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
