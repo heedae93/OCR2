@@ -1186,7 +1186,7 @@ function UserNodeTitle({
   onUnassign: () => void
 }) {
   return (
-    <div className="group-tree-user-row flex items-center justify-between gap-2 rounded-sm px-1 py-0.5">
+    <div className="group-tree-user-row flex items-center justify-between gap-2 rounded-sm px-1 py-0.5 cursor-grab active:cursor-grabbing">
       <div className="flex min-w-0 items-center gap-1.5 pl-3">
         <span className="material-symbols-outlined text-[16px] leading-none text-sky-600 dark:text-sky-400">person</span>
         <span className="truncate text-[13px] text-text-primary-light dark:text-text-primary-dark">
