@@ -455,12 +455,6 @@ export default function ExtractionListPage() {
                                 >
                                   {doc.original_filename}
                                 </button>
-                                <button
-                                  onClick={() => setEditingDoc(doc)}
-                                  className="text-[10px] font-bold text-text-secondary-light flex items-center gap-0.5 mt-1 hover:text-primary transition-colors"
-                                >
-                                  <Edit3 size={9} /> 수정하기
-                                </button>
                               </div>
                             </div>
                           </td>
