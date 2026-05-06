@@ -1,0 +1,2 @@
+Celery Test Results:
+Celery imported successfully: 5.6.3

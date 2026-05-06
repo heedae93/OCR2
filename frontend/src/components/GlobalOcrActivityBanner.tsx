@@ -13,13 +13,16 @@ import {
   StopCircle,
 } from 'lucide-react'
 import { useOcrActivity } from '@/contexts/OcrActivityContext'
-import type { TrackedJob } from '@/contexts/OcrActivityContext'
+import type { TrackedJob, TrackedJobStatus } from '@/contexts/OcrActivityContext'
 
 const STORAGE_KEY = 'ocr-activity-banner-ui'
 const QUEUED_PROGRESS = 12
 
-function getStatusText(status: 'queued' | 'processing' | 'completed' | 'failed') {
+function getStatusText(status: TrackedJobStatus) {
   switch (status) {
+    case 'pending':
+    case 'uploaded':
+      return '준비 중'
     case 'queued':
       return '큐 대기 중'
     case 'processing':
@@ -31,7 +34,8 @@ function getStatusText(status: 'queued' | 'processing' | 'completed' | 'failed')
   }
 }
 
-function getDisplayProgress(status: 'queued' | 'processing' | 'completed' | 'failed', progress: number) {
+function getDisplayProgress(status: TrackedJobStatus, progress: number) {
+  if (status === 'pending' || status === 'uploaded') return Math.min(Math.max(progress, 0), QUEUED_PROGRESS)
   if (status === 'queued') return QUEUED_PROGRESS
   if (status === 'processing') return Math.max(QUEUED_PROGRESS, Math.min(progress, 100))
   return Math.min(progress, 100)

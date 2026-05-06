@@ -179,6 +179,88 @@ else
     exit 1
 fi
 
+# ── 선택: Apache Tika Server (Docker 없이 JAR만으로) ─────────
+# 사용법:
+#   export TIKA_JAR="/절대/경로/tika-server-standard-2.9.2.jar"
+#   ./start.sh
+# (또는 Git Bash 영구 설정: ~/.bashrc 에 위처럼 추가)
+#
+# 변수:
+#   TIKA_JAR        tika-server-standard-*.jar 전체 경로 (없으면 Tika 안 띄움)
+#   TIKA_SERVER_PORT 듣는 포트 (기본 9998)
+#   JAVA_BIN        java 실행 파일 (기본: PATH의 java)
+#
+TIKA_SERVER_PORT="${TIKA_SERVER_PORT:-9998}"
+JAVA_BIN="${JAVA_BIN:-java}"
+if [ -n "${TIKA_JAR:-}" ] && [ -f "$TIKA_JAR" ]; then
+    if port_in_use "$TIKA_SERVER_PORT"; then
+        echo "[OK] Port $TIKA_SERVER_PORT in use — Tika Server로 간주하고 넘어갑니다"
+    else
+        if ! command -v "$JAVA_BIN" &>/dev/null; then
+            echo "[WARN] TIKA_JAR 은 있는데 JAVA_BIN을 찾을 수 없습니다. Tika 건너뜀."
+        else
+            echo "[INFO] Starting Tika Server (JAR, port $TIKA_SERVER_PORT)..."
+            nohup "$JAVA_BIN" -jar "$TIKA_JAR" --host=0.0.0.0 --port="$TIKA_SERVER_PORT" \
+                > logs/tika.log 2>&1 &
+            TIKA_PID=$!
+            echo "$TIKA_PID" > logs/tika.pid
+            for _i in $(seq 1 40); do
+                if port_in_use "$TIKA_SERVER_PORT"; then
+                    echo "[OK] Tika Server started (PID: $TIKA_PID)"
+                    break
+                fi
+                sleep 0.25
+            done
+            if ! port_in_use "$TIKA_SERVER_PORT"; then
+                echo "[WARN] Tika가 ${TIKA_SERVER_PORT} 포트에서 안 떴을 수 있습니다. logs/tika.log 확인"
+            fi
+        fi
+    fi
+    export TIKA_SERVER_URL="${TIKA_SERVER_URL:-http://127.0.0.1:${TIKA_SERVER_PORT}}"
+    echo "[INFO] TIKA_SERVER_URL=$TIKA_SERVER_URL (백엔드/워커에 전달)"
+elif [ -n "${TIKA_SERVER_URL:-}" ]; then
+    echo "[INFO] TIKA_JAR 없음 — 이미 설정된 TIKA_SERVER_URL=$TIKA_SERVER_URL 사용"
+else
+    echo "[INFO] Tika 자동 기동 안 함 (TIKA_JAR 미설정). Office 추출은 Tika Server를 별도로 띄우거나 TIKA_SERVER_URL을 설정하세요."
+fi
+
+# ── Custom Java Tika Extract Server (tika-server/) ───────────────────────
+# JAR 자동 탐색: TIKA_JAVA_JAR 환경변수 → 빌드 결과물
+TIKA_JAVA_PORT="${TIKA_JAVA_PORT:-9090}"
+if [ -z "${TIKA_JAVA_JAR:-}" ]; then
+    FOUND=$(ls tika-server/target/tika-extract-server-*.jar 2>/dev/null | head -1)
+    [ -n "$FOUND" ] && TIKA_JAVA_JAR="$FOUND"
+fi
+
+if [ -n "${TIKA_JAVA_JAR:-}" ] && [ -f "$TIKA_JAVA_JAR" ]; then
+    if port_in_use "$TIKA_JAVA_PORT"; then
+        echo "[OK] Port $TIKA_JAVA_PORT in use — Tika Java Server로 간주"
+    elif ! command -v "$JAVA_BIN" &>/dev/null; then
+        echo "[WARN] TIKA_JAVA_JAR 있는데 java를 찾을 수 없습니다. 건너뜀."
+    else
+        echo "[INFO] Starting Tika Java Extract Server (port $TIKA_JAVA_PORT)..."
+        nohup "$JAVA_BIN" -jar "$TIKA_JAVA_JAR" "$TIKA_JAVA_PORT" \
+            > logs/tika-java.log 2>&1 &
+        TIKA_JAVA_PID=$!
+        echo "$TIKA_JAVA_PID" > logs/tika-java.pid
+        for _i in $(seq 1 40); do
+            if port_in_use "$TIKA_JAVA_PORT"; then
+                echo "[OK] Tika Java Server started (PID: $TIKA_JAVA_PID)"
+                break
+            fi
+            sleep 0.25
+        done
+        if ! port_in_use "$TIKA_JAVA_PORT"; then
+            echo "[WARN] Tika Java Server가 ${TIKA_JAVA_PORT}에서 안 떴습니다. logs/tika-java.log 확인"
+        fi
+    fi
+    export TIKA_JAVA_SERVER_URL="http://127.0.0.1:${TIKA_JAVA_PORT}"
+    echo "[INFO] TIKA_JAVA_SERVER_URL=$TIKA_JAVA_SERVER_URL"
+else
+    echo "[INFO] Tika Java Server 건너뜀 — JAR 없음"
+    echo "       빌드: cd tika-server && mvn package -q && cd .."
+fi
+
 # ── Frontend .env.local 설정 ───────────────────────────────
 # 이미 .env.local이 존재하면 그대로 사용 (수동 설정 존중)
 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
@@ -207,6 +289,8 @@ else
     echo "[INFO] Starting backend server..."
     cd backend
     PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
+    TIKA_SERVER_URL="${TIKA_SERVER_URL:-}" \
+    TIKA_JAVA_SERVER_URL="${TIKA_JAVA_SERVER_URL:-}" \
     nohup "$PYTHON_BIN" -m uvicorn main:app \
         --host "$BACKEND_HOST" \
         --port "$BACKEND_PORT" \
@@ -221,7 +305,9 @@ fi
 echo "[INFO] Starting Celery OCR Worker..."
 cd backend
 PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
-nohup "$PYTHON_BIN" -m celery -A ocr_worker worker \
+TIKA_SERVER_URL="${TIKA_SERVER_URL:-}" \
+TIKA_JAVA_SERVER_URL="${TIKA_JAVA_SERVER_URL:-}" \
+nohup "$PYTHON_BIN" -m celery -A tasks.celery_app worker \
     -Q ocr \
     -n ocr_worker@%h \
     --loglevel=info \
@@ -251,11 +337,18 @@ echo "========================================"
 echo "  Backend:  http://${SERVER_IP}:${BACKEND_PORT}  (PID: $BACKEND_PID)"
 echo "  Frontend: http://${SERVER_IP}:${FRONTEND_PORT}  (PID: $FRONTEND_PID)"
 echo "  Worker:   Celery OCR Worker            (PID: $WORKER_PID)"
+if [ -n "${TIKA_JAVA_SERVER_URL:-}" ]; then
+    echo "  TikaJava: ${TIKA_JAVA_SERVER_URL}  (logs/tika-java.log)"
+fi
+if [ -n "${TIKA_SERVER_URL:-}" ]; then
+    echo "  Tika:     ${TIKA_SERVER_URL}"
+fi
 echo ""
 echo "  Logs:     tail -f logs/backend.log"
 echo "            tail -f logs/frontend.log"
 echo "            tail -f logs/worker.log"
 echo "            tail -f logs/redis.log"
+echo "            tail -f logs/tika.log"
 echo "  Stop:     ./stop.sh"
 echo "  Status:   ./status.sh"
 echo "========================================"

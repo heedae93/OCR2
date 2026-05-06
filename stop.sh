@@ -82,6 +82,34 @@ if [ -f "logs/worker.pid" ]; then
     rm -f logs/worker.pid
 fi
 
+# ── Tika Java Extract Server ──────────────────────────────────────────────
+if [ -f "logs/tika-java.pid" ]; then
+    TIKA_JAVA_PID=$(cat logs/tika-java.pid)
+    if kill -0 "$TIKA_JAVA_PID" 2>/dev/null; then
+        kill "$TIKA_JAVA_PID" 2>/dev/null
+        sleep 0.5
+        kill -9 "$TIKA_JAVA_PID" 2>/dev/null
+        echo "[OK] Tika Java Server stopped (PID: $TIKA_JAVA_PID)"
+    else
+        echo "[INFO] Tika Java PID $TIKA_JAVA_PID not running"
+    fi
+    rm -f logs/tika-java.pid
+fi
+
+# ── Tika Server (start.sh에서 logs/tika.pid 로 기록된 경우) ─
+if [ -f "logs/tika.pid" ]; then
+    TIKA_PID=$(cat logs/tika.pid)
+    if kill -0 "$TIKA_PID" 2>/dev/null; then
+        kill "$TIKA_PID" 2>/dev/null
+        sleep 0.5
+        kill -9 "$TIKA_PID" 2>/dev/null
+        echo "[OK] Tika Server stopped (PID: $TIKA_PID)"
+    else
+        echo "[INFO] Tika PID $TIKA_PID not running (already stopped?)"
+    fi
+    rm -f logs/tika.pid
+fi
+
 # ── Redis 종료 ────────────────────────────────────────────
 if [ -f "logs/redis.pid" ]; then
     REDIS_PID=$(cat logs/redis.pid)

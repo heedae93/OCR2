@@ -32,7 +32,8 @@ const UNNAMED_SESSION_LABEL = '__UNNAMED_SESSION__'
 const SESSION_KEY_SEP = '__#sid#__'
 
 /** Windows에서 HWP MIME이 비어 있거나 표준과 달라도 드롭·선택이 되도록 확장자로만 판별 */
-const OCR_WORK_FILE_RE = /\.(pdf|png|jpe?g|hwp|hwpx)$/i
+const OCR_WORK_FILE_RE =
+  /\.(pdf|png|jpe?g|tiff?|webp|bmp|hwp|hwpx|txt|docx?|xlsx?|pptx?)$/i
 
 type FileStatus = 'pending' | 'uploading' | 'queued' | 'processing' | 'completed' | 'failed'
 type SourceType = 'file' | 'folder'
@@ -366,7 +367,7 @@ export default function OcrWorkPage() {
         ? null
         : {
             code: 'file-invalid-type',
-            message: 'PDF, PNG, JPG, HWP, HWPX만 추가할 수 있습니다.',
+            message: 'PDF, 이미지, TXT, HWP, Office(DOC/XLS/PPT)만 추가할 수 있습니다.',
           },
   })
 
@@ -929,7 +930,7 @@ export default function OcrWorkPage() {
                         {isDragActive ? '여기에 놓으세요' : '파일 추가'}
                       </p>
                       <p className="mt-1 text-[10px] text-text-secondary-light dark:text-text-secondary-dark">
-                        PDF, PNG, JPG
+                        PDF / 이미지 / TXT / Office
                       </p>
                     </div>
                     <div className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary">
@@ -949,7 +950,7 @@ export default function OcrWorkPage() {
                       ref={fileInputRef}
                       type="file"
                       multiple
-                      accept=".pdf,.png,.jpg,.jpeg,.hwp,.hwpx,.HWP,.HWPX,application/pdf,image/png,image/jpeg,application/vnd.hancom.hwp,application/vnd.hancom.hwpx,application/x-hwp"
+                      accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.hwp,.hwpx,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.HWP,.HWPX,application/pdf,image/png,image/jpeg,image/tiff,image/webp,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.hancom.hwp,application/vnd.hancom.hwpx,application/x-hwp"
                       className="hidden"
                       disabled={isSubmitting}
                       onChange={event => handleFileSelect(event, 'file')}

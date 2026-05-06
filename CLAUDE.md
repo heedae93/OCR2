@@ -137,6 +137,8 @@ Windows에서 실행 시 아래 문제들이 이미 코드에 패치되어 있�
 | `backend/utils/job_manager.py` | `fcntl` Windows 호환 처리 |
 | `backend/api/sessions.py` | `fcntl` Windows 호환 처리 |
 | `backend/api/ocr.py` | 임시 파일 삭제 WinError 32 수정 |
+| `frontend/scripts/next-dev.cjs` + `frontend/package.json` + `frontend/next.config.js` | Windows: 기동 시 `.next` 삭제 + `WATCHPACK_POLLING` 기본 활성 + webpack `poll`/`aggregateTimeout`(HMR 중 청크 잠금 완화). 폴링 끄기: `WATCHPACK_POLLING=0`. 캐시 유지: `SKIP_NEXT_CACHE_CLEAN=1` 또는 `npm run dev:fast` |
+| `dev_start.bat` | 프론트 기동 시 `npm run dev -- --port 6017` 중복 제거(`-p`는 이미 package에 있음) |
 
 ### Windows에서 start.sh 실행 방법
 

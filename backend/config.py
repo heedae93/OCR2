@@ -133,6 +133,16 @@ class Config:
     # Job timeout (seconds) — worker가 이 시간 안에 완료 못 하면 failed 처리
     JOB_TIMEOUT_SECONDS = 1800  # 30분
 
+    # 커스텀 Java Tika Extract Server (tika-server/ 빌드 후 실행, POST /extract)
+    # start.sh 가 자동으로 설정. 수동 설정: export TIKA_JAVA_SERVER_URL=http://127.0.0.1:9090
+    TIKA_JAVA_SERVER_URL: str = os.getenv("TIKA_JAVA_SERVER_URL", "").strip().rstrip("/")
+
+    # 공식 Apache Tika Server (PUT /tika → text/plain). Java 서버 없을 때 폴백.
+    TIKA_SERVER_URL: str = os.getenv("TIKA_SERVER_URL", "").strip().rstrip("/")
+    # 추출 텍스트가 이 길이 이상일 때만 ‘텍스트 문서’로 보고 OCR 생략
+    EXTRACTION_MIN_CHARS: int = int(os.getenv("EXTRACTION_MIN_CHARS", "40"))
+    EXTRACTION_MIN_CHARS_PER_PAGE: int = int(os.getenv("EXTRACTION_MIN_CHARS_PER_PAGE", "6"))
+
     # User settings
     DEFAULT_USER_ID = "user001"
     DEFAULT_USER_NAME = "사용자"
@@ -339,8 +349,30 @@ class Config:
                 except Exception:
                     pass
 
+    @classmethod
+    def apply_tika_defaults(cls):
+        """
+        로컬 개발에서 흔한 누락: Tika JAR은 있는데 프로세스 환경변수(TIKA_JAVA_SERVER_URL)를 안 넣은 경우.
+
+        - 명시적으로 비활성화하려면: TIKA_JAVA_AUTO_DEFAULT=0
+        - 포트를 바꿨다면: TIKA_JAVA_PORT=9090 (기본 9090)
+        """
+        if os.getenv("TIKA_JAVA_AUTO_DEFAULT", "1").strip() in {"0", "false", "False", "no", "NO"}:
+            return
+
+        if cls.TIKA_JAVA_SERVER_URL:
+            return
+
+        port = int(os.getenv("TIKA_JAVA_PORT", "9090"))
+        jar_glob = sorted(cls.BASE_DIR.glob("tika-server/target/tika-extract-server-*.jar"))
+        if not jar_glob:
+            return
+
+        cls.TIKA_JAVA_SERVER_URL = f"http://127.0.0.1:{port}"
+
 
 # Initialize configuration
 Config.ensure_directories()
 if (Config.BASE_DIR / "config.yaml").exists():
     Config.load_from_yaml()
+Config.apply_tika_defaults()
