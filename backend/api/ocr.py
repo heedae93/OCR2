@@ -333,10 +333,10 @@ def upload_file(
             raise HTTPException(status_code=400, detail="No filename provided")
 
         file_ext = Path(file.filename).suffix.lower()
-        if file_ext not in ['.pdf', '.png', '.jpg', '.jpeg']:
+        if file_ext not in ['.pdf', '.png', '.jpg', '.jpeg', '.hwp', '.hwpx']:
             raise HTTPException(
                 status_code=400,
-                detail="Unsupported file type. Only PDF, PNG, and JPG are supported."
+                detail="Unsupported file type. Only PDF, PNG, JPG, HWP, and HWPX are supported."
             )
 
         # Generate job ID
@@ -348,6 +348,19 @@ def upload_file(
             file.filename,
             Config.RAW_DIR / job_id
         )
+        job_dir = file_path.parent
+
+        if file_ext in (".hwp", ".hwpx"):
+            from utils.hwp_convert import convert_hwp_to_pdf, HwpConversionError
+            ocr_input = job_dir / "ocr_input.pdf"
+            try:
+                convert_hwp_to_pdf(file_path, ocr_input)
+            except HwpConversionError as e:
+                try:
+                    shutil.rmtree(job_dir, ignore_errors=True)
+                except OSError:
+                    pass
+                raise HTTPException(status_code=400, detail=str(e)) from e
 
         # Create job
         job = job_manager.create_job(
@@ -390,6 +403,13 @@ def upload_file(
                 logger.info(f"Created preview PDF (original copy): {output_pdf}")
             except Exception as e:
                 logger.error(f"Failed to copy preview PDF: {e}")
+                raise
+        elif file_ext in (".hwp", ".hwpx"):
+            try:
+                shutil.copy2(job_dir / "ocr_input.pdf", output_pdf)
+                logger.info(f"Created preview PDF from HWP conversion: {output_pdf}")
+            except Exception as e:
+                logger.error(f"Failed to copy preview PDF from HWP: {e}")
                 raise
         else:
             # For image files, create a simple PDF for preview with EXIF handling
@@ -435,6 +455,26 @@ def upload_file(
     except Exception as e:
         logger.error(f"Upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _resolve_job_ocr_input(job_dir: Path) -> Path:
+    """
+    HWP 업로드 시 `ocr_input.pdf`가 있으면 그 PDF를 사용하고,
+    그렇지 않으면 job 디렉터리의 첫 PDF, 없으면 첫 파일을 사용한다.
+    """
+    ocr_input = job_dir / "ocr_input.pdf"
+    if ocr_input.is_file():
+        return ocr_input
+    files = sorted(
+        (p for p in job_dir.iterdir() if p.is_file()),
+        key=lambda p: p.name,
+    )
+    if not files:
+        raise FileNotFoundError(f"No file in {job_dir}")
+    pdfs = [f for f in files if f.suffix.lower() == ".pdf"]
+    if pdfs:
+        return pdfs[0]
+    return files[0]
 
 
 @router.get("/page-image/{job_id}/{page_number}")
@@ -527,6 +567,10 @@ def process_job(job_id: str):
             logger.info(f"Dispatched job {job_id} to Celery OCR queue")
             
             # 작업이 성공적으로 전달된 경우에만 상태를 QUEUED로 전환
+            # 세션/목록 화면은 DB 상태를 기준으로 읽기 때문에 DB도 즉시 갱신해야
+            # 재실행 직후 completed -> queued 전이가 지연되지 않는다.
+            from utils.db_helper import update_job_status as _db_update_status
+            _db_update_status(job_id, "queued", progress=0.0)
             job_manager.update_job(job_id, status=JobStatus.QUEUED, progress_percent=0.0)
             
         except Exception as celery_err:
@@ -722,13 +766,12 @@ def process_job_task(job_id: str):
             finally:
                 db.close()
 
-        # Find uploaded file
+        # Find uploaded file (HWP → ocr_input.pdf 우선)
         job_dir = Config.RAW_DIR / job_id
-        uploaded_files = list(job_dir.glob("*"))
-        if not uploaded_files:
+        if not job_dir.is_dir() or not any(job_dir.iterdir()):
             raise FileNotFoundError(f"No file found for job {job_id}")
 
-        input_file = uploaded_files[0]
+        input_file = _resolve_job_ocr_input(job_dir)
         logger.info(f"Processing file: {input_file}")
 
         # Check file type
@@ -1299,11 +1342,13 @@ async def export_with_smart_tools(job_id: str, payload: PDFExportRequest, user_i
         logger.warning(f"Failed to persist editor state: {exc}")
 
     job_dir = Config.RAW_DIR / job_id
-    uploaded_files = list(job_dir.glob("*"))
-    if not uploaded_files:
+    if not job_dir.is_dir() or not any(job_dir.iterdir()):
         raise HTTPException(status_code=404, detail="Original file not found")
 
-    input_file = uploaded_files[0]
+    try:
+        input_file = _resolve_job_ocr_input(job_dir)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Original file not found") from e
     pdf_processor = PDFProcessor()
     is_pdf = pdf_processor.is_pdf(str(input_file))
 

@@ -71,7 +71,7 @@ export default function SettingsPage() {
     return (
       <div className="bg-background-light dark:bg-background-dark min-h-screen">
         <Sidebar />
-        <main className="flex-1 ml-64 p-6 lg:p-10 flex items-center justify-center">
+        <main className="flex-1 ml-64 mt-14 p-6 lg:p-10 flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </main>
       </div>

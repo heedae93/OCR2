@@ -4,23 +4,22 @@ import { useTheme } from '@/contexts/ThemeContext'
 
 export default function ThemeToggle() {
   const { theme, toggleTheme } = useTheme()
+  const isDark = theme === 'dark'
 
   return (
     <button
       onClick={toggleTheme}
-      className="relative w-14 h-7 rounded-full bg-gray-300 dark:bg-gray-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
       aria-label="Toggle theme"
+      className="group relative flex w-full shrink-0 items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 transition-all duration-200 text-text-secondary-light hover:bg-black/5 hover:text-text-primary-light dark:text-text-secondary-dark dark:hover:bg-white/5 dark:hover:text-text-primary-dark"
     >
-      <div
-        className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white dark:bg-gray-800 shadow-md transform transition-transform duration-200 flex items-center justify-center ${
-          theme === 'dark' ? 'translate-x-7' : 'translate-x-0'
-        }`}
-      >
-        {theme === 'dark' ? (
-          <span className="material-symbols-outlined text-sm text-yellow-400">dark_mode</span>
-        ) : (
-          <span className="material-symbols-outlined text-sm text-yellow-500">light_mode</span>
-        )}
+      <span className="material-symbols-outlined text-xl transition-all duration-200 group-hover:scale-110">
+        {isDark ? 'dark_mode' : 'light_mode'}
+      </span>
+      <span className="text-sm font-medium">
+        {isDark ? '다크 모드' : '라이트 모드'}
+      </span>
+      <div className="ml-auto flex h-5 w-9 items-center rounded-full bg-black/10 px-0.5 transition-colors dark:bg-white/10">
+        <div className={`h-4 w-4 rounded-full bg-current transition-transform duration-200 ${isDark ? 'translate-x-4' : 'translate-x-0'}`} />
       </div>
     </button>
   )

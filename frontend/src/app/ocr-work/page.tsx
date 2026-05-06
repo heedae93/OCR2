@@ -28,8 +28,13 @@ import {
 const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/api`
 
 const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타', '미분류']
+const UNNAMED_SESSION_LABEL = '__UNNAMED_SESSION__'
+const SESSION_KEY_SEP = '__#sid#__'
 
-type FileStatus = 'pending' | 'uploading' | 'queued' | 'failed'
+/** Windows에서 HWP MIME이 비어 있거나 표준과 달라도 드롭·선택이 되도록 확장자로만 판별 */
+const OCR_WORK_FILE_RE = /\.(pdf|png|jpe?g|hwp|hwpx)$/i
+
+type FileStatus = 'pending' | 'uploading' | 'queued' | 'processing' | 'completed' | 'failed'
 type SourceType = 'file' | 'folder'
 
 interface QueueFile {
@@ -44,7 +49,19 @@ interface QueueFile {
   jobId?: string
   sourceType: SourceType
   sessionName: string
+  sessionKey?: string
   failedStage?: number
+  trackedOnly?: boolean
+  createdAt: number
+}
+
+function makeSessionKey(sessionName: string, sessionId: string): string {
+  return `${sessionName}${SESSION_KEY_SEP}${sessionId}`
+}
+
+function displaySessionName(sessionKeyOrName: string): string {
+  const idx = sessionKeyOrName.indexOf(SESSION_KEY_SEP)
+  return idx >= 0 ? sessionKeyOrName.slice(0, idx) : sessionKeyOrName
 }
 
 function formatBytes(bytes: number): string {
@@ -53,21 +70,124 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function queueStatusLabel(status: FileStatus): string {
+  switch (status) {
+    case 'pending':
+      return '대기'
+    case 'uploading':
+      return '대기열'
+    case 'queued':
+      return '대기열'
+    case 'processing':
+      return '처리중'
+    case 'completed':
+      return '완료'
+    case 'failed':
+      return '실패'
+    default:
+      return status
+  }
+}
+
 import PipelineProgress from '@/components/PipelineProgress'
 
 
 export default function OcrWorkPage() {
-  const { addTrackedJobs, trackedJobs } = useOcrActivity()
+  const { addTrackedJobs, trackedJobs, removeTrackedJobs, clearAllTrackedJobs } = useOcrActivity()
   const [sessionName, setSessionName] = useState('')
   const [defaultDocType, setDefaultDocType] = useState('미분류')
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
   const [queue, setQueue] = useState<QueueFile[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitMessage, setSubmitMessage] = useState('')
+  const [queueWarning, setQueueWarning] = useState('')
+  /** 문서 작업 시작하기 이후 일괄 문서 유형 변경 금지 */
+  const [bulkDocTypeLocked, setBulkDocTypeLocked] = useState(false)
+  const [draftSessionNonce, setDraftSessionNonce] = useState(() => `${Date.now()}-${Math.random()}`)
   const [expandedSessions, setExpandedSessions] = useState<Record<string, boolean>>({})
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({})
+  const [restartingSessionKeys, setRestartingSessionKeys] = useState<Set<string>>(new Set())
   const [sessionPage, setSessionPage] = useState(1)
   const SESSIONS_PER_PAGE = 6
+
+  const jobIdsKey = useMemo(() => {
+    const ids = queue.map(q => q.jobId).filter((id): id is string => Boolean(id))
+    const uniq = Array.from(new Set(ids))
+    uniq.sort()
+    return uniq.join(',')
+  }, [queue])
+
+  // 백엔드(작업내역)와 UI 상태 불일치 방지를 위해, 표시 중인 jobId들을 직접 동기화한다.
+  useEffect(() => {
+    if (!jobIdsKey) return
+
+    let cancelled = false
+
+    const syncStatuses = async () => {
+      const ids = jobIdsKey.split(',').filter(Boolean)
+      if (ids.length === 0) return
+
+      const results = await Promise.allSettled(
+        ids.map(async jobId => {
+          const res = await fetch(`${API_BASE}/status/${jobId}`)
+          if (!res.ok) throw new Error(`status ${res.status}`)
+          return { jobId, data: await res.json() }
+        }),
+      )
+
+      if (cancelled) return
+
+      const byJobId = new Map<string, any>()
+      for (const r of results) {
+        if (r.status === 'fulfilled') byJobId.set(r.value.jobId, r.value.data)
+      }
+
+      setQueue(prev =>
+        prev.map(item => {
+          if (!item.jobId) return item
+          const data = byJobId.get(item.jobId)
+          if (!data) return item
+
+          const rawStatus = String(data?.status || item.status)
+          const mappedStatus: FileStatus =
+            rawStatus === 'failed'
+              ? 'failed'
+              : rawStatus === 'cancelled'
+                ? 'failed'
+              : rawStatus === 'completed'
+                ? 'completed'
+                : rawStatus === 'processing'
+                  ? 'processing'
+                  : rawStatus === 'uploaded'
+                    ? 'queued'
+                    : rawStatus === 'pending'
+                      ? 'pending'
+                      : 'queued'
+
+          const progress = Number(data?.progress_percent ?? item.progress ?? 0)
+          return {
+            ...item,
+            status: mappedStatus,
+            progress: mappedStatus === 'completed' ? 100 : Math.round(progress),
+            error:
+              mappedStatus === 'failed'
+                ? (data?.message || (rawStatus === 'cancelled' ? '사용자가 중지했습니다.' : item.error))
+                : item.error,
+          }
+        }),
+      )
+    }
+
+    void syncStatuses()
+    const timer = window.setInterval(() => {
+      void syncStatuses()
+    }, 3000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [jobIdsKey])
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -94,20 +214,9 @@ export default function OcrWorkPage() {
     const user = savedUser ? JSON.parse(savedUser) : {}
     const userId = user?.user_id || 'default'
 
-    // Restore state from user-specific localStorage
-    const savedQueue = localStorage.getItem(`ocr_work_queue_${userId}`)
-    if (savedQueue) {
-      try {
-        setQueue(JSON.parse(savedQueue))
-      } catch (e) {
-        console.error('Failed to restore queue', e)
-      }
-    }
-    const savedSessionName = localStorage.getItem(`ocr_work_session_name_${userId}`)
-    if (savedSessionName) {
-      setSessionName(savedSessionName)
-    }
-
+    // Queue contains File objects and cannot be safely restored after refresh.
+    // Clear stale queue cache to prevent "파일 객체가 없습니다" errors.
+    localStorage.removeItem(`ocr_work_queue_${userId}`)
     // [Cleanup] Remove old generic keys if they exist
     localStorage.removeItem('ocr_work_queue')
     localStorage.removeItem('ocr_work_session_name')
@@ -123,22 +232,63 @@ export default function OcrWorkPage() {
     }
   }, [submitMessage])
 
-  // Persist state to localStorage
   useEffect(() => {
-    const savedUser = localStorage.getItem('user')
-    const user = savedUser ? JSON.parse(savedUser) : {}
-    const userId = user?.user_id || 'default'
-
-    if (queue.length > 0) {
-      const serializableQueue = queue.map(item => ({
-        ...item,
-        file: undefined
-      }))
-      localStorage.setItem(`ocr_work_queue_${userId}`, JSON.stringify(serializableQueue))
-    } else {
-      localStorage.removeItem(`ocr_work_queue_${userId}`)
+    if (sessionName.trim() || queue.length === 0) {
+      setQueueWarning('')
     }
-  }, [queue])
+  }, [sessionName, queue.length])
+
+  useEffect(() => {
+    if (queue.length === 0) {
+      setBulkDocTypeLocked(false)
+    }
+  }, [queue.length])
+
+  useEffect(() => {
+    setQueue(prev => {
+      const existingJobIds = new Set(
+        prev
+          .map(item => item.jobId)
+          .filter((jobId): jobId is string => Boolean(jobId)),
+      )
+
+      // 이미 queue에 있는 tracked item은 덮어쓰지 말고(동기화된 file.status를 유지)
+      // 백엔드 동기화가 status를 올바르게 세팅한 뒤 UI가 보여주도록 한다.
+      const trackedAddedItems = trackedJobs
+        .filter(job => ['pending', 'uploaded', 'queued', 'processing', 'completed', 'failed', 'cancelled'].includes(job.status))
+        .filter(job => !existingJobIds.has(job.jobId))
+        .map<QueueFile>(job => ({
+          id: `tracked-${job.jobId}`,
+          displayName: job.filename,
+          docType: defaultDocType,
+          createdAt: Date.parse(job.createdAt || '') || Date.now(),
+          status:
+            job.status === 'failed'
+              ? 'failed'
+              : job.status === 'cancelled'
+                ? 'failed'
+              : job.status === 'completed'
+                ? 'completed'
+                : job.status === 'processing'
+                  ? 'processing'
+                  : job.status === 'uploaded'
+                    ? 'queued'
+                    : job.status === 'pending'
+                      ? 'pending'
+                      : 'queued',
+          progress: job.progressPercent ?? 0,
+          fileSize: 0,
+          jobId: job.jobId,
+          sourceType: job.sourceType,
+          sessionName: job.sessionName || UNNAMED_SESSION_LABEL,
+          sessionKey: job.sessionKey,
+          trackedOnly: true,
+          error: job.message,
+        }))
+
+      return [...prev, ...trackedAddedItems]
+    })
+  }, [trackedJobs, defaultDocType])
 
   useEffect(() => {
     const savedUser = localStorage.getItem('user')
@@ -147,10 +297,13 @@ export default function OcrWorkPage() {
 
     if (sessionName) {
       localStorage.setItem(`ocr_work_session_name_${userId}`, sessionName)
+    } else {
+      localStorage.removeItem(`ocr_work_session_name_${userId}`)
     }
   }, [sessionName])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
+  const sessionNameInputRef = useRef<HTMLInputElement>(null)
 
   const updateFile = useCallback((id: string, patch: Partial<QueueFile>) => {
     setQueue(prev => prev.map(file => (file.id === id ? { ...file, ...patch } : file)))
@@ -159,7 +312,7 @@ export default function OcrWorkPage() {
   const createQueueItems = useCallback(
     (files: File[], sourceType: SourceType) =>
       files
-        .filter(file => /\.(pdf|png|jpe?g)$/i.test(file.name))
+        .filter(file => OCR_WORK_FILE_RE.test(file.name))
         .map(file => ({
           id: `${Date.now()}-${Math.random()}`,
           file,
@@ -169,36 +322,52 @@ export default function OcrWorkPage() {
           progress: 0,
           fileSize: file.size,
           sourceType,
-          sessionName: sessionName.trim() || '미지정 세션',
+          sessionName: sessionName.trim() || UNNAMED_SESSION_LABEL,
+          sessionKey: makeSessionKey(sessionName.trim() || UNNAMED_SESSION_LABEL, draftSessionNonce),
+          createdAt: Date.now(),
         })),
-    [defaultDocType, sessionName],
+    [defaultDocType, sessionName, draftSessionNonce],
   )
 
   const addFiles = useCallback(
     (files: File[], sourceType: SourceType) => {
       if (isSubmitting) return
+      if (sessionName.trim()) {
+        setQueueWarning('')
+      }
       const items = createQueueItems(files, sourceType)
       if (items.length === 0) return
       setSubmitMessage('')
       setQueue(prev => [...prev, ...items])
-      
-      // 파일 추가 시 해당 세션은 자동으로 펼침
+
+      if (!sessionName.trim()) {
+        // 목록 위 경고 대신 입력란 근처 안내 + 포커스(다음 틱에 큐 반영 후 스크롤)
+        setTimeout(() => {
+          sessionNameInputRef.current?.focus({ preventScroll: false })
+          sessionNameInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        }, 0)
+      }
+
+      // 파일 추가 시 해당 작업은 자동으로 펼침
       if (items.length > 0) {
         const sName = items[0].sessionName
         setExpandedSessions(prev => ({ ...prev, [sName]: true }))
       }
     },
-    [createQueueItems, isSubmitting],
+    [createQueueItems, isSubmitting, sessionName],
   )
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: acceptedFiles => addFiles(acceptedFiles, 'file'),
     noClick: true,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'image/png': ['.png'],
-      'image/jpeg': ['.jpg', '.jpeg'],
-    },
+    /* MIME 기반 accept는 Windows 한글(.hwp)에서 type 이 "" 이거나 비표준이면 전부 거절됨 → 확장자만 검사 */
+    validator: file =>
+      OCR_WORK_FILE_RE.test(file.name)
+        ? null
+        : {
+            code: 'file-invalid-type',
+            message: 'PDF, PNG, JPG, HWP, HWPX만 추가할 수 있습니다.',
+          },
   })
 
   const removeFile = useCallback((id: string) => {
@@ -209,27 +378,65 @@ export default function OcrWorkPage() {
     if (isSubmitting) return
     setQueue([])
     setSubmitMessage('')
+    setQueueWarning('')
+    setSessionName('')
     setExpandedSessions({})
     setVisibleCounts({})
-  }, [isSubmitting])
+    setBulkDocTypeLocked(false)
+    setDraftSessionNonce(`${Date.now()}-${Math.random()}`)
+    clearAllTrackedJobs()
+  }, [isSubmitting, clearAllTrackedJobs])
 
   const updateSessionDocType = useCallback((sName: string, docType: string) => {
+    if (bulkDocTypeLocked) return
     setQueue(prev => prev.map(file => {
-      const fileSession = file.status === 'pending'
-        ? (sessionName.trim() || '미지정 세션')
-        : (file.sessionName || '미지정 세션')
-      return fileSession === sName ? { ...file, docType } : file
+      const fileSession =
+        file.status === 'pending' && !file.jobId && !file.trackedOnly
+          ? (file.sessionKey || (sessionName.trim() || UNNAMED_SESSION_LABEL))
+          : (file.sessionKey || file.sessionName || UNNAMED_SESSION_LABEL)
+      return displaySessionName(fileSession) === sName ? { ...file, docType } : file
     }))
-  }, [sessionName])
+  }, [sessionName, bulkDocTypeLocked])
 
   const removeSession = useCallback((sName: string) => {
     if (isSubmitting) return
-    setQueue(prev => prev.filter(file => {
-      const fileSession = file.status === 'pending'
-        ? (sessionName.trim() || '미지정 세션')
-        : (file.sessionName || '미지정 세션')
-      return fileSession !== sName
-    }))
+    const currentSessionLabel = sessionName.trim() || UNNAMED_SESSION_LABEL
+
+    // 삭제한 작업이 현재 입력값이라면 작업명 입력도 같이 비우고 localStorage도 제거
+    if (displaySessionName(sName) === currentSessionLabel) {
+      try {
+        const savedUser = localStorage.getItem('user')
+        const user = savedUser ? JSON.parse(savedUser) : {}
+        const userId = user?.user_id || 'default'
+        localStorage.removeItem(`ocr_work_session_name_${userId}`)
+      } catch {
+        // ignore
+      }
+      setSessionName('')
+    }
+
+    const jobIdsToRemove = queue
+      .filter(file => {
+        const fileSession =
+          file.status === 'pending' && !file.jobId && !file.trackedOnly
+            ? (file.sessionKey || (sessionName.trim() || UNNAMED_SESSION_LABEL))
+            : (file.sessionKey || file.sessionName || UNNAMED_SESSION_LABEL)
+        return fileSession === sName && Boolean(file.jobId)
+      })
+      .map(file => file.jobId as string)
+
+    // trackedJobs(localStorage)에 남아있으면 새로고침 후 다시 복원됩니다.
+    removeTrackedJobs(jobIdsToRemove)
+    setQueue(prev => {
+      const next = prev.filter(file => {
+        const fileSession =
+          file.status === 'pending' && !file.jobId && !file.trackedOnly
+            ? (file.sessionKey || (sessionName.trim() || UNNAMED_SESSION_LABEL))
+            : (file.sessionKey || file.sessionName || UNNAMED_SESSION_LABEL)
+        return fileSession !== sName
+      })
+      return next
+    })
     setExpandedSessions(prev => {
       const next = { ...prev }
       delete next[sName]
@@ -240,7 +447,7 @@ export default function OcrWorkPage() {
       delete next[sName]
       return next
     })
-  }, [isSubmitting, sessionName])
+  }, [isSubmitting, sessionName, queue, removeTrackedJobs])
 
   const handleFileSelect = useCallback(
     (event: ChangeEvent<HTMLInputElement>, sourceType: SourceType) => {
@@ -251,11 +458,16 @@ export default function OcrWorkPage() {
   )
 
   const startProcessing = useCallback(async () => {
-    const pendingFiles = queue.filter(file => file.status === 'pending')
+    const pendingFiles = queue.filter(file => file.status === 'pending' && !file.trackedOnly && Boolean(file.file))
     if (pendingFiles.length === 0) {
       alert('업로드할 파일이 없습니다.')
       return
     }
+
+    // 사용자가 눌렀다는 즉시 피드백(버튼 로딩/비활성화)이 보이도록
+    setIsSubmitting(true)
+    setSubmitMessage('')
+    setQueueWarning('')
 
     // Redis 상태 확인
     try {
@@ -264,6 +476,8 @@ export default function OcrWorkPage() {
         const redisData = await redisRes.json()
         if (!redisData.available) {
           alert('Redis 서버에 연결할 수 없습니다.\n작업 큐에 등록할 수 없으므로 작업을 시작할 수 없습니다.\n관리자에게 문의해 주세요.')
+          setIsSubmitting(false)
+          setBulkDocTypeLocked(false)
           return
         }
       }
@@ -271,35 +485,36 @@ export default function OcrWorkPage() {
       // 백엔드 자체가 다운된 경우 — 이후 단계에서 실패 처리됨
     }
 
-    // 워커 상태 확인
+    setBulkDocTypeLocked(true)
+
+    // 워커 상태 확인 (Windows + solo pool 환경에서는 ping 실패가 자주 발생할 수 있음)
     try {
       const workerRes = await fetch(`${API_BASE}/worker/health`)
       if (workerRes.ok) {
         const workerData = await workerRes.json()
         if (!workerData.available) {
-          alert('OCR 워커가 실행 중이지 않습니다.\n관리자에게 문의하거나 서버를 재시작해 주세요.')
-          return
+          setQueueWarning('워커 상태 확인이 불안정합니다. 작업은 계속 시도합니다.')
         }
       }
     } catch {
-      // 백엔드 자체가 다운된 경우 — 이후 단계에서 실패 처리됨
+      // 백엔드/워커 헬스 조회 실패 시에도 등록은 시도
+      setQueueWarning('워커 상태를 확인하지 못했습니다. 작업 등록을 계속 시도합니다.')
     }
 
-    setIsSubmitting(true)
-    setSubmitMessage('')
-
     const user = JSON.parse(localStorage.getItem('user') || '{}')
-    const userId = user.user_id || ''
+    const userId = user.user_id || 'default'
 
     const queuedJobs: Array<{
       jobId: string
       filename: string
       sessionName: string
+      sessionKey?: string
       sourceType: SourceType
+      userId?: string
     }> = []
 
-    // 제출 시점의 sessionName state를 우선 사용 (파일 추가 후 세션명 변경 시에도 반영)
-    const currentSession = sessionName.trim() || '미지정 세션'
+    // 제출 시점의 sessionName state를 우선 사용 (파일 추가 후 작업명 변경 시에도 반영)
+    const currentSession = sessionName.trim() || UNNAMED_SESSION_LABEL
     const pendingBySession = pendingFiles.reduce((acc, file) => {
       const name = currentSession
       if (!acc[name]) acc[name] = []
@@ -316,14 +531,35 @@ export default function OcrWorkPage() {
           body: JSON.stringify({ session_name: sName, description: '' }),
         })
 
-        if (!sessionResponse.ok) throw new Error('session create failed')
+        if (!sessionResponse.ok) {
+          const errorPayload = await sessionResponse.json().catch(() => ({}))
+          throw new Error(errorPayload?.detail || `작업 생성 실패 (${sessionResponse.status})`)
+        }
         sessionId = (await sessionResponse.json()).session_id
-      } catch {
-        alert(`세션 '${sName}' 생성에 실패했습니다.`)
+        const resolvedSessionKey = makeSessionKey(sName, sessionId)
+
+        // 같은 시작 배치의 파일들이 처리 중간에 카드가 분리되지 않도록
+        // 세션 키를 먼저 일괄 통일한다.
+        const targetFileIds = new Set(files.map(f => f.id))
+        setQueue(prev =>
+          prev.map(item =>
+            targetFileIds.has(item.id)
+              ? {
+                  ...item,
+                  sessionName: sName,
+                  sessionKey: resolvedSessionKey,
+                }
+              : item,
+          ),
+        )
+      } catch (error) {
+        const message = sName === UNNAMED_SESSION_LABEL ? '(작업명 미입력)' : sName
+        const detail = error instanceof Error ? error.message : '알 수 없는 오류'
+        alert(`작업 '${message}' 생성에 실패했습니다.\n${detail}`)
         continue
       }
 
-      for (const queueFile of files) {
+          for (const queueFile of files) {
         let jobId: string | undefined
         try {
           updateFile(queueFile.id, { status: 'uploading', progress: 0 })
@@ -376,7 +612,7 @@ export default function OcrWorkPage() {
           })
 
           if (!documentResponse.ok) {
-            throw new Error('세션 문서 등록 실패')
+            throw new Error('작업 문서 등록 실패')
           }
 
           const processResponse = await fetch(`${API_BASE}/process/${jobId}`, { method: 'POST' })
@@ -384,12 +620,21 @@ export default function OcrWorkPage() {
             throw new Error('Redis 큐 서버가 비정상입니다. 작업을 등록할 수 없습니다.')
           }
 
-          updateFile(queueFile.id, { status: 'queued', progress: 100, jobId: jobId! })
+          updateFile(queueFile.id, {
+            status: 'queued',
+            progress: 100,
+            jobId: jobId!,
+            // 실제로 생성한 작업명(sName)을 queue item에도 반영
+            sessionName: sName,
+            sessionKey: makeSessionKey(sName, sessionId),
+          })
           queuedJobs.push({
             jobId: jobId!,
             filename: queueFile.displayName,
-            sessionName: queueFile.sessionName,
+            sessionName: sName,
+            sessionKey: makeSessionKey(sName, sessionId),
             sourceType: queueFile.sourceType,
+            userId,
           })
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : '알 수 없는 오류'
@@ -397,6 +642,8 @@ export default function OcrWorkPage() {
             status: 'failed',
             error: errMsg,
             failedStage: 0,
+            // 실패해도 사용자 입력 작업명을 유지
+            sessionName: sName,
           })
           
           // If jobId exists, try to notify backend that it failed
@@ -424,30 +671,61 @@ export default function OcrWorkPage() {
       addTrackedJobs(queuedJobs)
     }
 
-    setSessionName('')
     setDefaultDocType('미분류')
+    try {
+      localStorage.removeItem(`ocr_work_session_name_${userId}`)
+    } catch {
+      // ignore
+    }
+    setSessionName('')
+    setBulkDocTypeLocked(false)
+    setDraftSessionNonce(`${Date.now()}-${Math.random()}`)
 
     setIsSubmitting(false)
     setSubmitMessage('작업내역에서 확인')
   }, [addTrackedJobs, queue, updateFile, sessionName, defaultDocType])
 
-  const pendingCount = useMemo(() => queue.filter(file => {
-    const tracked = trackedJobs.find(tj => tj.jobId === file.jobId)
-    const effectiveStatus = tracked ? tracked.status : file.status
-    return effectiveStatus === 'pending'
-  }).length, [queue, trackedJobs])
+  // 표시용 카운트(작업 카드와 동일하게 file.status 기준)
+  const pendingCount = useMemo(
+    () => queue.filter(file => file.status === 'pending').length,
+    [queue],
+  )
 
-  const queuedCount = useMemo(() => queue.filter(file => {
-    const tracked = trackedJobs.find(tj => tj.jobId === file.jobId)
-    const effectiveStatus = tracked ? tracked.status : file.status
-    return effectiveStatus === 'queued' || effectiveStatus === 'processing'
-  }).length, [queue, trackedJobs])
+  // "문서 작업 시작하기" 버튼 활성화용(업로드 전 대기 + 실제 file 객체가 있는 것만)
+  const pendingUploadCount = useMemo(
+    () => queue.filter(file => file.status === 'pending' && !file.jobId && !file.trackedOnly).length,
+    [queue],
+  )
 
-  const failedCount = useMemo(() => queue.filter(file => {
-    const tracked = trackedJobs.find(tj => tj.jobId === file.jobId)
-    const effectiveStatus = tracked ? tracked.status : file.status
-    return effectiveStatus === 'failed'
-  }).length, [queue, trackedJobs])
+  const needsSessionName = !sessionName.trim() && pendingUploadCount > 0
+
+  /** 현재 작업명으로 묶인 대기(업로드 전) 파일들의 문서 유형 — 왼쪽 일괄 셀렉트용 */
+  const pendingDocTypesForSidebar = useMemo(() => {
+    const pending = queue.filter(file => file.status === 'pending' && !file.jobId && !file.trackedOnly)
+    return Array.from(new Set(pending.map(f => f.docType)))
+  }, [queue])
+
+  const bulkSidebarSelectValue =
+    pendingUploadCount === 0
+      ? ''
+      : pendingDocTypesForSidebar.length === 1
+        ? pendingDocTypesForSidebar[0]
+        : ''
+
+  const workingCount = useMemo(
+    () => queue.filter(file => file.status === 'uploading' || file.status === 'queued' || file.status === 'processing').length,
+    [queue],
+  )
+
+  const completedCount = useMemo(
+    () => queue.filter(file => file.status === 'completed').length,
+    [queue],
+  )
+
+  const failedCount = useMemo(
+    () => queue.filter(file => file.status === 'failed').length,
+    [queue],
+  )
 
   const allDocTypes = useMemo(() => {
     const dbTypeNames = categories.map(c => c.name)
@@ -457,17 +735,38 @@ export default function OcrWorkPage() {
     ]
   }, [categories])
 
+  const resolveQueueSessionName = useCallback(
+    (file: QueueFile) => {
+      // 업로드 전(파일 객체 보유) 대기 항목만 현재 입력값을 따라가고,
+      // 이미 등록된 작업(jobId/trackedOnly)은 원래 작업명을 유지한다.
+      if (file.status === 'pending' && !file.jobId && !file.trackedOnly) {
+        return file.sessionKey || (sessionName.trim() || UNNAMED_SESSION_LABEL)
+      }
+      if (file.sessionKey) return file.sessionKey
+      return file.sessionName || UNNAMED_SESSION_LABEL
+    },
+    [sessionName],
+  )
+
   const groupedQueueArray = useMemo(() => {
     const groups: Record<string, QueueFile[]> = {}
     queue.forEach(file => {
-      const sName = file.status === 'pending'
-        ? (sessionName.trim() || '미지정 세션')
-        : (file.sessionName || '미지정 세션')
+      const sName = resolveQueueSessionName(file)
       if (!groups[sName]) groups[sName] = []
       groups[sName].push(file)
     })
-    return Object.entries(groups).reverse()
-  }, [queue, sessionName])
+    const getSessionTimestamp = (files: QueueFile[]) => {
+      const nonTracked = files.filter(f => !f.trackedOnly)
+      const candidates = (nonTracked.length ? nonTracked : files)
+        .map(f => f.createdAt)
+        .filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
+      if (candidates.length === 0) return 0
+      return Math.max(...candidates)
+    }
+
+    return Object.entries(groups)
+      .sort((a, b) => getSessionTimestamp(b[1]) - getSessionTimestamp(a[1]))
+  }, [queue, resolveQueueSessionName])
 
   const paginatedGroups = useMemo(() => {
     const start = (sessionPage - 1) * SESSIONS_PER_PAGE
@@ -485,7 +784,7 @@ export default function OcrWorkPage() {
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen">
       <Sidebar />
-      <main className="flex-1 ml-64 flex flex-col p-6 lg:p-10 min-w-0">
+      <main className="flex-1 ml-64 mt-14 flex flex-col p-6 lg:p-10 min-w-0">
         <div className="w-full max-w-7xl mx-auto flex flex-col gap-6">
           <div className="flex items-start justify-between">
             <div className="flex-1 min-w-0 pr-4">
@@ -512,176 +811,247 @@ export default function OcrWorkPage() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-6">
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-              {/* Dropzone Column (Expanded to 2 spans) */}
-              <div
-                {...getRootProps()}
-                className={`lg:col-span-2 group relative flex flex-col items-center justify-center gap-2 p-6 rounded-xl border-2 border-dashed transition-all cursor-pointer overflow-hidden ${
-                  isDragActive
-                    ? 'border-primary bg-primary/5 ring-4 ring-primary/10'
-                    : 'border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark hover:border-primary/50 hover:bg-primary/5'
-                }`}
-              >
-                <input {...getInputProps()} />
-                <div className="relative z-10 flex flex-col items-center gap-2">
-                  <div className="p-3 rounded-full bg-primary/10 text-primary group-hover:scale-110 transition-transform">
-                    <CloudUpload className="w-6 h-6" />
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[360px_minmax(0,1fr)] xl:items-stretch">
+            <aside className="flex min-h-0 flex-col gap-3 xl:col-start-1 xl:h-[calc(100vh-9rem)] xl:overflow-y-auto xl:sticky xl:top-6">
+              <div className="shrink-0 rounded-xl border border-border-light bg-surface-light p-4 dark:border-border-dark dark:bg-surface-dark xl:p-3.5">
+                <label className="block text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark mb-2 uppercase tracking-wider">
+                  작업 이름
+                </label>
+                <input
+                  ref={sessionNameInputRef}
+                  type="text"
+                  value={sessionName}
+                  onChange={event => setSessionName(event.target.value)}
+                  placeholder="작업 이름을 입력하세요"
+                  disabled={isSubmitting}
+                  aria-invalid={needsSessionName}
+                  aria-describedby={needsSessionName ? 'ocr-work-session-name-hint' : undefined}
+                  className={`w-full px-3 py-2 text-sm border rounded-lg bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all ${
+                    needsSessionName
+                      ? 'border-amber-500/90 ring-2 ring-amber-500/20 dark:border-amber-500 dark:ring-amber-500/25'
+                      : 'border-border-light dark:border-border-dark'
+                  }`}
+                />
+                {needsSessionName && (
+                  <div
+                    id="ocr-work-session-name-hint"
+                    role="alert"
+                    className="mt-2.5 flex gap-2.5 rounded-lg border border-amber-200/95 bg-amber-50 px-3 py-2.5 shadow-sm dark:border-amber-800/90 dark:bg-amber-950/50 dark:shadow-none"
+                  >
+                    <AlertCircle
+                      className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
+                      aria-hidden
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-amber-950 dark:text-amber-100">
+                        작업 이름을 입력해 주세요
+                      </p>
+                      <p className="mt-1 text-[11px] leading-snug text-amber-900/85 dark:text-amber-200/90">
+                        등록·목록에서 작업을 구분하려면 이름이 필요합니다. 입력하면 아래 대기 파일이 이 이름으로 묶입니다.
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-center">
-                    <p className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
-                      {isDragActive ? '여기에 놓으세요' : '파일 추가'}
-                    </p>
-                    <p className="text-[10px] text-text-secondary-light dark:text-text-secondary-dark mt-1">
-                      PDF, PNG, JPG 지원
-                    </p>
-                  </div>
-                  <div className="flex flex-col w-full gap-1.5 mt-2">
-                    <label className="flex items-center justify-center gap-2 px-8 py-2.5 text-xs font-bold bg-primary text-white rounded-lg hover:bg-primary/90 cursor-pointer transition-all active:scale-[0.98] shadow-sm">
-                      <Upload className="w-4 h-4" />
-                      파일 선택
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        multiple
-                        accept=".pdf,.png,.jpg,.jpeg"
-                        className="hidden"
-                        disabled={isSubmitting}
-                        onChange={event => handleFileSelect(event, 'file')}
-                      />
-                    </label>
-                    <label className="flex items-center justify-center gap-2 px-8 py-2.5 text-xs font-bold bg-primary/10 text-primary rounded-lg hover:bg-primary/20 cursor-pointer transition-all active:scale-[0.98]">
-                      <FolderOpen className="w-4 h-4" />
-                      폴더 선택
-                      <input
-                        ref={folderInputRef}
-                        type="file"
-                        multiple
-                        className="hidden"
-                        disabled={isSubmitting}
-                        // @ts-expect-error webkitdirectory is supported by Chromium-based browsers
-                        webkitdirectory=""
-                        onChange={event => handleFileSelect(event, 'folder')}
-                      />
-                    </label>
-                  </div>
-                </div>
-                {/* Decorative Background Icon */}
-                <span className="material-symbols-outlined absolute -bottom-4 -right-4 text-8xl opacity-[0.03] dark:opacity-[0.05] pointer-events-none">
-                  upload_file
-                </span>
+                )}
+                <p
+                  className={`mt-2 text-[11px] text-text-secondary-light dark:text-text-secondary-dark ${needsSessionName ? 'opacity-80' : ''}`}
+                >
+                  선택/업로드한 파일은 현재 작업명으로 작업 내역에 묶여 등록됩니다.
+                </p>
               </div>
 
-              {/* Session Name & Doc Type Column (1 span) */}
-              <div className="lg:col-span-1 flex flex-col gap-3">
-                <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-4 flex-1 flex flex-col justify-center">
-                  <label className="block text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark mb-1.5 uppercase tracking-wider">
-                    세션 이름
-                  </label>
-                  <input
-                    type="text"
-                    value={sessionName}
-                    onChange={event => setSessionName(event.target.value)}
-                    placeholder="세션 이름을 입력하세요"
-                    disabled={isSubmitting}
-                    className={`w-full px-3 py-2 text-sm border rounded-lg bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all ${
-                      !sessionName.trim() && pendingCount > 0
-                        ? 'border-orange-400 dark:border-orange-500 ring-2 ring-orange-500/10'
-                        : 'border-border-light dark:border-border-dark'
-                    }`}
-                  />
-                </div>
-                <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-4 flex-1 flex flex-col justify-center">
-                  <label className="block text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark mb-1.5 uppercase tracking-wider">
-                    문서 유형 일괄 선택
-                  </label>
+              <div className="shrink-0 rounded-xl border border-border-light bg-surface-light p-4 dark:border-border-dark dark:bg-surface-dark xl:p-3.5">
+                <label
+                  htmlFor="ocr-work-bulk-doc-type"
+                  className="mb-2 block text-xs font-bold uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark xl:mb-1.5"
+                >
+                  문서 유형 일괄 선택
+                </label>
+                {pendingUploadCount === 0 ? (
                   <div className="relative">
                     <select
-                      value={defaultDocType}
-                      onChange={event => {
-                        const nextDocType = event.target.value
-                        setDefaultDocType(nextDocType)
-                        setQueue(prev =>
-                          prev.map(file => ({ ...file, docType: nextDocType })),
-                        )
-                      }}
-                      disabled={isSubmitting}
-                      className="w-full appearance-none px-3 pr-10 py-2 text-sm border border-border-light dark:border-border-dark rounded-lg bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                      id="ocr-work-bulk-doc-type"
+                      disabled
+                      value=""
+                      className="w-full cursor-not-allowed appearance-none rounded-lg border border-border-light bg-background-light py-2 pl-3 pr-9 text-sm text-text-secondary-light opacity-60 dark:border-border-dark dark:bg-background-dark dark:text-text-secondary-dark"
                     >
+                      <option value="">파일을 추가하면 선택할 수 있습니다</option>
+                    </select>
+                    <ChevronDown
+                      className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary-light opacity-50 dark:text-text-secondary-dark"
+                      aria-hidden
+                    />
+                  </div>
+                ) : (
+                  <div className="relative" title={bulkDocTypeLocked ? '작업 등록을 시작한 뒤에는 문서 유형 일괄을 변경할 수 없습니다.' : undefined}>
+                    <select
+                      id="ocr-work-bulk-doc-type"
+                      value={bulkSidebarSelectValue}
+                      disabled={isSubmitting || bulkDocTypeLocked}
+                      onChange={event => {
+                        const v = event.target.value
+                        if (v) updateSessionDocType(sessionName.trim() || UNNAMED_SESSION_LABEL, v)
+                      }}
+                      className="w-full cursor-pointer appearance-none rounded-lg border border-border-light bg-background-light py-2 pl-3 pr-9 text-sm text-text-primary-light focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-border-dark dark:bg-background-dark dark:text-text-primary-dark"
+                    >
+                      {pendingDocTypesForSidebar.length !== 1 && (
+                        <option value="">유형 선택</option>
+                      )}
                       {allDocTypes.map(type => (
                         <option key={type} value={type}>
                           {type}
                         </option>
                       ))}
                     </select>
-                    <span className="material-symbols-outlined pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-lg text-text-secondary-light dark:text-text-secondary-dark">
-                      expand_more
-                    </span>
+                    <ChevronDown
+                      className={`pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400 ${isSubmitting || bulkDocTypeLocked ? 'opacity-50' : ''}`}
+                      aria-hidden
+                    />
                   </div>
-                </div>
+                )}
               </div>
 
-              {/* Stats & Actions Column (Combined) */}
-              <div className="lg:col-span-2 flex flex-col gap-3">
-                {/* Stats Row - Height matched to Session Name card */}
-                <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark px-3 flex-1 flex flex-col justify-center">
-                  <div className="flex items-center justify-around gap-2">
-                    {[
-                      { label: '대기', value: pendingCount, color: 'text-primary' },
-                      { label: '완료', value: queue.filter(f => trackedJobs.find(tj => tj.jobId === f.jobId)?.status === 'completed').length, color: 'text-green-500' },
-                      { label: '실패', value: queue.filter(f => f.status === 'failed').length, color: 'text-red-500' },
-                      { label: '전체', value: queue.length, color: 'text-text-primary-light dark:text-text-primary-dark' }
-                    ].map((item, idx) => (
-                      <div key={idx} className="flex flex-col items-center px-4 border-r last:border-r-0 border-border-light/30 dark:border-border-dark/30">
-                        <p className="text-[10px] font-bold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-widest mb-0.5">{item.label}</p>
-                        <p className={`text-lg font-black ${item.color}`}>{item.value}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Start Button - Wrapped in a container to match Doc Type card height */}
-                <div className="flex-1 flex flex-col">
-                  <button
-                    onClick={() => void startProcessing()}
-                    disabled={isSubmitting || pendingCount === 0 || !sessionName.trim()}
-                    className="w-full h-full flex items-center justify-center gap-2 px-6 py-2.5 text-sm bg-primary hover:bg-primary/90 text-white rounded-xl disabled:opacity-40 disabled:cursor-not-allowed transition-all font-bold shadow-md shadow-primary/20 active:scale-[0.98]"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        작업 등록 중...
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="w-4 h-4 fill-current" />
-                        문서 작업 시작하기
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex-1 bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark min-h-[520px] flex flex-col overflow-hidden">
-              {queue.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full py-20 text-text-secondary-light dark:text-text-secondary-dark">
-                  <FileText className="w-12 h-12 mb-3 opacity-20" />
-                  <p className="text-sm">선택한 파일 목록이 여기에 표시됩니다</p>
-                </div>
-              ) : (
-                <div className="flex flex-col h-full overflow-hidden">
-                  {/* Queue Header with Bulk Controls */}
-                  <div className="flex items-center justify-between px-5 py-4 border-b border-border-light dark:border-border-dark bg-gray-50/50 dark:bg-gray-800/30">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-primary/10">
-                        <FileText className="w-4 h-4 text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">업로드 대기열</h3>
-                        <p className="text-[10px] text-text-secondary-light dark:text-text-secondary-dark">총 {queue.length}개의 파일이 준비되었습니다</p>
-                      </div>
+              <div className="flex min-h-[7rem] flex-1 flex-col rounded-xl border border-border-light bg-surface-light p-3 dark:border-border-dark dark:bg-surface-dark xl:min-h-0 xl:p-3">
+                <div
+                  {...getRootProps()}
+                  className={`group relative flex min-h-[7rem] flex-1 flex-col items-stretch justify-center overflow-hidden rounded-lg border-2 border-dashed p-3 transition-all ${
+                    isDragActive
+                      ? 'cursor-pointer border-primary bg-primary/5 ring-4 ring-primary/10'
+                      : 'cursor-pointer border-border-light hover:border-primary/50 hover:bg-primary/5 dark:border-border-dark'
+                  }`}
+                >
+                  <input {...getInputProps()} />
+                  <div className="relative z-10 flex h-full w-full flex-col items-center justify-center gap-2">
+                    <div className="rounded-full bg-primary/10 p-2.5 text-primary transition-transform group-hover:scale-110">
+                      <CloudUpload className="h-6 w-6" />
                     </div>
+                    <div className="text-center">
+                      <p className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
+                        {isDragActive ? '여기에 놓으세요' : '파일 추가'}
+                      </p>
+                      <p className="mt-1 text-[10px] text-text-secondary-light dark:text-text-secondary-dark">
+                        PDF, PNG, JPG
+                      </p>
+                    </div>
+                    <div className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary">
+                      <span className="material-symbols-outlined !text-[12px] leading-none">move_to_inbox</span>
+                      이 영역으로 드래그해서 업로드
+                    </div>
+                  </div>
+                  <span className="material-symbols-outlined absolute -bottom-5 -right-4 text-8xl opacity-[0.04] dark:opacity-[0.06] pointer-events-none">
+                    upload_file
+                  </span>
+                </div>
+                <div className="mt-2 grid w-full grid-cols-1 gap-2">
+                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-bold text-white shadow-sm transition-all hover:bg-primary/90 active:scale-[0.98]">
+                    <Upload className="w-4 h-4" />
+                    파일 선택
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept=".pdf,.png,.jpg,.jpeg,.hwp,.hwpx,.HWP,.HWPX,application/pdf,image/png,image/jpeg,application/vnd.hancom.hwp,application/vnd.hancom.hwpx,application/x-hwp"
+                      className="hidden"
+                      disabled={isSubmitting}
+                      onChange={event => handleFileSelect(event, 'file')}
+                    />
+                  </label>
+                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-primary/10 px-5 py-2 text-sm font-bold text-primary transition-all hover:bg-primary/20 active:scale-[0.98]">
+                    <FolderOpen className="w-4 h-4" />
+                    폴더 선택
+                    <input
+                      ref={folderInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      disabled={isSubmitting}
+                      // @ts-expect-error webkitdirectory is supported by Chromium-based browsers
+                      webkitdirectory=""
+                      onChange={event => handleFileSelect(event, 'folder')}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void startProcessing()}
+                disabled={isSubmitting || pendingUploadCount === 0 || !sessionName.trim()}
+                className="flex w-full shrink-0 items-center justify-center gap-2.5 rounded-xl bg-primary px-6 py-4 text-[15px] font-bold leading-tight text-white shadow-md shadow-primary/20 transition-all hover:bg-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 xl:py-[1.125rem]"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-6 w-6 shrink-0 animate-spin" />
+                    작업 등록 중...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="h-6 w-6 shrink-0 fill-current" />
+                    문서 작업 시작하기
+                  </>
+                )}
+              </button>
+
+            </aside>
+
+            <div className="flex min-h-[620px] flex-col xl:col-start-2 xl:h-[calc(100vh-9rem)] xl:min-h-[calc(100vh-9rem)]">
+              <section className="flex h-full min-h-[620px] flex-1 flex-col overflow-hidden rounded-xl border border-border-light bg-surface-light dark:border-slate-700 dark:bg-slate-900 xl:min-h-0">
+                {/* Queue Header with Bulk Controls */}
+                <div className="flex items-start justify-between gap-2 border-b border-border-light bg-gradient-to-r from-gray-50/90 to-surface-light/80 px-3 py-2.5 dark:border-border-dark dark:from-gray-900/40 dark:to-surface-dark/80 sm:items-center sm:px-4">
+                  <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center">
+                    <div className="mt-0.5 shrink-0 rounded-lg bg-primary/15 p-2 ring-1 ring-primary/10 shadow-sm sm:mt-0">
+                      <FileText className="h-3.5 w-3.5 text-primary" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-extrabold tracking-tight text-text-primary-light dark:text-text-primary-dark">작업 목록</h3>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] font-medium tabular-nums leading-relaxed text-text-secondary-light dark:text-text-secondary-dark">
+                        <span>
+                          파일 <span className="font-bold text-text-primary-light dark:text-text-primary-dark">{queue.length}</span>
+                        </span>
+                        <span className="text-text-secondary-light/40 dark:text-text-secondary-dark/40" aria-hidden>
+                          ·
+                        </span>
+                        <span>
+                          세션 <span className="font-bold text-text-primary-light dark:text-text-primary-dark">{groupedQueueArray.length}</span>
+                        </span>
+                        {queue.length > 0 && (
+                          <>
+                            <span className="text-text-secondary-light/40 dark:text-text-secondary-dark/40" aria-hidden>
+                              ·
+                            </span>
+                            <span>
+                              대기 <span className="font-black text-primary">{pendingCount}</span>
+                            </span>
+                            <span className="text-text-secondary-light/40 dark:text-text-secondary-dark/40" aria-hidden>
+                              ·
+                            </span>
+                            <span>
+                              진행 <span className="font-black text-blue-600 dark:text-blue-400">{workingCount}</span>
+                            </span>
+                            <span className="text-text-secondary-light/40 dark:text-text-secondary-dark/40" aria-hidden>
+                              ·
+                            </span>
+                            <span>
+                              완료 <span className="font-black text-emerald-600 dark:text-emerald-400">{completedCount}</span>
+                            </span>
+                            <span className="text-text-secondary-light/40 dark:text-text-secondary-dark/40" aria-hidden>
+                              ·
+                            </span>
+                            <span>
+                              실패 <span className="font-black text-red-500">{failedCount}</span>
+                            </span>
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5 pt-0.5 sm:pt-0">
+                    <button
+                      onClick={clearAll}
+                      disabled={isSubmitting || queue.length === 0}
+                      className="rounded-md bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-500 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-red-900/20 dark:hover:bg-red-900/30"
+                    >
+                      전체 비우기
+                    </button>
                     <button 
                       onClick={() => {
                         const allNames = groupedQueueArray.map(([n]) => n)
@@ -690,215 +1060,507 @@ export default function OcrWorkPage() {
                         allNames.forEach(n => next[n] = !allExpanded)
                         setExpandedSessions(next)
                       }}
-                      className="px-3 py-1.5 text-xs font-semibold text-primary bg-primary/5 hover:bg-primary/10 rounded-lg transition-colors flex items-center gap-1.5"
+                      className="flex items-center gap-1 rounded-md bg-primary/5 px-2 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={queue.length === 0}
                     >
                       <span className="material-symbols-outlined !text-sm">
                         {Object.values(expandedSessions).some(v => v) ? 'unfold_less' : 'unfold_more'}
                       </span>
-                      {Object.values(expandedSessions).some(v => v) ? '모두 접기' : '모두 펼치기'}
+                      {Object.values(expandedSessions).some(v => v) ? '접기' : '펼치기'}
                     </button>
                   </div>
+                </div>
+                {queueWarning && (
+                  <div className="flex gap-2.5 border-b border-amber-200/80 bg-amber-50/95 px-4 py-2.5 dark:border-amber-900/50 dark:bg-amber-950/45 sm:px-5">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+                    <p className="min-w-0 text-xs font-medium leading-snug text-amber-900 dark:text-amber-100">
+                      {queueWarning}
+                    </p>
+                  </div>
+                )}
 
-                  {/* Grouped Session List */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {queue.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full py-20 text-text-secondary-light dark:text-text-secondary-dark">
+                    <FileText className="w-12 h-12 mb-3 opacity-20" />
+                    <p className="text-sm">선택한 파일 목록이 여기에 표시됩니다</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col h-full min-h-0 overflow-hidden">
+
+                  {/* Grouped Session List — 패널(흰색)과 카드 구분용 캔버스 */}
+                  <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable] space-y-3 bg-surface-alt-light p-2.5 dark:bg-slate-950 sm:p-3">
                     {paginatedGroups.map(([sName, files]) => {
                       const isExpanded = expandedSessions[sName] ?? true
+                      const renderedSessionName = displaySessionName(sName)
+                      const isUnnamedSession = renderedSessionName === UNNAMED_SESSION_LABEL
+                      // status는 백엔드 동기화(syncStatuses)의 결과인 file.status를 기준으로 표시
                       const pendingInSession = files.filter(f => f.status === 'pending').length
-                      const doneInSession = files.filter(f => trackedJobs.find(tj => tj.jobId === f.jobId)?.status === 'completed').length
+                      const workingInSession = files.filter(f => f.status === 'uploading' || f.status === 'queued' || f.status === 'processing').length
+                      const doneInSession = files.filter(f => f.status === 'completed').length
                       const failedInSession = files.filter(f => f.status === 'failed').length
                       
                       const visibleLimit = visibleCounts[sName] || 20
                       const visibleFiles = files.slice(0, visibleLimit)
                       const hasMore = files.length > visibleLimit
 
-                      return (
-                        <div key={sName} className="flex flex-col rounded-2xl border border-border-light dark:border-border-dark bg-white dark:bg-gray-900 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                          {/* Session Header (Accordion Toggle) */}
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between px-5 py-4 bg-gray-50/30 dark:bg-gray-800/20 border-b border-border-light dark:border-border-dark">
-                            <button 
-                              onClick={() => setExpandedSessions(prev => ({ ...prev, [sName]: !isExpanded }))}
-                              className="flex items-center gap-3 min-w-0 flex-1 text-left group"
-                            >
-                              <span className={`material-symbols-outlined !text-xl transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''} text-text-secondary-light dark:text-text-secondary-dark`}>
-                                expand_more
-                              </span>
-                              <div className="flex items-center gap-2 min-w-0">
-                                <FolderOpen className="w-4 h-4 text-primary shrink-0" />
-                                <span className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark truncate">{sName}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5 ml-2 shrink-0">
-                                <span className="px-2 py-0.5 rounded-md bg-gray-200 dark:bg-gray-700 text-[10px] font-bold text-gray-600 dark:text-gray-400">{files.length}</span>
-                                {pendingInSession > 0 && <span className="px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/30 text-[10px] font-bold text-orange-600 dark:text-orange-400">대기 {pendingInSession}</span>}
-                                {doneInSession > 0 && <span className="px-2 py-0.5 rounded-md bg-green-100 dark:bg-green-900/30 text-[10px] font-bold text-green-600 dark:text-green-400">완료 {doneInSession}</span>}
-                                {failedInSession > 0 && <span className="px-2 py-0.5 rounded-md bg-red-100 dark:bg-red-900/30 text-[10px] font-bold text-red-600 dark:text-red-400">실패 {failedInSession}</span>}
-                              </div>
-                            </button>
+                      const primaryWorkingFile =
+                        files.find(f => f.status === 'processing') ||
+                        files.find(f => f.status === 'queued') ||
+                        files.find(f => f.status === 'uploading') ||
+                        null
+                      const primaryTracked = primaryWorkingFile?.jobId
+                        ? trackedJobs.find(tj => tj.jobId === primaryWorkingFile.jobId)
+                        : undefined
 
-                            <div className="flex items-center gap-3 mt-3 sm:mt-0 ml-8 sm:ml-0">
-                              <div className="flex items-center gap-2 bg-white dark:bg-gray-800 border border-border-light dark:border-border-dark px-2 py-1 rounded-lg h-7">
-                                <span className="text-[11px] font-bold text-text-secondary-light leading-none">일괄 유형</span>
-                                <div className="relative flex items-center">
-                                  <select
-                                    onChange={e => updateSessionDocType(sName, e.target.value)}
-                                    disabled={isSubmitting || pendingInSession === 0}
-                                    className="appearance-none bg-transparent pl-1 pr-5 text-[11px] font-bold text-text-primary-light dark:text-text-primary-dark focus:outline-none disabled:opacity-50 h-full leading-none"
-                                    defaultValue=""
-                                  >
-                                    <option value="" disabled>선택...</option>
-                                    {allDocTypes.map(type => (
-                                      <option key={type} value={type}>{type}</option>
-                                    ))}
-                                  </select>
-                                  <span className="material-symbols-outlined pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 !text-xs text-text-secondary-light">
-                                    expand_more
-                                  </span>
-                                </div>
-                              </div>
+                      let sessionBarStatus: string
+                      let sessionBarProgress: number
+                      let sessionBarSubStage: string | null | undefined
+                      let sessionBarFailedStage: number | undefined
+                      if (primaryWorkingFile) {
+                        sessionBarStatus = primaryWorkingFile.status
+                        sessionBarProgress = primaryWorkingFile.progress || 0
+                        sessionBarSubStage = primaryTracked?.subStage
+                        sessionBarFailedStage = undefined
+                      } else {
+                        sessionBarStatus = 'pending'
+                        sessionBarProgress = 0
+                        sessionBarSubStage = undefined
+                        sessionBarFailedStage = undefined
+                      }
+
+                      return (
+                        <div
+                          key={sName}
+                          className="flex flex-col overflow-hidden rounded-xl border border-slate-300 bg-white shadow-md shadow-slate-900/5 ring-1 ring-slate-900/[0.12] transition-shadow hover:shadow-lg dark:border-slate-600 dark:bg-slate-800/90 dark:shadow-black/40 dark:ring-white/[0.16]"
+                        >
+                          {/* Session header */}
+                          <div
+                            className={`bg-gradient-to-br from-gray-50/90 to-white px-3 py-2.5 dark:from-slate-800 dark:to-slate-800/90 sm:px-4 ${isExpanded ? 'border-b border-border-light dark:border-slate-700' : ''}`}
+                          >
+                            <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                               <button
-                                onClick={() => removeSession(sName)}
-                                disabled={isSubmitting}
-                                className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-text-secondary-light hover:text-red-500 transition-all disabled:opacity-30"
-                                title="세션 전체 삭제"
+                                type="button"
+                                onClick={() => setExpandedSessions(prev => ({ ...prev, [sName]: !isExpanded }))}
+                                className="-m-0.5 flex min-w-0 flex-1 items-start gap-1.5 rounded-lg p-0.5 text-left transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03] sm:gap-2"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <span
+                                  className={`material-symbols-outlined !text-lg shrink-0 text-text-secondary-light transition-transform duration-300 dark:text-text-secondary-dark ${isExpanded ? 'mt-0.5 rotate-180' : 'mt-0.5'}`}
+                                >
+                                  expand_more
+                                </span>
+                                <div className="min-w-0 flex-1 space-y-1.5">
+                                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                                      <FolderOpen className="h-3.5 w-3.5" />
+                                    </span>
+                                    {!isUnnamedSession ? (
+                                      <span className="truncate rounded-md bg-black/[0.03] px-1.5 py-0.5 text-sm font-bold tracking-tight text-text-primary-light dark:bg-white/[0.06] dark:text-text-primary-dark">
+                                        {renderedSessionName}
+                                      </span>
+                                    ) : (
+                                      <span className="sr-only">
+                                        작업 이름이 비어 있습니다. 왼쪽 패널에서 작업 이름을 입력하세요.
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+                                    <div className="flex max-w-md min-w-0 flex-1 items-center gap-1.5">
+                                      <div className="h-1.5 min-w-[48px] flex-1 overflow-hidden rounded-full bg-gray-200/90 ring-1 ring-black/5 dark:bg-slate-700 dark:ring-white/10">
+                                        <div
+                                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500"
+                                          style={{
+                                            width: `${files.length ? Math.round((doneInSession / files.length) * 100) : 0}%`,
+                                          }}
+                                        />
+                                      </div>
+                                      <span className="shrink-0 text-[10px] font-bold tabular-nums text-text-secondary-light dark:text-text-secondary-dark">
+                                        {doneInSession}/{files.length}
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-1">
+                                      {pendingInSession > 0 && (
+                                        <span className="inline-flex items-center rounded-full border border-orange-200/80 bg-orange-50/90 px-1.5 py-px text-[9px] font-bold text-orange-700 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300">
+                                          대기 {pendingInSession}
+                                        </span>
+                                      )}
+                                      {workingInSession > 0 && (
+                                        <span className="inline-flex items-center rounded-full border border-blue-200/80 bg-blue-50/90 px-1.5 py-px text-[9px] font-bold text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+                                          진행 {workingInSession}
+                                        </span>
+                                      )}
+                                      {doneInSession > 0 && (
+                                        <span className="inline-flex items-center rounded-full border border-emerald-200/80 bg-emerald-50/90 px-1.5 py-px text-[9px] font-bold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                                          완료 {doneInSession}
+                                        </span>
+                                      )}
+                                      {failedInSession > 0 && (
+                                        <span className="inline-flex items-center rounded-full border border-red-200/80 bg-red-50/90 px-1.5 py-px text-[9px] font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
+                                          실패 {failedInSession}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
                               </button>
+
+                              <div className="flex shrink-0 items-start justify-end lg:pt-0.5">
+                                {failedInSession > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const failedTargets = files.filter(f => f.status === 'failed' && f.jobId)
+                                      if (failedTargets.length === 0) return
+
+                                      setRestartingSessionKeys(prev => new Set(prev).add(sName))
+                                      const restartResults = await Promise.allSettled(
+                                        failedTargets.map(async target => {
+                                          const response = await fetch(`${API_BASE}/process/${target.jobId}`, { method: 'POST' })
+                                          if (!response.ok) {
+                                            const payload = await response.json().catch(() => ({}))
+                                            throw new Error(payload?.detail || '재시작에 실패했습니다.')
+                                          }
+                                          return target.id
+                                        }),
+                                      )
+
+                                      const successIds = new Set<string>()
+                                      const failedById = new Map<string, string>()
+                                      restartResults.forEach((result, idx) => {
+                                        const target = failedTargets[idx]
+                                        if (!target) return
+                                        if (result.status === 'fulfilled') {
+                                          successIds.add(result.value)
+                                        } else {
+                                          failedById.set(target.id, result.reason instanceof Error ? result.reason.message : '재시작에 실패했습니다.')
+                                        }
+                                      })
+
+                                      setQueue(prev =>
+                                        prev.map(item => {
+                                          if (successIds.has(item.id)) {
+                                            return {
+                                              ...item,
+                                              status: 'queued',
+                                              progress: 0,
+                                              error: undefined,
+                                              failedStage: undefined,
+                                            }
+                                          }
+                                          if (failedById.has(item.id)) {
+                                            return {
+                                              ...item,
+                                              status: 'failed',
+                                              error: failedById.get(item.id),
+                                            }
+                                          }
+                                          return item
+                                        }),
+                                      )
+
+                                      setRestartingSessionKeys(prev => {
+                                        const next = new Set(prev)
+                                        next.delete(sName)
+                                        return next
+                                      })
+                                    }}
+                                    disabled={restartingSessionKeys.has(sName)}
+                                    className="mr-1 inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700 transition-all hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-800/70 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/45"
+                                    title="실패 항목 전체 재시작"
+                                  >
+                                    {restartingSessionKeys.has(sName) ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <span className="material-symbols-outlined !text-[12px] leading-none">refresh</span>
+                                    )}
+                                    실패 항목 전체 재시작
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => removeSession(sName)}
+                                  disabled={isSubmitting}
+                                  className="rounded-lg border border-transparent p-2 text-text-secondary-light transition-all hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-30 dark:hover:border-red-900/50 dark:hover:bg-red-500/10"
+                                  title="세션 삭제"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </div>
                           </div>
                           
                           {/* File List for Session */}
                           {isExpanded && (
-                            <div className="bg-white dark:bg-gray-900">
-                              <ul className="divide-y divide-border-light dark:divide-border-dark max-h-[400px] overflow-y-auto scrollbar-thin">
+                            <div className="bg-gradient-to-b from-gray-50/50 to-white p-1 dark:from-slate-900 dark:to-slate-900/95 sm:p-1.5">
+                              <div className="mb-1 rounded-lg border border-border-light/90 bg-white/90 px-1.5 py-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:px-2">
+                                {primaryWorkingFile ? (
+                                  <>
+                                    <div className="mb-1 flex min-w-0 items-center gap-1.5">
+                                      <span className="material-symbols-outlined shrink-0 !text-base text-primary">motion_mode</span>
+                                      <p className="min-w-0 text-[11px] font-bold leading-snug text-text-primary-light dark:text-text-primary-dark">
+                                        <span className="text-primary">진행</span>
+                                        <span className="mx-1 text-text-secondary-light dark:text-text-secondary-dark">·</span>
+                                        <span className="font-semibold break-words" title={primaryWorkingFile.displayName}>
+                                          {primaryWorkingFile.displayName}
+                                        </span>
+                                      </p>
+                                    </div>
+                                    <PipelineProgress
+                                      compact
+                                      status={sessionBarStatus}
+                                      progress={sessionBarProgress}
+                                      subStage={sessionBarSubStage}
+                                      failedStage={sessionBarFailedStage}
+                                    />
+                                  </>
+                                ) : (
+                                  <>
+                                    <p className="mb-1 text-[10px] font-medium text-text-secondary-light dark:text-text-secondary-dark">
+                                      대기 중 · 아래 목록 참고
+                                    </p>
+                                    <PipelineProgress
+                                      compact
+                                      status={sessionBarStatus}
+                                      progress={sessionBarProgress}
+                                      subStage={sessionBarSubStage}
+                                      failedStage={sessionBarFailedStage}
+                                    />
+                                  </>
+                                )}
+                              </div>
+
+                              <p className="mt-1.5 mb-1 px-0.5 text-[10px] font-bold uppercase tracking-wide text-text-secondary-light dark:text-text-secondary-dark">
+                                파일 목록
+                              </p>
+                              <ul className="space-y-1">
                                 {visibleFiles.map(file => {
                                   const tracked = trackedJobs.find(tj => tj.jobId === file.jobId)
-                                  const effectiveStatus = tracked ? tracked.status : file.status
+                                  const effectiveStatus = file.status
                                   const errorMessage = tracked?.message || file.error
-                                  
-                                  return (
-                                    <li key={file.id} className="group/item px-5 py-3 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                      <div className="flex items-center gap-4">
-                                        <div className="flex-shrink-0 size-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                                          {effectiveStatus === 'pending' && <Clock className="w-4 h-4 text-gray-400" />}
-                                          {effectiveStatus === 'uploading' && <Loader2 className="w-4 h-4 text-primary animate-spin" />}
-                                          {effectiveStatus === 'processing' && <Loader2 className="w-4 h-4 text-orange-500 animate-spin" />}
-                                          {effectiveStatus === 'queued' && <Clock className="w-4 h-4 text-blue-600 animate-pulse" />}
-                                          {effectiveStatus === 'completed' && <CheckCircle className="w-4 h-4 text-green-500" />}
-                                          {effectiveStatus === 'failed' && <AlertCircle className="w-4 h-4 text-red-500" />}
-                                        </div>
+                                  const statusMuted =
+                                    effectiveStatus === 'completed'
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : effectiveStatus === 'failed'
+                                        ? 'text-red-600 dark:text-red-400'
+                                        : effectiveStatus === 'pending'
+                                          ? 'text-gray-500 dark:text-gray-400'
+                                          : 'text-blue-600 dark:text-blue-400'
+                                  const isCurrentWork = !!primaryWorkingFile && primaryWorkingFile.id === file.id
 
-                                        <div className="flex-1 min-w-0">
-                                          <div className="flex items-center justify-between gap-3">
-                                            <div className="min-w-0 flex-1">
-                                              {effectiveStatus === 'completed' ? (
-                                                <Link href="/jobs" className="text-sm font-semibold text-primary hover:underline underline-offset-2 truncate block">
-                                                  {file.displayName}
-                                                </Link>
-                                              ) : (
-                                                <p className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark truncate">
-                                                  {file.displayName}
-                                                </p>
-                                              )}
+                                  return (
+                                    <li key={file.id} className="group/item flex items-stretch gap-1">
+                                      <div
+                                        className={`min-w-0 flex-1 rounded-md border bg-white/95 px-1.5 py-1.5 shadow-sm transition-all hover:shadow dark:bg-slate-900 sm:px-2 ${
+                                          isCurrentWork
+                                            ? 'border-primary/50 ring-1 ring-primary/25 hover:border-primary/60 dark:border-primary/45 dark:hover:border-primary/55'
+                                            : 'border-border-light/80 hover:border-primary/25 dark:border-border-dark/80 dark:hover:border-primary/30'
+                                        }`}
+                                      >
+                                        <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                                          <div className="flex min-w-0 gap-1.5">
+                                            <div className="flex w-9 shrink-0 flex-col items-center gap-px pt-px">
+                                              <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-gray-100 ring-1 ring-black/[0.04] dark:bg-gray-800 dark:ring-white/10">
+                                                {effectiveStatus === 'pending' && <Clock className="h-3 w-3 text-gray-400" />}
+                                                {effectiveStatus === 'uploading' && <Clock className="h-3 w-3 animate-pulse text-blue-600" />}
+                                                {effectiveStatus === 'processing' && <Loader2 className="h-3 w-3 animate-spin text-orange-500" />}
+                                                {effectiveStatus === 'queued' && <Clock className="h-3 w-3 animate-pulse text-blue-600" />}
+                                                {effectiveStatus === 'completed' && <CheckCircle className="h-3 w-3 text-emerald-500" />}
+                                                {effectiveStatus === 'failed' && <AlertCircle className="h-3 w-3 text-red-500" />}
+                                              </div>
+                                              <span className={`text-[9px] font-extrabold uppercase leading-tight tracking-wide ${statusMuted}`}>
+                                                {queueStatusLabel(effectiveStatus)}
+                                              </span>
                                             </div>
 
-                                            <div className="flex items-center gap-3 flex-shrink-0">
-                                              <div className="flex items-center gap-2 bg-gray-100/50 dark:bg-gray-800/50 px-2 py-1 rounded-md h-6">
-                                                <span className="text-[11px] font-bold text-text-secondary-light dark:text-text-secondary-dark leading-none">유형</span>
-                                                <div className="relative flex items-center">
-                                                  <select
-                                                    value={file.docType}
-                                                    disabled={isSubmitting || file.status !== 'pending'}
-                                                    onChange={event => updateFile(file.id, { docType: event.target.value })}
-                                                    className="appearance-none bg-transparent pl-1 pr-5 text-[11px] font-bold text-text-primary-light dark:text-text-primary-dark focus:outline-none disabled:opacity-50 h-full leading-none"
+                                            <div className="min-w-0 flex-1 space-y-0.5">
+                                              <div className="min-w-0">
+                                                {effectiveStatus === 'completed' ? (
+                                                  <Link
+                                                    href="/jobs"
+                                                    className="block text-[13px] font-bold leading-snug text-primary hover:underline underline-offset-2 line-clamp-2 sm:truncate sm:line-clamp-none"
                                                   >
-                                                    {allDocTypes.map(type => (
-                                                      <option key={type} value={type}>{type}</option>
-                                                    ))}
-                                                  </select>
-                                                  <span className="material-symbols-outlined pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 !text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                                                    expand_more
+                                                    {file.displayName}
+                                                  </Link>
+                                                ) : (
+                                                  <p className="text-[13px] font-bold leading-snug text-text-primary-light line-clamp-2 dark:text-text-primary-dark sm:truncate sm:line-clamp-none">
+                                                    {file.displayName}
+                                                  </p>
+                                                )}
+                                              </div>
+                                              <p className="text-[10px] font-medium leading-snug text-text-secondary-light dark:text-text-secondary-dark">
+                                                {file.trackedOnly ? '진행' : formatBytes(file.fileSize)} · {file.sourceType === 'folder' ? '폴더' : '파일'}
+                                              </p>
+                                              {effectiveStatus === 'failed' && (
+                                                <div className="mt-0.5 flex min-w-0 items-start gap-0.5">
+                                                  <span className="material-symbols-outlined shrink-0 !text-[11px] text-red-500">error_outline</span>
+                                                  <span className="break-words text-[10px] font-bold leading-snug text-red-500">
+                                                    {errorMessage || '실패'}
                                                   </span>
                                                 </div>
-                                              </div>
-
-                                              {(file.status === 'pending' || effectiveStatus === 'failed' || effectiveStatus === 'completed') && !isSubmitting && (
-                                                <button
-                                                  onClick={() => removeFile(file.id)}
-                                                  className="p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 text-text-secondary-light hover:text-red-500 transition-all opacity-0 group-hover/item:opacity-100"
-                                                  title="삭제"
-                                                >
-                                                  <X className="w-3.5 h-3.5" />
-                                                </button>
-                                              )}
-                                              
-                                              {(effectiveStatus === 'queued' || effectiveStatus === 'processing') && (
-                                                <button
-                                                  onClick={async () => {
-                                                    if (file.jobId && confirm('이 작업을 중지하시겠습니까?')) {
-                                                      await fetch(`${API_BASE}/cancel/${file.jobId}`, { method: 'POST' })
-                                                      updateFile(file.id, { status: 'failed', error: '사용자가 중지했습니다.' })
-                                                    }
-                                                  }}
-                                                  className="p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500 transition-all opacity-0 group-hover/item:opacity-100"
-                                                  title="중지"
-                                                >
-                                                  <StopCircle className="w-3.5 h-3.5" />
-                                                </button>
                                               )}
                                             </div>
                                           </div>
 
-                                          <div className="flex items-center gap-3 mt-1">
-                                            <p className="text-[11px] text-text-secondary-light dark:text-text-secondary-dark font-medium">
-                                              {formatBytes(file.fileSize)} · {file.sourceType === 'folder' ? '폴더' : '파일'}
-                                            </p>
-                                            <div className="h-2 w-px bg-border-light dark:bg-border-dark" />
-                                            <div className="flex-1">
-                                              {effectiveStatus === 'pending' && <span className="text-[11px] font-medium text-gray-400 italic">작업 시작 대기 중</span>}
-                                              {(effectiveStatus === 'uploading' || effectiveStatus === 'queued' || effectiveStatus === 'processing' || effectiveStatus === 'completed') && (
-                                                <PipelineProgress
-                                                  status={effectiveStatus}
-                                                  progress={tracked?.progressPercent || 0}
-                                                  subStage={tracked?.subStage}
-                                                />
+                                          <div className="flex w-full flex-wrap items-center justify-end gap-x-2 gap-y-1 self-center">
+                                            <div className="flex shrink-0 items-center justify-end gap-px sm:ml-auto sm:self-center">
+                                              {effectiveStatus === 'failed' && file.jobId && (
+                                                <button
+                                                  type="button"
+                                                  onClick={async () => {
+                                                    try {
+                                                      const response = await fetch(`${API_BASE}/process/${file.jobId}`, { method: 'POST' })
+                                                      if (!response.ok) {
+                                                        const payload = await response.json().catch(() => ({}))
+                                                        throw new Error(payload?.detail || '재시작에 실패했습니다.')
+                                                      }
+                                                      updateFile(file.id, {
+                                                        status: 'queued',
+                                                        progress: 0,
+                                                        error: undefined,
+                                                        failedStage: undefined,
+                                                      })
+                                                    } catch (error) {
+                                                      updateFile(file.id, {
+                                                        status: 'failed',
+                                                        error: error instanceof Error ? error.message : '재시작에 실패했습니다.',
+                                                      })
+                                                    }
+                                                  }}
+                                                  className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-1.5 py-1 text-[10px] font-bold text-blue-700 transition-all hover:bg-blue-100 hover:text-blue-800 dark:border-blue-800/70 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/45"
+                                                  title="재시작"
+                                                >
+                                                  <span className="material-symbols-outlined !text-[12px] leading-none">refresh</span>
+                                                  재시작
+                                                </button>
                                               )}
-                                              {effectiveStatus === 'failed' && (
-                                                <div className="flex flex-col gap-1">
-                                                  <PipelineProgress
-                                                    status="failed"
-                                                    progress={tracked?.progressPercent || 0}
-                                                    subStage={tracked?.subStage}
-                                                    failedStage={!tracked ? (file.failedStage ?? 0) : undefined}
+
+                                              {(effectiveStatus === 'queued' || effectiveStatus === 'processing') && (
+                                                <button
+                                                  type="button"
+                                                  onClick={async () => {
+                                                    if (!confirm('이 작업을 중지하면 같은 작업의 남은 파일도 모두 실패 처리됩니다.\n계속하시겠습니까?')) {
+                                                      return
+                                                    }
+
+                                                    const cancellableFiles = files.filter(f =>
+                                                      ['pending', 'uploading', 'queued', 'processing'].includes(f.status),
+                                                    )
+                                                    const cancellableIds = new Set(cancellableFiles.map(f => f.id))
+                                                    const jobIds = cancellableFiles
+                                                      .map(f => f.jobId)
+                                                      .filter((id): id is string => Boolean(id))
+
+                                                    if (jobIds.length > 0) {
+                                                      await Promise.allSettled(
+                                                        jobIds.map(async jobId => {
+                                                          await fetch(`${API_BASE}/cancel/${jobId}`, { method: 'POST' })
+                                                          await fetch(`${API_BASE}/status/${jobId}`, {
+                                                            method: 'PATCH',
+                                                            headers: { 'Content-Type': 'application/json' },
+                                                            body: JSON.stringify({
+                                                              status: 'failed',
+                                                              error_message: '사용자가 작업을 중지했습니다.',
+                                                            }),
+                                                          })
+                                                        }),
+                                                      )
+                                                    }
+
+                                                    setQueue(prev =>
+                                                      prev.map(item =>
+                                                        cancellableIds.has(item.id)
+                                                          ? {
+                                                              ...item,
+                                                              status: 'failed',
+                                                              progress: 0,
+                                                              error: '사용자가 작업을 중지했습니다.',
+                                                            }
+                                                          : item,
+                                                      ),
+                                                    )
+                                                  }}
+                                                  className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-1.5 py-1 text-[10px] font-bold text-red-700 transition-all hover:bg-red-100 hover:text-red-800 dark:border-red-800/70 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/45"
+                                                  title="중지"
+                                                >
+                                                  <StopCircle className="h-3 w-3" />
+                                                  중지
+                                                </button>
+                                              )}
+                                            </div>
+
+                                            <div className="flex min-w-0 max-w-full items-center gap-1.5">
+                                              {file.status === 'pending' && !isSubmitting ? (
+                                                <label
+                                                  htmlFor={`ocr-work-doctype-${file.id}`}
+                                                  className="shrink-0 cursor-pointer select-none text-[10px] font-semibold leading-snug text-text-secondary-light dark:text-text-secondary-dark"
+                                                >
+                                                  문서 유형 선택
+                                                </label>
+                                              ) : (
+                                                <span className="shrink-0 text-[10px] font-semibold leading-snug text-text-secondary-light dark:text-text-secondary-dark">
+                                                  문서 유형 선택
+                                                </span>
+                                              )}
+                                              {file.status === 'pending' && !isSubmitting ? (
+                                                <div className="relative w-[7rem] shrink-0 sm:w-[7.25rem]">
+                                                  <select
+                                                    id={`ocr-work-doctype-${file.id}`}
+                                                    value={file.docType}
+                                                    onChange={event => updateFile(file.id, { docType: event.target.value })}
+                                                    className="w-full min-w-0 cursor-pointer appearance-none rounded-md border border-slate-200/95 bg-white py-1 pl-1.5 pr-7 text-xs font-semibold leading-snug text-slate-900 shadow-sm transition-all hover:border-primary/45 hover:bg-slate-50/90 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:[color-scheme:dark] dark:hover:border-primary/50 dark:hover:bg-slate-800/70 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/25 dark:focus:ring-primary/30 [&>option]:text-slate-900 dark:[&>option]:bg-slate-900 dark:[&>option]:text-slate-100"
+                                                  >
+                                                    {allDocTypes.map(type => (
+                                                      <option key={type} value={type}>
+                                                        {type}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                  <ChevronDown
+                                                    className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500"
+                                                    aria-hidden
                                                   />
-                                                  {errorMessage && (
-                                                    <div className="flex items-center gap-1 mt-0.5">
-                                                      <span className="material-symbols-outlined !text-xs text-red-500">error_outline</span>
-                                                      <span className="text-[10px] text-red-500 font-bold truncate">{errorMessage}</span>
-                                                    </div>
-                                                  )}
+                                                </div>
+                                              ) : (
+                                                <div
+                                                  className="flex h-[1.875rem] w-[7rem] min-w-0 shrink-0 items-center rounded-md border border-slate-200/70 bg-slate-50/95 px-1.5 py-0.5 dark:border-slate-600 dark:bg-slate-900 sm:w-[7.25rem]"
+                                                  title={
+                                                    file.status !== 'pending'
+                                                      ? '진행·완료된 파일은 문서 유형을 바꿀 수 없습니다'
+                                                      : '작업 등록 중에는 변경할 수 없습니다'
+                                                  }
+                                                >
+                                                  <span className="truncate text-xs font-semibold leading-snug text-slate-900 dark:text-slate-100">
+                                                    {file.docType || '미분류'}
+                                                  </span>
                                                 </div>
                                               )}
                                             </div>
                                           </div>
                                         </div>
                                       </div>
+
+                                      {(file.status === 'pending' || effectiveStatus === 'failed' || effectiveStatus === 'completed') && !isSubmitting && (
+                                        <button
+                                          type="button"
+                                          onClick={() => removeFile(file.id)}
+                                          className="inline-flex w-8 shrink-0 items-center justify-center self-stretch rounded-md border border-border-light bg-surface-light text-text-secondary-light shadow-sm transition-all hover:border-red-300 hover:bg-red-50 hover:text-red-500 dark:border-border-dark dark:bg-surface-dark dark:hover:border-red-800 dark:hover:bg-red-500/10"
+                                          title="삭제"
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </button>
+                                      )}
                                     </li>
                                   )
                                 })}
                               </ul>
                               {hasMore && (
-                                <button 
+                                <button
+                                  type="button"
                                   onClick={() => setVisibleCounts(prev => ({ ...prev, [sName]: (prev[sName] || 20) + 50 }))}
-                                  className="w-full py-3 text-xs font-bold text-primary hover:bg-primary/5 border-t border-border-light transition-colors"
+                                  className="mt-1 w-full rounded-md border border-dashed border-primary/30 py-1.5 text-[11px] font-bold text-primary transition-colors hover:bg-primary/5 dark:border-primary/40"
                                 >
-                                  파일 {files.length - visibleLimit}개 더 보기...
+                                  +{files.length - visibleLimit}개 더 보기
                                 </button>
                               )}
-                              <div className="px-5 py-2 text-center bg-gray-50/50 dark:bg-gray-800/30 border-t border-border-light dark:border-border-dark">
-                                <p className="text-[10px] text-text-secondary-light font-bold italic">
-                                  {files.length > visibleLimit ? `현재 ${visibleLimit}개 표시 중 / ` : ''}
-                                  총 {files.length}개의 파일
-                                </p>
-                              </div>
                             </div>
                           )}
                         </div>
@@ -908,11 +1570,11 @@ export default function OcrWorkPage() {
 
                   {/* Session Pagination Controls */}
                   {totalSessionPages > 0 && (
-                    <div className="px-5 py-4 border-t border-border-light dark:border-border-dark bg-gray-50/50 dark:bg-gray-800/30 flex items-center justify-center gap-4">
+                    <div className="px-4 py-2 border-t border-border-light dark:border-border-dark bg-gray-50/50 dark:bg-gray-800/30 flex items-center justify-center gap-3">
                       <button
                         onClick={() => setSessionPage(prev => Math.max(1, prev - 1))}
                         disabled={sessionPage === 1}
-                        className="p-2 rounded-lg hover:bg-white dark:hover:bg-gray-800 border border-border-light dark:border-border-dark disabled:opacity-30 transition-all"
+                        className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-gray-800 border border-border-light dark:border-border-dark disabled:opacity-30 transition-all"
                       >
                         <span className="material-symbols-outlined !text-sm">chevron_left</span>
                       </button>
@@ -922,7 +1584,7 @@ export default function OcrWorkPage() {
                           <button
                             key={page}
                             onClick={() => setSessionPage(page)}
-                            className={`size-8 rounded-lg text-xs font-bold transition-all ${
+                            className={`h-7 min-w-7 px-2 rounded-lg text-xs font-bold transition-all ${
                               sessionPage === page
                                 ? 'bg-primary text-white shadow-lg shadow-primary/20'
                                 : 'hover:bg-white dark:hover:bg-gray-800 text-text-secondary-light'
@@ -936,15 +1598,17 @@ export default function OcrWorkPage() {
                       <button
                         onClick={() => setSessionPage(prev => Math.min(totalSessionPages, prev + 1))}
                         disabled={sessionPage === totalSessionPages}
-                        className="p-2 rounded-lg hover:bg-white dark:hover:bg-gray-800 border border-border-light dark:border-border-dark disabled:opacity-30 transition-all"
+                        className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-gray-800 border border-border-light dark:border-border-dark disabled:opacity-30 transition-all"
                       >
                         <span className="material-symbols-outlined !text-sm">chevron_right</span>
                       </button>
                     </div>
                   )}
-                </div>
-              )}
+                  </div>
+                )}
+              </section>
             </div>
+
           </div>
         </div>
       </main>

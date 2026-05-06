@@ -5,7 +5,6 @@ import Sidebar from '@/components/Sidebar'
 import { API_BASE_URL } from '@/lib/api'
 import {
   Search as SearchIcon,
-  Filter as FilterIcon,
   FileText,
   ExternalLink,
   ChevronLeft as ChevronLeftIcon,
@@ -114,12 +113,13 @@ function EditPanel({ doc, userId, categories, onClose, onSaved }: EditPanelProps
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm"
+      // Sidebar(좌측) 제외한 메인 영역의 중앙에 오도록 left-64/right-0로 오버레이를 제한
+      className="fixed inset-y-0 left-64 right-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
       onClick={handleBackdrop}
     >
       <div
         ref={panelRef}
-        className="w-full max-w-lg h-full bg-surface-light dark:bg-surface-dark shadow-2xl flex flex-col animate-slide-in-right overflow-hidden"
+        className="w-full max-w-3xl h-[90vh] bg-surface-light dark:bg-surface-dark shadow-2xl flex flex-col rounded-2xl overflow-hidden transform translate-x-6"
       >
         {/* 헤더 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light dark:border-border-dark flex-shrink-0">
@@ -272,7 +272,6 @@ export default function ExtractionListPage() {
   const [pageSize] = useState(15)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [docTypeFilter, setDocTypeFilter] = useState('')
   const [categories, setCategories] = useState<string[]>([])
   const [editingDoc, setEditingDoc] = useState<MetaDoc | null>(null)
 
@@ -305,7 +304,6 @@ export default function ExtractionListPage() {
         page: String(page),
         page_size: String(pageSize),
         search: search,
-        doc_type: docTypeFilter,
         sort_by: 'created_at',
         sort_dir: 'desc'
       })
@@ -320,7 +318,7 @@ export default function ExtractionListPage() {
     } finally {
       setLoading(false)
     }
-  }, [userId, page, pageSize, search, docTypeFilter])
+  }, [userId, page, pageSize, search])
 
   useEffect(() => {
     fetchDocs()
@@ -372,28 +370,25 @@ export default function ExtractionListPage() {
 
         {/* Filters/Search */}
         <div className="px-8 py-4 border-b border-border-light dark:border-border-dark flex items-center gap-4 bg-surface-light/10 dark:bg-surface-dark/10">
-          <div className="relative flex-1 max-w-md">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary-light" size={18} />
-            <input 
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="파일명으로 검색..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark outline-none focus:border-primary/50 text-sm font-medium transition-all"
-            />
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark">
-             <FilterIcon size={16} className="text-text-secondary-light" />
-             <select 
-               value={docTypeFilter} 
-               onChange={e => setDocTypeFilter(e.target.value)}
-               className="bg-transparent text-sm font-bold outline-none text-text-primary-light dark:text-text-primary-dark cursor-pointer"
-             >
-               <option value="">모든 카테고리</option>
-               <option value="영수증">영수증</option>
-               <option value="계약서">계약서</option>
-               <option value="공문서">공문서</option>
-               <option value="기타">기타</option>
-             </select>
+          <div className="flex-1 max-w-md flex items-center gap-2">
+            <div className="relative flex-1">
+              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary-light" size={18} />
+              <input 
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="파일명으로 검색..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark outline-none focus:border-primary/50 text-sm font-medium transition-all"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={fetchDocs}
+              disabled={loading}
+              className="px-4 py-2.5 rounded-xl border border-border-light dark:border-border-dark text-sm font-bold hover:bg-white/5 dark:hover:bg-white/5 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+              aria-label="검색"
+            >
+              검색
+            </button>
           </div>
           <div className="ml-auto text-xs font-bold text-text-secondary-light">
              총 <span className="text-primary">{total}</span> 건의 데이터
@@ -405,11 +400,11 @@ export default function ExtractionListPage() {
            <div className="rounded-2xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark shadow-sm overflow-hidden">
               <table className="w-full text-left border-collapse table-fixed">
                 <colgroup>
-                  <col className="w-[18%]" />
-                  <col className="w-[7%]" />
-                  <col className="w-[42%]" />
-                  <col className="w-[25%]" />
-                  <col className="w-[8%]" />
+                  <col className="w-[26%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[35%]" />
+                  <col className="w-[23%]" />
+                  <col className="w-[6%]" />
                 </colgroup>
                 <thead>
                   <tr className="bg-black/5 dark:bg-white/5 text-[11px] font-black uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark border-b border-border-light dark:border-border-dark">
@@ -448,30 +443,24 @@ export default function ExtractionListPage() {
                       return (
                         <tr key={doc.job_id} className="hover:bg-primary/5 transition-colors group cursor-default">
                           {/* 문서 정보 */}
-                          <td className="px-6 py-4">
-                            <div className="flex items-center justify-start gap-3">
+                          <td className="px-6 py-4 align-top">
+                            <div className="flex items-start justify-start gap-3 min-w-0">
                               <div className="p-1.5 rounded-lg bg-primary/10 text-primary shrink-0">
                                 <FileText size={16} />
                               </div>
                               <div className="flex flex-col min-w-0">
                                 <button
                                   onClick={() => setEditingDoc(doc)}
-                                  className="text-xs font-bold text-text-primary-light dark:text-text-primary-dark hover:text-primary transition-colors text-left line-clamp-2 leading-snug"
+                                  className="text-xs font-bold text-text-primary-light dark:text-text-primary-dark hover:text-primary transition-colors text-left line-clamp-3 leading-snug break-words"
                                 >
                                   {doc.original_filename}
-                                </button>
-                                <button
-                                  onClick={() => setEditingDoc(doc)}
-                                  className="text-[10px] font-bold text-text-secondary-light flex items-center gap-0.5 mt-1 hover:text-primary transition-colors"
-                                >
-                                  <Edit3 size={9} /> 수정하기
                                 </button>
                               </div>
                             </div>
                           </td>
                           {/* 문서 유형 */}
-                          <td className="px-4 py-4 text-center">
-                            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300 text-[10px] font-black border border-blue-200 dark:border-blue-800 inline-block truncate max-w-full">
+                          <td className="px-3 py-4 text-center align-top">
+                            <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300 text-[10px] font-black border border-blue-200 dark:border-blue-800 inline-block max-w-full whitespace-normal break-words text-center leading-tight">
                               {doc.doc_type || '미분류'}
                             </span>
                           </td>

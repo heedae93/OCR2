@@ -136,7 +136,7 @@ export default function StatisticsPage() {
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen">
       <Sidebar />
-      <main className="flex-1 ml-64 p-6 lg:p-10">
+      <main className="flex-1 ml-64 mt-14 p-6 lg:p-10">
         <div className="w-full max-w-6xl mx-auto flex flex-col gap-8">
           <h1 className="text-3xl font-bold text-text-primary-light dark:text-text-primary-dark">통계</h1>
 
@@ -155,47 +155,6 @@ export default function StatisticsPage() {
                     <div className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{label}</div>
                   </div>
                 ))}
-              </div>
-
-              {/* 세션별 작업 현황 */}
-              <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
-                <div className="px-6 py-4 border-b border-border-light dark:border-border-dark">
-                  <h2 className="text-lg font-semibold text-text-primary-light dark:text-text-primary-dark">세션별 작업 현황</h2>
-                </div>
-                {sessions.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-background-light dark:bg-background-dark">
-                        <tr>
-                          {['세션명', '총 문서', '완료', '실패', '완료율', '마지막 작업'].map(h => (
-                            <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border-light dark:divide-border-dark">
-                        {sessions.map(s => (
-                          <tr key={s.session_id} className="hover:bg-background-light dark:hover:bg-background-dark transition-colors">
-                            <td className="px-5 py-3 text-sm font-medium text-text-primary-light dark:text-text-primary-dark">{s.session_name}</td>
-                            <td className="px-5 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">{s.total}</td>
-                            <td className="px-5 py-3 text-sm text-green-600 dark:text-green-400 font-medium">{s.completed}</td>
-                            <td className="px-5 py-3 text-sm text-red-500 dark:text-red-400 font-medium">{s.failed}</td>
-                            <td className="px-5 py-3">
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1 h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden min-w-[60px]">
-                                  <div className="h-full rounded-full bg-green-500 transition-all duration-500" style={{ width: `${s.completion_rate}%` }} />
-                                </div>
-                                <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark whitespace-nowrap">{s.completion_rate}%</span>
-                              </div>
-                            </td>
-                            <td className="px-5 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark whitespace-nowrap">{formatDate(s.last_activity)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="p-16 text-center text-text-secondary-light dark:text-text-secondary-dark">세션 데이터 없음</div>
-                )}
               </div>
 
               {/* Row: Accuracy + File Types + Processing Time */}

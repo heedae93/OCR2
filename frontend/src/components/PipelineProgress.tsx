@@ -9,10 +9,17 @@ const PIPELINE_STAGES = [
   { key: 'done',    label: '완료',       icon: 'task_alt' },
 ] as const
 
+/** 업로드·작업 등록 전 — 파이프라인 단계 하이라이트 없음 */
+const PIPELINE_IDLE = -1
+
 export function getActivePipelineStage(status: string, progress: number, subStage?: string | null): number {
   if (status === 'completed') return PIPELINE_STAGES.length
-  if (status === 'queued') return 1
-  if (status === 'uploading') return 0  // 서버에 파일 전송 중 → 큐 대기 단계
+  // 로컬 대기만 있고 서버 업로드/큐 등록 전 — 앞 단계를 완료로 치면 안 됨
+  if (status === 'pending') return PIPELINE_IDLE
+  // 업로드(XHR) 중에는 항상 대기열 단계
+  if (status === 'uploading') return 1
+  // queued라도 progress/subStage가 들어오면 다음 단계로 진행 표시
+  if (status === 'queued' && !subStage && progress < 1) return 1
   const sub = (subStage || '').toLowerCase()
   if (sub.includes('converting')) return 2
   if (sub.includes('ocr') || sub.includes('layout')) return 3
@@ -28,27 +35,35 @@ interface PipelineProgressProps {
   progress: number
   subStage?: string | null
   failedStage?: number
+  /** 좁은 카드(작업 목록 세션 등)용 축소 레이아웃 */
+  compact?: boolean
 }
 
-export default function PipelineProgress({ status, progress, subStage, failedStage }: PipelineProgressProps) {
+export default function PipelineProgress({ status, progress, subStage, failedStage, compact }: PipelineProgressProps) {
   const isFailed = status === 'failed'
   const isCompleted = status === 'completed'
   const activeStage = isFailed && failedStage !== undefined
     ? failedStage
     : getActivePipelineStage(status, progress, subStage)
-  const displayProgress = isCompleted ? 100 : progress
+  const displayProgress =
+    isCompleted ? 100 : status === 'uploading' ? 0 : progress
   const isPulsing = !isFailed && (status === 'processing' || status === 'queued' || status === 'uploading')
 
+  const dot = compact ? 'w-4 h-4' : 'w-5 h-5'
+  const iconPx = compact ? 11 : 13
+  const labelCls = compact ? 'text-[9px]' : 'text-[10.5px]'
+  const lineMb = compact ? 'mb-[11px]' : 'mb-[14px]'
+
   return (
-    <div className="flex flex-col gap-2 mt-1.5">
-      <div className="flex items-start w-full">
+    <div className={`flex flex-col ${compact ? 'gap-1 mt-1' : 'gap-2 mt-1.5'}`}>
+      <div className="flex w-full items-start">
         {PIPELINE_STAGES.map((stage, idx) => {
-          const isDone = idx < activeStage
+          const isDone = activeStage >= 0 && idx < activeStage
           const isActive = idx === activeStage
           return (
             <div key={stage.key} className="flex items-center" style={{ flex: idx < PIPELINE_STAGES.length - 1 ? '1 1 0' : '0 0 auto' }}>
-              <div className="flex flex-col items-center gap-0.5 shrink-0">
-                <div className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300 ${
+              <div className="flex shrink-0 flex-col items-center gap-0.5">
+                <div className={`${dot} flex items-center justify-center rounded-full transition-all duration-300 ${
                   isDone
                     ? 'bg-primary text-white'
                     : isActive
@@ -57,11 +72,11 @@ export default function PipelineProgress({ status, progress, subStage, failedSta
                       : `bg-primary text-white ring-2 ring-primary/25 ${isPulsing ? 'animate-pulse' : ''}`
                     : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
                 }`}>
-                  <span className="material-symbols-outlined leading-none" style={{ fontSize: '11px' }}>
+                  <span className="material-symbols-outlined leading-none" style={{ fontSize: `${iconPx}px` }}>
                     {isDone ? 'check' : (isFailed && isActive) ? 'error' : stage.icon}
                   </span>
                 </div>
-                <span className={`text-[8.5px] whitespace-nowrap leading-none mt-0.5 ${
+                <span className={`${labelCls} mt-0.5 whitespace-nowrap leading-none ${
                   isFailed && isActive
                     ? 'text-red-500 font-semibold'
                     : isDone || isActive ? 'text-primary font-semibold' : 'text-gray-400 dark:text-gray-500'
@@ -70,7 +85,7 @@ export default function PipelineProgress({ status, progress, subStage, failedSta
                 </span>
               </div>
               {idx < PIPELINE_STAGES.length - 1 && (
-                <div className={`h-px flex-1 mx-0.5 mb-[14px] transition-all duration-500 ${
+                <div className={`h-px flex-1 mx-0.5 ${lineMb} transition-all duration-500 ${
                   idx < activeStage ? 'bg-primary' : 'bg-gray-200 dark:bg-gray-700'
                 }`} />
               )}
@@ -78,17 +93,17 @@ export default function PipelineProgress({ status, progress, subStage, failedSta
           )
         })}
       </div>
-      <div className="flex items-center gap-2">
-        <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
+      <div className="flex items-center gap-1.5">
+        <div className={`flex-1 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700 ${compact ? 'h-1' : 'h-1.5'}`}>
           <div
             className={`h-full rounded-full transition-all duration-500 ${
-              isFailed ? 'bg-red-500' : isCompleted ? 'bg-green-500' : 'bg-primary'
+              isFailed ? 'bg-red-500' : isCompleted ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-primary'
             }`}
             style={{ width: `${displayProgress}%` }}
           />
         </div>
-        <span className={`text-[10px] font-semibold tabular-nums w-7 text-right ${
-          isFailed ? 'text-red-500' : isCompleted ? 'text-green-500' : 'text-primary'
+        <span className={`font-semibold tabular-nums text-right ${compact ? 'w-7 text-[11px]' : 'w-8 text-xs'} ${
+          isFailed ? 'text-red-500' : isCompleted ? 'text-text-secondary-light dark:text-text-secondary-dark' : 'text-primary'
         }`}>
           {Math.round(displayProgress)}%
         </span>

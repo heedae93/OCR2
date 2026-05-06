@@ -232,18 +232,10 @@ echo "$WORKER_PID" > ../logs/worker.pid
 cd ..
 echo "[OK] Celery Worker started (PID: $WORKER_PID)"
 
-# ── Frontend 빌드 후 프로덕션 모드로 시작 ────────────────────
-# Windows에서 next dev의 webpack.js 파일 잠금(errno -4094) 문제를 회피합니다.
-echo "[INFO] Building frontend (production build)..."
+# ── Frontend 개발 모드로 시작 (hot reload 지원) ────────────────────
+echo "[INFO] Starting frontend server (dev mode with hot reload)..."
 cd frontend
-npx next build > ../logs/frontend_build.log 2>&1
-if [ $? -ne 0 ]; then
-    echo "[ERROR] Frontend build failed. See logs/frontend_build.log"
-    cat ../logs/frontend_build.log | tail -20
-    exit 1
-fi
-echo "[INFO] Starting frontend server (production mode)..."
-nohup npx next start \
+nohup npx next dev --turbo \
     -p "$FRONTEND_PORT" \
     -H "$FRONTEND_HOST" \
     > ../logs/frontend.log 2>&1 &

@@ -321,7 +321,30 @@ async def get_session(
         completed_count = 0
 
         for sess_doc, job in session_docs:
-            if job.status == "completed":
+            status = job.status
+            progress_percent = job.progress_percent or 0
+            current_page = job.current_page or 0
+            total_pages = job.total_pages or 0
+            message = job.error_message if job.status == "failed" else None
+
+            # 상세 페이지도 목록 페이지와 동일하게 파일 기반 최신 상태를 반영한다.
+            if job.status in ("processing", "queued", "pending", "uploaded"):
+                from utils.job_manager import JobManager
+                file_status = JobManager.read_status_from_file(job.job_id)
+                if file_status:
+                    status = file_status.get("status", job.status)
+                    progress_percent = file_status.get("progress_percent", progress_percent)
+                    current_page = file_status.get("current_page", current_page)
+                    total_pages = file_status.get("total_pages", total_pages)
+
+                    file_msg = file_status.get("message")
+                    if file_msg:
+                        status = "failed"
+                        message = file_msg
+                    else:
+                        message = job.error_message if status == "failed" else None
+
+            if status == "completed":
                 completed_count += 1
 
             pdf_url = None
@@ -333,13 +356,14 @@ async def get_session(
             documents.append(DocumentInSession(
                 job_id=job.job_id,
                 original_filename=job.original_filename,
-                status=job.status,
-                progress_percent=job.progress_percent,
-                current_page=job.current_page,
-                total_pages=job.total_pages,
+                status=status,
+                progress_percent=progress_percent,
+                current_page=current_page,
+                total_pages=total_pages,
                 order=sess_doc.order,
                 is_selected=sess_doc.is_selected,
                 pdf_url=pdf_url,
+                message=message,
                 added_at=sess_doc.added_at.strftime("%Y-%m-%d %H:%M:%S") if sess_doc.added_at else None
             ))
 

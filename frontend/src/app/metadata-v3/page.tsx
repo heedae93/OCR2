@@ -56,12 +56,33 @@ export default function MetadataV3Page() {
       const [catsRes, fieldsRes, rulesRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/metadata-v3/categories?user_id=${userId}`),
         fetch(`${API_BASE_URL}/api/metadata-v3/custom-fields?user_id=${userId}`),
-        fetch(`${API_BASE_URL}/api/metadata-v3/masking-rules?user_id=${userId}`)
+        fetch(`${API_BASE_URL}/api/metadata-v3/masking-rules?user_id=${userId}`),
       ])
-      
-      if (catsRes.ok) setCategories(await catsRes.json())
-      if (fieldsRes.ok) setCustomFields(await fieldsRes.json())
-      if (rulesRes.ok) setRules(await rulesRes.json())
+
+      const cats: { id: number; name: string }[] = catsRes.ok ? await catsRes.json() : []
+      const custom: { id: number; field_key: string; label: string; pattern: string; description: string }[] =
+        fieldsRes.ok ? await fieldsRes.json() : []
+      const rawRules: Record<string, string[]> = rulesRes.ok ? await rulesRes.json() : {}
+
+      setCategories(cats)
+      setCustomFields(custom)
+
+      const docTypesList = [
+        ...DEFAULT_DOC_TYPES,
+        ...cats.map(c => c.name).filter(name => !DEFAULT_DOC_TYPES.includes(name)),
+      ]
+      const allFieldKeys = [
+        ...DEFAULT_METADATA_FIELDS.map(f => f.key),
+        ...custom.map(f => f.field_key),
+      ]
+      const merged: Record<string, string[]> = { ...rawRules }
+      for (const dt of docTypesList) {
+        const cur = merged[dt]
+        if (!cur || cur.length === 0) {
+          merged[dt] = [...allFieldKeys]
+        }
+      }
+      setRules(merged)
     } catch (e) {
       console.error(e)
     } finally {
