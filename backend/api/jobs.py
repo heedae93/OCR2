@@ -1,7 +1,9 @@
 """
 Jobs API endpoints - Database-backed job management
 """
+import json
 import logging
+from pathlib import Path
 from typing import List, Optional
 from datetime import datetime, date, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Query
@@ -113,6 +115,69 @@ async def list_jobs(
     except Exception as e:
         logger.error(f"Failed to list jobs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── 마스킹 이력 API ─────────────────────────────────────────────────────────────
+
+@router.get("/jobs/masking-history")
+async def get_masking_history(
+    user_id: str = "default",
+    session_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    세션별 · 문서별 마스킹 처리 이력 반환.
+    PII JSON 파일에서 읽어 세션 정보와 결합한다.
+    """
+    from config import Config
+
+    query = db.query(Job).filter(Job.user_id == user_id, Job.status == "completed")
+    if session_id:
+        job_ids = [
+            r.job_id for r in
+            db.query(SessionDocument.job_id).filter(SessionDocument.session_id == session_id).all()
+        ]
+        query = query.filter(Job.job_id.in_(job_ids))
+
+    jobs = query.order_by(desc(Job.created_at)).limit(200).all()
+
+    results = []
+    for job in jobs:
+        pii_path = Path(Config.PROCESSED_DIR) / f"{job.job_id}_pii.json"
+        if not pii_path.exists():
+            continue
+        try:
+            pii_data = json.loads(pii_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        pii_items = pii_data.get("pii_items", [])
+        if not pii_items:
+            continue
+
+        sd = db.query(SessionDocument).filter(SessionDocument.job_id == job.job_id).first()
+        session_name = None
+        if sd:
+            sess = db.query(DBSession).filter(DBSession.session_id == sd.session_id).first()
+            session_name = sess.session_name if sess else None
+
+        type_counts: dict = {}
+        for item in pii_items:
+            t = item.get("type", "UNKNOWN")
+            type_counts[t] = type_counts.get(t, 0) + 1
+
+        results.append({
+            "job_id": job.job_id,
+            "filename": job.original_filename or job.job_id,
+            "session_id": sd.session_id if sd else None,
+            "session_name": session_name,
+            "processed_at": job.completed_at.isoformat() if job.completed_at else job.created_at.isoformat(),
+            "total_masked": len(pii_items),
+            "type_counts": type_counts,
+            "items": pii_items[:200],
+        })
+
+    return results
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)

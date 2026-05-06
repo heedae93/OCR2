@@ -119,6 +119,8 @@ export default function EditorPage() {
   const [pageHeight, setPageHeight] = useState(0);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const [showSmartTools, setShowSmartTools] = useState(false);
+  const [editorUser, setEditorUser] = useState<{ name: string; username: string } | null>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   // Auto-save state
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
@@ -154,6 +156,11 @@ export default function EditorPage() {
   }, [pendingEdits, ocrResults, jobId]);
 
   // Auto-save effect with debounce
+  useEffect(() => {
+    const stored = localStorage.getItem('user')
+    if (stored) setEditorUser(JSON.parse(stored))
+  }, [])
+
   useEffect(() => {
     if (pendingEdits.length === 0) return;
 
@@ -853,8 +860,6 @@ export default function EditorPage() {
               </button>
             </div> */}
             <div className="h-6 w-px bg-border-light dark:bg-border-dark"></div>
-            <ThemeToggle />
-            <div className="h-6 w-px bg-border-light dark:bg-border-dark"></div>
             <div className="flex items-center gap-1 sm:gap-2">
               <button
                 onClick={async () => {
@@ -902,8 +907,43 @@ export default function EditorPage() {
               </button>
             </div>
             <div className="h-6 w-px bg-border-light dark:bg-border-dark"></div>
-            <div className="bg-primary rounded-full size-9 flex items-center justify-center text-white font-semibold text-sm">
-              U
+            <ThemeToggle />
+            <div className="relative">
+              <button
+                onClick={() => setUserMenuOpen(v => !v)}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              >
+                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center text-white text-xs font-bold shadow-sm">
+                  {(editorUser?.name || editorUser?.username || 'U')[0].toUpperCase()}
+                </div>
+                <span className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark hidden sm:block">
+                  {editorUser?.name || editorUser?.username || '사용자'}
+                </span>
+                <span className={`material-symbols-outlined text-sm text-text-secondary-light dark:text-text-secondary-dark transition-transform duration-200 ${userMenuOpen ? 'rotate-180' : ''}`}>
+                  expand_more
+                </span>
+              </button>
+              {userMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setUserMenuOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1.5 w-40 z-20 rounded-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark shadow-lg overflow-hidden">
+                    <button
+                      onClick={() => { setUserMenuOpen(false); router.push('/mypage') }}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-text-primary-light dark:text-text-primary-dark hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-base">manage_accounts</span>
+                      마이페이지
+                    </button>
+                    <button
+                      onClick={() => router.push('/logout')}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-base">logout</span>
+                      로그아웃
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </header>
