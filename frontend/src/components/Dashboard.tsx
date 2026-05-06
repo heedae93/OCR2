@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import UploadQueueModal from './UploadQueueModal'
 
 interface DocumentItem {
@@ -42,6 +43,9 @@ interface Stats {
 }
 
 export default function Dashboard() {
+  const router = useRouter()
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [searchInput, setSearchInput] = useState('')
   const [sessions, setSessions] = useState<Session[]>([])
   const [stats, setStats] = useState<Stats>({
     total_sessions: 0,
@@ -64,6 +68,12 @@ export default function Dashboard() {
   const [bgStats, setBgStats] = useState<{ total: number; completed: number; failed: number; isRunning: boolean } | null>(null)
 
   const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/api`
+
+  const handleSearch = () => {
+    const q = searchInput.trim()
+    if (!q) return
+    router.push(`/jobs?q=${encodeURIComponent(q)}`)
+  }
 
   useEffect(() => {
     fetchData()
@@ -173,8 +183,18 @@ export default function Dashboard() {
           <h3 className="text-sm font-bold text-white">문서 및 메타데이터 통합 검색</h3>
         </div>
         <div className="relative">
-          <input className="h-12 w-full rounded-xl border border-cyan-400/40 bg-slate-800/80 px-4 pr-28 text-sm text-white shadow-[0_0_0_1px_rgba(34,211,238,0.1)] outline-none placeholder:text-slate-400 focus:border-cyan-400/80 focus:shadow-[0_0_12px_rgba(34,211,238,0.15)] transition-all" placeholder="문서명, 메타데이터 키워드로 검색..." />
-          <button className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary/90 transition-colors">
+          <input
+            ref={searchInputRef}
+            className="h-12 w-full rounded-xl border border-cyan-400/40 bg-slate-800/80 px-4 pr-28 text-sm text-white shadow-[0_0_0_1px_rgba(34,211,238,0.1)] outline-none placeholder:text-slate-400 focus:border-cyan-400/80 focus:shadow-[0_0_12px_rgba(34,211,238,0.15)] transition-all"
+            placeholder="문서명, 메타데이터 키워드로 검색..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSearch() }}
+          />
+          <button
+            onClick={handleSearch}
+            className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary/90 transition-colors"
+          >
             <span className="material-symbols-outlined text-sm">search</span>
             검색
           </button>

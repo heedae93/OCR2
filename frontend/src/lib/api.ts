@@ -230,6 +230,31 @@ export const updateSettings = async (settings: Partial<AppSettings>): Promise<{ 
   return response.data
 }
 
+// Search API
+export interface SearchResult {
+  job_id: string
+  session_id: string
+  filename: string
+  score: number
+  snippet: string
+  summary: string
+  keywords: string[]
+  created_at: string | null
+}
+
+export interface SearchResponse {
+  total: number
+  results: SearchResult[]
+  page: number
+  size: number
+  query: string
+}
+
+export const searchDocuments = async (q: string, page = 1, size = 20): Promise<SearchResponse> => {
+  const response = await api.get('/search', { params: { q, page, size } })
+  return response.data
+}
+
 // Auto-save OCR edits
 export interface SaveEditsPayload {
   edits: Array<{

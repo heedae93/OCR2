@@ -40,6 +40,8 @@ class SearchEngine:
                 "mappings": {
                     "properties": {
                         "job_id": {"type": "keyword"},
+                        "session_id": {"type": "keyword"},
+                        "filename": {"type": "text", "analyzer": "korean_analyzer", "fields": {"keyword": {"type": "keyword"}}},
                         "text": {"type": "text", "analyzer": "korean_analyzer"},
                         "summary": {"type": "text", "analyzer": "korean_analyzer"},
                         "keywords": {"type": "keyword"},
@@ -50,11 +52,13 @@ class SearchEngine:
             self.client.indices.create(index=self.index_name, body=settings)
             logger.info(f"인덱스 '{self.index_name}' 생성 완료 (한글 nori 분석기 적용)")
 
-    def add_document(self, job_id, text, summary, keywords):
+    def add_document(self, job_id, text, summary, keywords, session_id=None, filename=None):
         """OCR 및 EXAONE 결과를 저장"""
         from datetime import datetime
         body = {
             "job_id": job_id,
+            "session_id": session_id or "",
+            "filename": filename or "",
             "text": text,
             "summary": summary,
             "keywords": keywords,
@@ -120,8 +124,10 @@ class SearchEngine:
 
             results.append({
                 "job_id":     source.get("job_id"),
+                "session_id": source.get("session_id", ""),
+                "filename":   source.get("filename", ""),
                 "score":      round(hit.get("_score", 0), 3),
-                "snippet":    snippet,       # 검색어가 포함된 발췌문 (<mark> 태그 포함)
+                "snippet":    snippet,
                 "summary":    source.get("summary", ""),
                 "keywords":   source.get("keywords", []),
                 "created_at": source.get("created_at"),

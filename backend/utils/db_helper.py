@@ -259,6 +259,10 @@ def update_job_ocr_results(
         db.commit()
         logger.info(f"Updated OCR results for job {job_id}")
 
+        # OpenSearch 인덱싱용 데이터 (메타데이터 추출 실패 시에도 파일명은 인덱싱)
+        _os_text = ""
+        _os_keywords: list = []
+
         # 메타데이터 추출 및 저장
         try:
             from utils.metadata_extractor import extract_all_metadata
@@ -330,22 +334,22 @@ def update_job_ocr_results(
                 # 1. 문서 유형에 맞는 추출 규칙(ExtractionRule) 찾기
                 current_doc_type = job.doc_type or ""
                 rules = db.query(ExtractionRule).filter_by(user_id=job.user_id, doc_type=current_doc_type, is_active=True).all()
-                
+
                 if not rules:
                     logger.info(f"[{job_id}] No extraction rules found for user {job.user_id} and doc_type '{current_doc_type}'")
-                
+
                 if rules and getattr(Config, "LLM_ENABLED", False) and meta.get("full_text"):
                     fields_to_extract = {}
                     for rule in rules:
                         if rule.field:
                             fields_to_extract[rule.field.field_key] = rule.field.label
-                            
+
                     if fields_to_extract:
                         from utils.llm_client import process_metadata_with_llm
                         logger.info(f"[{job_id}] LLM 기반 동적 메타데이터 추출 시작 (항목: {list(fields_to_extract.values())})")
-                        
+
                         extracted_data = process_metadata_with_llm(meta["full_text"], fields_to_extract)
-                        
+
                         # JSON 형태를 그대로 호환되도록 job.extracted_fields 에도 저장
                         legacy_format = []
                         for k, v in extracted_data.items():
@@ -366,7 +370,7 @@ def update_job_ocr_results(
                                     confidence=1.0,
                                     page_number=1
                                 ))
-                        
+
                         job.extracted_fields = json.dumps(legacy_format, ensure_ascii=False)
                         logger.info(f"[{job_id}] LLM 동적 메타데이터 추출 성공: {len(legacy_format)} 항목 저장됨")
                 elif getattr(settings, "extract_ner", False):
@@ -397,21 +401,35 @@ def update_job_ocr_results(
                 f"keywords={len(meta['keywords'])}, chunks={len(meta['chunks'])}"
             )
 
-            # OpenSearch에 문서 저장
-            try:
-                from core.search_engine import search_engine
-                search_engine.add_document(
-                    doc_id=job_id,
-                    text=meta.get("full_text", ""),
-                    summary=job.summary or "",
-                    keywords=meta.get("keywords", []),
-                )
-                logger.info(f"[{job_id}] OpenSearch 문서 저장 완료")
-            except Exception as search_err:
-                logger.warning(f"[{job_id}] OpenSearch 저장 실패 (검색 기능에만 영향): {search_err}")
+            # 메타데이터 추출 성공 시 OCR 텍스트·키워드 수집
+            _os_text = meta.get("full_text", "")
+            _os_keywords = meta.get("keywords", [])
 
         except Exception as meta_err:
             logger.error(f"Metadata extraction failed for job {job_id}: {meta_err}")
+
+        # OpenSearch 인덱싱 — 메타데이터 추출 성공·실패 무관하게 항상 실행
+        try:
+            from core.search_engine import search_engine
+            from database import SessionDocument
+            session_docs = db.query(SessionDocument).filter_by(job_id=job_id).all()
+            os_session_id = ""
+            if session_docs:
+                # "default"가 아닌 실제 생성된 세션 ID를 우선적으로 선택
+                real_sessions = [doc.session_id for doc in session_docs if doc.session_id != "default"]
+                os_session_id = real_sessions[0] if real_sessions else session_docs[0].session_id
+                
+            search_engine.add_document(
+                job_id=job_id,
+                text=_os_text,
+                summary=job.summary or "",
+                keywords=_os_keywords,
+                session_id=os_session_id,
+                filename=job.original_filename or "",
+            )
+            logger.info(f"[{job_id}] OpenSearch 문서 저장 완료 (filename={job.original_filename})")
+        except Exception as search_err:
+            logger.warning(f"[{job_id}] OpenSearch 저장 실패 (검색 기능에만 영향): {search_err}")
 
         db.close()
         return True
