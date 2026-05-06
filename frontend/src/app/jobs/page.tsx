@@ -40,6 +40,7 @@ function JobsPageInner() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortBy, setSortBy] = useState<SortBy>("latest");
   const [pageSize, setPageSize] = useState(20);
@@ -94,6 +95,7 @@ function JobsPageInner() {
     const q = params.get("q");
     if (q) {
       setSearchQuery(q);
+      setSearchInput(q);
       runOpenSearch(q);
     }
   }, []);
@@ -118,6 +120,25 @@ function JobsPageInner() {
       setOsTotal(0);
     } finally {
       setOsSearching(false);
+    }
+  };
+
+  const handleSearch = () => {
+    const q = searchInput.trim();
+
+    if (q) {
+      router.push(`/jobs?q=${encodeURIComponent(q)}`);
+    } else {
+      router.push(`/jobs`);
+    }
+
+    setSearchQuery(q);
+    if (q) {
+      runOpenSearch(q);
+    } else {
+      setOsMatchedSessionIds(new Set());
+      setOsMatchedJobIds(new Set());
+      setOsTotal(0);
     }
   };
 
@@ -384,7 +405,7 @@ function JobsPageInner() {
         const bTime = getSessionTime(b);
         return sortBy === "oldest" ? aTime - bTime : bTime - aTime;
       });
-  }, [sessions, searchQuery, statusFilter, sortBy]);
+  }, [sessions, searchQuery, statusFilter, sortBy, osMatchedSessionIds]);
 
   useEffect(() => {
     setCurrentPage(0);
@@ -509,16 +530,25 @@ function JobsPageInner() {
           <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-4 mb-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
               <div className="relative flex-1">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary-light dark:text-text-secondary-dark text-lg">
-                  search
-                </span>
                 <input
                   type="text"
-                  placeholder="작업명 검색..."
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-sm text-text-primary-light dark:text-text-primary-dark outline-none focus:ring-2 focus:ring-primary/20"
+                  placeholder="문서명, 메타데이터 키워드로 검색..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSearch();
+                  }}
+                  className="h-12 w-full rounded-xl border border-border-light dark:border-cyan-400/40 bg-background-light dark:bg-slate-800/80 px-4 pr-28 text-sm text-text-primary-light dark:text-white shadow-sm dark:shadow-[0_0_0_1px_rgba(34,211,238,0.1)] outline-none placeholder:text-gray-400 dark:placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/20 dark:focus:ring-0 dark:focus:border-cyan-400/80 dark:focus:shadow-[0_0_12px_rgba(34,211,238,0.15)] transition-shadow"
                 />
+                <button
+                  onClick={handleSearch}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary/90 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-sm">
+                    search
+                  </span>
+                  검색
+                </button>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -527,7 +557,7 @@ function JobsPageInner() {
                   onChange={(event) =>
                     setStatusFilter(event.target.value as StatusFilter)
                   }
-                  className="px-3 py-2.5 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark outline-none"
+                  className="h-12 px-3 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-xl text-text-secondary-light dark:text-text-secondary-dark outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 >
                   <option value="all">모든 상태</option>
                   <option value="active">진행/대기</option>
@@ -539,7 +569,7 @@ function JobsPageInner() {
                 <select
                   value={sortBy}
                   onChange={(event) => setSortBy(event.target.value as SortBy)}
-                  className="px-3 py-2.5 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark outline-none"
+                  className="h-12 px-3 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-xl text-text-secondary-light dark:text-text-secondary-dark outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 >
                   <option value="latest">최근 작업순</option>
                   <option value="oldest">오래된순</option>
@@ -550,7 +580,7 @@ function JobsPageInner() {
                 <select
                   value={pageSize}
                   onChange={(event) => setPageSize(Number(event.target.value))}
-                  className="px-3 py-2.5 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark outline-none"
+                  className="h-12 px-3 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-xl text-text-secondary-light dark:text-text-secondary-dark outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 >
                   {PAGE_SIZE_OPTIONS.map((size) => (
                     <option key={size} value={size}>
@@ -587,10 +617,12 @@ function JobsPageInner() {
               )}
               <button
                 onClick={() => {
+                  setSearchInput("");
                   setSearchQuery("");
                   setOsMatchedSessionIds(new Set());
                   setOsMatchedJobIds(new Set());
                   setOsTotal(0);
+                  router.push("/jobs");
                 }}
                 className="ml-auto text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
                 title="검색 초기화"
