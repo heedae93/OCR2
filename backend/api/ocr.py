@@ -706,7 +706,6 @@ def process_job_task(job_id: str):
         job = job_manager.get_job(job_id)
         if not job:
             # Worker 프로세스 실행 시 메모리에 job이 없으므로 DB에서 복원
-            from database import SessionLocal, Job as DBJob
             db = SessionLocal()
             try:
                 db_job = db.query(DBJob).filter_by(job_id=job_id).first()
@@ -1157,32 +1156,27 @@ def process_job_task(job_id: str):
         # PII 추출 및 마스킹 PDF 생성 (OCR 완료 직후 자동 실행)
         try:
             from core.pii_extractor import extract_pii_from_pages, mask_value
-            from api.masking import _apply_masking
+            from api.masking import _apply_masking, _save_pii_record_to_db, _enrich_boxes_with_font_info
 
             ocr_pages = ocr_result.dict()["pages"]
             job_manager.update_job(job_id, message="개인정보 감지 중...")
 
             pii_boxes = extract_pii_from_pages(ocr_pages)
-            
-            # --- [추가된 부분] 추출된 데이터 상세 로그 확인 ---
-            logger.info(f"[{job_id}] ===== 개인정보 추출 결과 상세 =====")
-            for box in pii_boxes:
-                # pii_extractor에서 'source' 값을 넘겨준다고 가정
-                source = box.get("source", "unknown (정규식 또는 NER)").upper()
-                pii_type = box.get("type", "UNKNOWN")
-                val = box.get("value", "")
-                logger.info(f"  - [출처: {source}] 유형: {pii_type:10s} | 추출된 텍스트: '{val}'")
-            logger.info("==============================================")
-            
+
             for box in pii_boxes:
                 box["masked_value"] = mask_value(box["type"], box["value"])
 
+            # 실제로 마스킹이 필요한 항목만 필터링
+            pii_boxes_to_mask = [b for b in pii_boxes if b.get("masked_value") != b.get("value")]
+
             pii_items = [
-                {"type": b["type"], "value": b["value"], "masked_value": b["masked_value"]}
-                for b in pii_boxes
+                {"type": b["type"], "value": b["value"], "masked_value": b["masked_value"]} for b in pii_boxes_to_mask
             ]
 
-            pii_result = {"job_id": job_id, "pii_items": pii_items, "masked_boxes": pii_boxes}
+            # 마스킹된 PDF에 텍스트를 다시 쓸 때 필요한 폰트 정보 보강
+            _enrich_boxes_with_font_info(output_pdf, pii_boxes_to_mask, ocr_result.dict())
+
+            pii_result = {"job_id": job_id, "pii_items": pii_items, "masked_boxes": pii_boxes_to_mask}
             pii_json_path = Config.PROCESSED_DIR / f"{job_id}_pii.json"
             with open(pii_json_path, 'w', encoding='utf-8') as f:
                 json.dump(pii_result, f, ensure_ascii=False, indent=2)
@@ -1191,14 +1185,17 @@ def process_job_task(job_id: str):
 
             # 마스킹 PDF 생성 및 저장
             if output_pdf.exists():
-                boxes_with_bbox = [
-                    b for b in pii_boxes
-                    if b.get("bbox") and b.get("masked_value") != b.get("value")
-                ]
-                masked_pdf_bytes = _apply_masking(output_pdf, boxes_with_bbox, ocr_result.dict())
+                masked_pdf_bytes = _apply_masking(output_pdf, pii_boxes_to_mask, ocr_result.dict())
                 with open(Config.PROCESSED_DIR / f"{job_id}_masked.pdf", "wb") as f:
                     f.write(masked_pdf_bytes)
                 logger.info(f"[{job_id}] 마스킹 PDF 생성 완료")
+
+            # 마스킹 내역 DB 저장
+            db_session = SessionLocal()
+            try:
+                _save_pii_record_to_db(db_session, job_id, pii_result)
+            finally:
+                db_session.close()
 
         except Exception as pii_e:
             logger.error(f"[{job_id}] PII/마스킹 처리 실패: {pii_e}")
@@ -1560,6 +1557,22 @@ async def get_job_status(job_id: str):
                 filename = os.path.basename(db_job.pdf_file_path)
                 timestamp = int(time.time() * 1000)
                 pdf_url = f"/files/processed/{filename}?v={timestamp}"
+
+            # _pii.json은 있는데 DB 레코드가 없으면 저장 (워커 구버전 호환 fallback)
+            if db_job.status == "completed":
+                pii_path = Config.PROCESSED_DIR / f"{job_id}_pii.json"
+                if pii_path.exists():
+                    from database import PIIRecord
+                    if not db.query(PIIRecord).filter(PIIRecord.job_id == job_id).first():
+                        try:
+                            import json as _json
+                            from api.masking import _save_pii_record_to_db
+                            with open(pii_path, "r", encoding="utf-8") as _f:
+                                pii_data = _json.load(_f)
+                            _save_pii_record_to_db(db, job_id, pii_data)
+                            logger.info(f"[{job_id}] PII 마스킹 DB 저장 완료 (status 폴링 fallback)")
+                        except Exception as _e:
+                            logger.warning(f"[{job_id}] PII DB fallback 저장 실패: {_e}")
 
             return build_response(
                 job_id_value=db_job.job_id,

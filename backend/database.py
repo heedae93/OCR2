@@ -1,7 +1,7 @@
 """
 SQLite database setup and models using SQLAlchemy
 """
-from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, text, inspect
+from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, text, inspect, JSON, ARRAY
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -21,10 +21,11 @@ if DATABASE_URL.startswith("sqlite"):
     engine_args["connect_args"] = {"check_same_thread": False}
 else:
     # PostgreSQL: 커넥션 풀 제한 (too many clients 방지)
-    engine_args["pool_recycle"] = 1800   # 30분마다 커넥션 갱신
+    engine_args["pool_recycle"] = 300    # 5분마다 커넥션 갱신 (유휴 커넥션 강제 종료 방지)
     engine_args["pool_size"] = 20        # 최대 풀 크기
     engine_args["max_overflow"] = 20     # 초과 허용 커넥션 수
     engine_args["pool_timeout"] = 30     # 커넥션 대기 타임아웃(초)
+    engine_args["pool_use_lifo"] = True  # 가장 최근에 사용된 커넥션 우선 재사용 (방치 시간 최소화)
 
 engine = create_engine(DATABASE_URL, **engine_args)
 
@@ -324,6 +325,19 @@ class DocumentMetadataValue(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     job = relationship("Job")
+
+
+class PIIRecord(Base):
+    """마스킹 처리 내역 (PII) 저장 테이블"""
+    __tablename__ = "pii_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String(36), ForeignKey("jobs.job_id", ondelete="CASCADE"), nullable=False, index=True)
+    file_name = Column(String(255), nullable=True)
+    masked_boxes = Column(JSON, default=list)  # jsonb 타입 매핑
+    total_count = Column(Integer, default=0)
+    detected_types = Column(ARRAY(String), default=list)  # text[] 타입 매핑
+    created_at = Column(DateTime, default=datetime.now)
 
 
 def init_db():

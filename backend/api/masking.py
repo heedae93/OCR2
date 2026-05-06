@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import Optional, Dict
 
 import fitz 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session as DBSession
+from database import get_db
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -199,14 +201,47 @@ def _enrich_boxes_with_font_info(pdf_path: Path, boxes: list, ocr_data: dict) ->
         doc.close()
     except: pass
 
+def _save_pii_record_to_db(db: DBSession, job_id: str, pii_data: dict) -> None:
+    """PII 마스킹 결과를 DB에 저장하거나 업데이트합니다."""
+    try:
+        from database import Job, PIIRecord
+
+        job = db.query(Job).filter(Job.job_id == job_id).first()
+        if not job:
+            logger.warning(f"Job {job_id} not found. Cannot save PII record.")
+            return
+            
+        masked_boxes = pii_data.get("masked_boxes", [])
+        total_count = len(masked_boxes)
+        # 추출된 마스킹 항목들 중 중복을 제거하여 type값들의 배열 생성
+        detected_types = list(set(b.get("type") for b in masked_boxes if b.get("type")))
+        
+        record = db.query(PIIRecord).filter(PIIRecord.job_id == job_id).first()
+        if not record:
+            record = PIIRecord(job_id=job_id, file_name=job.original_filename)
+            db.add(record)
+            
+        record.masked_boxes = masked_boxes
+        record.total_count = total_count
+        record.detected_types = detected_types
+        
+        db.commit()
+    except Exception as e:
+        logger.error(f"Failed to save PII record to DB: {e}")
+        db.rollback()
+
 @router.get("/{job_id}/detect")
-async def detect_pii(job_id: str):
+async def detect_pii(job_id: str, db: DBSession = Depends(get_db)):
     pii_path = Config.PROCESSED_DIR / f"{job_id}_pii.json"
     if pii_path.exists():
         with open(pii_path, "r", encoding="utf-8") as f: cached = json.load(f)
         cached["masked_boxes"] = [b for b in cached.get("masked_boxes", []) if b.get("masked_value") != b.get("value")]
         cached["pii_items"] = [item for item in cached.get("pii_items", []) if item.get("masked_value") != item.get("value")]
         _ensure_masked_pdf(job_id, cached)
+        # OCR 워커가 이미 저장했을 경우 중복 저장 방지, 미저장 시 fallback
+        from database import PIIRecord
+        if not db.query(PIIRecord).filter(PIIRecord.job_id == job_id).first():
+            _save_pii_record_to_db(db, job_id, cached)
         return cached
 
     from core.pii_extractor import extract_pii_from_pages, mask_value
@@ -220,6 +255,7 @@ async def detect_pii(job_id: str):
     result = {"job_id": job_id, "pii_items": pii_items, "masked_boxes": pii_boxes}
     with open(pii_path, "w", encoding="utf-8") as f: json.dump(result, f, ensure_ascii=False, indent=2)
     _ensure_masked_pdf(job_id, result)
+    _save_pii_record_to_db(db, job_id, result)
     return result
 
 @router.get("/{job_id}/download")
