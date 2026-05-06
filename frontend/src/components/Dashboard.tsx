@@ -269,7 +269,7 @@ export default function Dashboard() {
         <div className="relative">
           <input
             ref={searchInputRef}
-            className="h-12 w-full rounded-xl border border-cyan-400/40 bg-slate-800/80 px-4 pr-28 text-sm text-white shadow-[0_0_0_1px_rgba(34,211,238,0.1)] outline-none placeholder:text-slate-400 focus:border-cyan-400/80 focus:shadow-[0_0_12px_rgba(34,211,238,0.15)] transition-all"
+            className="h-12 w-full rounded-xl border border-border-light dark:border-cyan-400/40 bg-background-light dark:bg-slate-800/80 px-4 pr-28 text-sm text-text-primary-light dark:text-white shadow-sm dark:shadow-[0_0_0_1px_rgba(34,211,238,0.1)] outline-none placeholder:text-gray-400 dark:placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/20 dark:focus:ring-0 dark:focus:border-cyan-400/80 dark:focus:shadow-[0_0_12px_rgba(34,211,238,0.15)] transition-shadow"
             placeholder="문서명, 메타데이터 키워드로 검색..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
