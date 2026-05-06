@@ -48,7 +48,7 @@ from core.ctc_patch import patch_ctc_decoder
 
 # PaddleOCR/paddlex 먼저 임포트 (paddlex 초기화 1회 수행)
 
-from api import ocr, storage, drive, jobs, sessions, settings, export, auth, users,masking
+from api import ocr, storage, drive, jobs, sessions, settings, export, auth, users, masking, search
 from api import metadata_settings
 from api import metadata_v2
 from api import metadata_v3
@@ -117,6 +117,7 @@ app.include_router(metadata_settings.router, prefix="/api", tags=["MetadataSetti
 app.include_router(metadata_v2.router, prefix="/api", tags=["MetadataV2"])
 app.include_router(metadata_v3.router, prefix="/api", tags=["MetadataV3"])
 app.include_router(history.router, prefix="/api", tags=["History"])
+app.include_router(search.router, tags=["Search"])
 
 # Mount static files
 try:
@@ -146,13 +147,13 @@ async def startup_event():
     logger.info("Data directories verified")
 
     # 2. OpenSearch 인덱스 초기화
-    # try:
-    #     from search_engine import search_engine
-    #     search_engine.create_index_if_not_exists()
-    #     logger.info(f"OpenSearch index '{Config.OS_INDEX_NAME}' verified/created")
-    # except Exception as e:
-    #     logger.error(f"Failed to initialize OpenSearch: {e}")
-    #     logger.warning("Search functionality might not work properly")
+    try:
+        from core.search_engine import search_engine
+        search_engine.create_index_if_not_exists()
+        logger.info(f"OpenSearch index '{Config.OS_INDEX_NAME}' verified/created")
+    except Exception as e:
+        logger.error(f"Failed to initialize OpenSearch: {e}")
+        logger.warning("Search functionality might not work properly")
 
     # Initialize database
     try:

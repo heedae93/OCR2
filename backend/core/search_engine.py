@@ -39,7 +39,7 @@ class SearchEngine:
                 },
                 "mappings": {
                     "properties": {
-                        "doc_id": {"type": "keyword"},
+                        "job_id": {"type": "keyword"},
                         "text": {"type": "text", "analyzer": "korean_analyzer"},
                         "summary": {"type": "text", "analyzer": "korean_analyzer"},
                         "keywords": {"type": "keyword"},
@@ -50,34 +50,98 @@ class SearchEngine:
             self.client.indices.create(index=self.index_name, body=settings)
             logger.info(f"인덱스 '{self.index_name}' 생성 완료 (한글 nori 분석기 적용)")
 
-    def add_document(self, doc_id, text, summary, keywords):
+    def add_document(self, job_id, text, summary, keywords):
         """OCR 및 EXAONE 결과를 저장"""
         from datetime import datetime
         body = {
-            "doc_id": doc_id,
+            "job_id": job_id,
             "text": text,
             "summary": summary,
             "keywords": keywords,
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%mm:%ss")
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
-        return self.client.index(
-            index=self.index_name,
-            body=body,
-            id=doc_id,
-            refresh=True
-        )
+        try:
+            return self.client.index(
+                index=self.index_name,
+                body=body,
+                id=job_id,
+                refresh=True
+            )
+        except Exception as e:
+            logger.error(f"OpenSearch add_document 실패 (job_id={job_id}): {e}")
+            return None
 
-    def search(self, query_text):
-        """키워드 검색"""
+    def search(self, query_text: str, size: int = 10, from_: int = 0) -> dict:
+        """키워드 검색 (페이지네이션 + 하이라이트 포함)"""
         query = {
+            "from": from_,
+            "size": size,
             "query": {
                 "multi_match": {
                     "query": query_text,
-                    "fields": ["text", "summary", "keywords"]
+                    "fields": ["text^1", "summary^2", "keywords^3"],  # keywords > summary > text 순으로 가중치
+                    "type": "best_fields"
                 }
+            },
+            "highlight": {
+                "fields": {
+                    "text":    {"fragment_size": 150, "number_of_fragments": 2},
+                    "summary": {"fragment_size": 150, "number_of_fragments": 1}
+                },
+                "pre_tags":  ["<mark>"],
+                "post_tags": ["</mark>"]
             }
         }
-        return self.client.search(index=self.index_name, body=query)
+        try:
+            return self.client.search(index=self.index_name, body=query)
+        except Exception as e:
+            logger.error(f"OpenSearch search 실패: {e}")
+            return {}
+
+    def format_results(self, raw_response: dict) -> dict:
+        """OpenSearch 원본 응답을 프론트엔드에서 쓰기 편한 형태로 가공"""
+        hits = raw_response.get("hits", {})
+        total = hits.get("total", {}).get("value", 0)
+        results = []
+
+        for hit in hits.get("hits", []):
+            source = hit.get("_source", {})
+            highlights = hit.get("highlight", {})
+
+            # 하이라이트된 발췌문 생성: text > summary 순으로 시도
+            if highlights.get("text"):
+                snippet = " ... ".join(highlights["text"])
+            elif highlights.get("summary"):
+                snippet = " ... ".join(highlights["summary"])
+            elif source.get("summary"):
+                snippet = source["summary"][:200]
+            else:
+                snippet = source.get("text", "")[:200]
+
+            results.append({
+                "job_id":     source.get("job_id"),
+                "score":      round(hit.get("_score", 0), 3),
+                "snippet":    snippet,       # 검색어가 포함된 발췌문 (<mark> 태그 포함)
+                "summary":    source.get("summary", ""),
+                "keywords":   source.get("keywords", []),
+                "created_at": source.get("created_at"),
+            })
+
+        return {
+            "total":   total,
+            "results": results,
+        }
+
+    def delete_document(self, job_id: str) -> bool:
+        """문서 삭제 (PDF 삭제 시 OpenSearch에서도 제거)"""
+        try:
+            self.client.delete(index=self.index_name, id=job_id, refresh=True)
+            logger.info(f"OpenSearch 문서 삭제 완료 (job_id={job_id})")
+            return True
+        except Exception as e:
+            logger.warning(f"OpenSearch 문서 삭제 실패 (job_id={job_id}): {e}")
+            return False
+
 
 # 전역 객체로 생성하여 어디서든 공유
 search_engine = SearchEngine()

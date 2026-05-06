@@ -396,6 +396,20 @@ def update_job_ocr_results(
                 f"lang={meta['detected_language']}, doc_type={meta['doc_type']}, "
                 f"keywords={len(meta['keywords'])}, chunks={len(meta['chunks'])}"
             )
+
+            # OpenSearch에 문서 저장
+            try:
+                from core.search_engine import search_engine
+                search_engine.add_document(
+                    doc_id=job_id,
+                    text=meta.get("full_text", ""),
+                    summary=job.summary or "",
+                    keywords=meta.get("keywords", []),
+                )
+                logger.info(f"[{job_id}] OpenSearch 문서 저장 완료")
+            except Exception as search_err:
+                logger.warning(f"[{job_id}] OpenSearch 저장 실패 (검색 기능에만 영향): {search_err}")
+
         except Exception as meta_err:
             logger.error(f"Metadata extraction failed for job {job_id}: {meta_err}")
 
