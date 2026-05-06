@@ -25,12 +25,55 @@ interface DownloadRecord {
   ip_address: string | null
 }
 
-type Tab = 'versions' | 'downloads'
+interface MaskingItem {
+  type: string
+  value: string
+  masked_value: string
+}
+
+interface MaskingRecord {
+  job_id: string
+  filename: string
+  session_id: string | null
+  session_name: string | null
+  processed_at: string
+  total_masked: number
+  type_counts: Record<string, number>
+  items: MaskingItem[]
+}
+
+type Tab = 'versions' | 'downloads' | 'masking'
+
+const PII_TYPE_LABELS: Record<string, { label: string; color: string }> = {
+  NAME:              { label: '이름',       color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' },
+  ENGLISH_NAME:      { label: '영문이름',   color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+  PHONE:             { label: '전화번호',   color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  EMAIL:             { label: '이메일',     color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' },
+  RRN:               { label: '주민번호',   color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+  FOREIGNER_REG_NO:  { label: '외국인번호', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
+  BUSINESS_REG_NO:   { label: '사업자번호', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  ACCOUNT_NO:        { label: '계좌번호',   color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  CREDIT_CARD:       { label: '신용카드',   color: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' },
+  ADDRESS:           { label: '주소',       color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400' },
+  ROAD_ADDRESS:      { label: '도로명주소', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400' },
+  HEALTH_INSURANCE_NO: { label: '건강보험번호', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' },
+  UNKNOWN:           { label: '기타',       color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' },
+}
+
+function piiChip(type: string, count?: number) {
+  const meta = PII_TYPE_LABELS[type] ?? PII_TYPE_LABELS['UNKNOWN']
+  return (
+    <span key={type} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${meta.color}`}>
+      {meta.label}{count !== undefined && <span className="font-bold">×{count}</span>}
+    </span>
+  )
+}
 
 export default function HistoryPage() {
   const [tab, setTab] = useState<Tab>('versions')
   const [versions, setVersions] = useState<Version[]>([])
   const [downloads, setDownloads] = useState<DownloadRecord[]>([])
+  const [masking, setMasking] = useState<MaskingRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -39,10 +82,19 @@ export default function HistoryPage() {
   const [formLabel, setFormLabel] = useState('')
   const [formNote, setFormNote] = useState('')
   const [jobs, setJobs] = useState<{job_id: string, filename: string}[]>([])
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   const getUserId = () => {
     try { return JSON.parse(localStorage.getItem('user') || '{}').user_id || '' } catch { return '' }
   }
+
+  useEffect(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('user') || '{}')
+      setIsAdmin(u.type === 'A')
+    } catch { /* ignore */ }
+  }, [])
 
   useEffect(() => { loadData() }, [tab])
 
@@ -53,9 +105,12 @@ export default function HistoryPage() {
       if (tab === 'versions') {
         const res = await fetch(`${API_BASE_URL}/api/history/versions?user_id=${userId}`)
         setVersions(res.ok ? await res.json() : [])
-      } else {
+      } else if (tab === 'downloads') {
         const res = await fetch(`${API_BASE_URL}/api/history/downloads?user_id=${userId}`)
         setDownloads(res.ok ? await res.json() : [])
+      } else {
+        const res = await fetch(`${API_BASE_URL}/api/jobs/masking-history?user_id=${userId}`)
+        setMasking(res.ok ? await res.json() : [])
       }
     } finally {
       setLoading(false)
@@ -132,6 +187,19 @@ export default function HistoryPage() {
   const filteredDownloads = downloads.filter(d =>
     !searchQuery || d.filename.toLowerCase().includes(searchQuery.toLowerCase())
   )
+  const filteredMasking = masking.filter(m =>
+    !searchQuery ||
+    m.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (m.session_name ?? '').toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
+  // 세션별 그룹핑
+  const maskingBySession: Record<string, MaskingRecord[]> = {}
+  for (const m of filteredMasking) {
+    const key = m.session_name ?? m.session_id ?? '세션 없음'
+    if (!maskingBySession[key]) maskingBySession[key] = []
+    maskingBySession[key].push(m)
+  }
 
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen">
@@ -150,7 +218,11 @@ export default function HistoryPage() {
 
           {/* 탭 */}
           <div className="flex gap-1 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl p-1 w-fit">
-            {([['versions', 'history', '파일 버전 관리'], ['downloads', 'download', '다운로드 이력']] as const).map(([id, icon, label]) => (
+            {([
+              ['versions', 'history', '파일 버전 관리'],
+              ['downloads', 'download', '다운로드 이력'],
+              ...(isAdmin ? [['masking', 'shield_lock', '마스킹 처리 이력']] : []),
+            ] as const).map(([id, icon, label]) => (
               <button key={id} onClick={() => setTab(id)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                   tab === id ? 'bg-primary text-white' : 'text-text-secondary-light dark:text-text-secondary-dark hover:text-text-primary-light dark:hover:text-text-primary-dark'
@@ -165,7 +237,7 @@ export default function HistoryPage() {
             onChange={e => setSearchQuery(e.target.value)}
             className="w-full px-4 py-2 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-lg text-sm text-text-primary-light dark:text-text-primary-dark" />
 
-          {/* 테이블 */}
+          {/* 콘텐츠 */}
           <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
             {loading ? (
               <div className="flex items-center justify-center p-16">
@@ -186,11 +258,8 @@ export default function HistoryPage() {
                       {filteredVersions.map(v => (
                         <tr key={v.version_id} className="hover:bg-background-light dark:hover:bg-background-dark transition-colors">
                           <td className="px-5 py-3 text-sm max-w-[200px]">
-                            <button
-                              onClick={() => window.open(`/editor/${v.job_id}`, '_blank')}
-                              className="text-primary hover:text-primary/80 hover:underline truncate block text-left w-full"
-                              title={v.filename}
-                            >
+                            <button onClick={() => window.open(`/editor/${v.job_id}`, '_blank')}
+                              className="text-primary hover:text-primary/80 hover:underline truncate block text-left w-full" title={v.filename}>
                               {v.filename}
                             </button>
                           </td>
@@ -209,7 +278,7 @@ export default function HistoryPage() {
                   </table>
                 </div>
               )
-            ) : (
+            ) : tab === 'downloads' ? (
               filteredDownloads.length === 0 ? (
                 <div className="p-16 text-center text-text-secondary-light dark:text-text-secondary-dark">다운로드 이력이 없습니다</div>
               ) : (
@@ -240,6 +309,93 @@ export default function HistoryPage() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )
+            ) : (
+              /* ── 마스킹 처리 이력 탭 ── */
+              filteredMasking.length === 0 ? (
+                <div className="p-16 text-center text-text-secondary-light dark:text-text-secondary-dark">마스킹 처리 이력이 없습니다</div>
+              ) : (
+                <div className="divide-y divide-border-light dark:divide-border-dark">
+                  {Object.entries(maskingBySession).map(([sessionName, records]) => {
+                    const totalMasked = records.reduce((s, r) => s + r.total_masked, 0)
+                    const allTypes: Record<string, number> = {}
+                    records.forEach(r => Object.entries(r.type_counts).forEach(([t, c]) => { allTypes[t] = (allTypes[t] ?? 0) + c }))
+
+                    return (
+                      <div key={sessionName}>
+                        {/* 세션 헤더 */}
+                        <div className="flex items-center gap-3 px-5 py-3 bg-background-light dark:bg-background-dark">
+                          <span className="material-symbols-outlined text-base text-text-secondary-light dark:text-text-secondary-dark">folder_open</span>
+                          <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">{sessionName}</span>
+                          <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{records.length}개 문서</span>
+                          <span className="ml-1 px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                            총 {totalMasked}건 마스킹
+                          </span>
+                          <div className="flex flex-wrap gap-1 ml-2">
+                            {Object.entries(allTypes).map(([t, c]) => piiChip(t, c))}
+                          </div>
+                        </div>
+
+                        {/* 문서 행 */}
+                        {records.map(record => (
+                          <div key={record.job_id}>
+                            <div
+                              className="flex items-center gap-3 px-8 py-3 hover:bg-background-light dark:hover:bg-background-dark cursor-pointer transition-colors"
+                              onClick={() => setExpandedJobId(expandedJobId === record.job_id ? null : record.job_id)}
+                            >
+                              <span className={`material-symbols-outlined text-sm text-text-secondary-light dark:text-text-secondary-dark transition-transform ${expandedJobId === record.job_id ? 'rotate-90' : ''}`}>
+                                chevron_right
+                              </span>
+                              <span className="material-symbols-outlined text-base text-text-secondary-light dark:text-text-secondary-dark">description</span>
+                              <button
+                                onClick={e => { e.stopPropagation(); window.open(`/editor/${record.job_id}`, '_blank') }}
+                                className="text-sm text-primary hover:underline max-w-[220px] truncate text-left"
+                                title={record.filename}
+                              >
+                                {record.filename}
+                              </button>
+                              <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark whitespace-nowrap ml-1">
+                                {formatDate(record.processed_at)}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 whitespace-nowrap">
+                                {record.total_masked}건
+                              </span>
+                              <div className="flex flex-wrap gap-1">
+                                {Object.entries(record.type_counts).map(([t, c]) => piiChip(t, c))}
+                              </div>
+                            </div>
+
+                            {/* 상세 펼치기 */}
+                            {expandedJobId === record.job_id && (
+                              <div className="px-14 pb-4">
+                                <div className="rounded-lg border border-border-light dark:border-border-dark overflow-hidden">
+                                  <table className="w-full text-xs">
+                                    <thead className="bg-background-light dark:bg-background-dark">
+                                      <tr>
+                                        {['유형', '원본값', '마스킹값'].map(h => (
+                                          <th key={h} className="px-4 py-2 text-left font-semibold text-text-secondary-light dark:text-text-secondary-dark">{h}</th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border-light dark:divide-border-dark">
+                                      {record.items.map((item, i) => (
+                                        <tr key={i} className="hover:bg-background-light dark:hover:bg-background-dark">
+                                          <td className="px-4 py-2">{piiChip(item.type)}</td>
+                                          <td className="px-4 py-2 font-mono text-text-primary-light dark:text-text-primary-dark">{item.value}</td>
+                                          <td className="px-4 py-2 font-mono text-rose-600 dark:text-rose-400">{item.masked_value}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
                 </div>
               )
             )}
