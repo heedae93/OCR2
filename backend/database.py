@@ -159,6 +159,71 @@ class OCRPage(Base):
     job = relationship("Job", back_populates="pages")
 
 
+class TikaPageText(Base):
+    """
+    Tika 전용 페이지 텍스트 결과.
+
+    - OCR(좌표/마스킹용)과 별개의 트랙으로 저장한다.
+    - 페이지별 텍스트 레이어 존재 여부와 Tika 추출 텍스트를 저장한다.
+    """
+
+    __tablename__ = "tika_page_texts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String(36), ForeignKey("jobs.job_id", ondelete="CASCADE"), index=True, nullable=False)
+    page_number = Column(Integer, nullable=False)
+
+    has_text_layer = Column(Boolean, default=False)
+    tika_text = Column(Text, nullable=True)
+    skipped_reason = Column(String(100), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.now)
+
+    job = relationship("Job")
+
+class TikaRun(Base):
+    """
+    Tika 트랙 실행(run) 단위 메타데이터.
+    - 한 job에 대해 여러 번 실행될 수 있으므로(run_id로 구분)
+    - 페이지별 결과는 tika_run_pages로 연결
+    """
+
+    __tablename__ = "tika_runs"
+
+    run_id = Column(String(36), primary_key=True)
+    job_id = Column(String(36), ForeignKey("jobs.job_id", ondelete="CASCADE"), index=True, nullable=False)
+    source_pdf_path = Column(String(500), nullable=True)
+    tika_server_url = Column(String(255), nullable=True)
+    page_count = Column(Integer, default=0)
+    combined_text = Column(Text, nullable=True)
+    status = Column(String(20), default="completed")  # completed / skipped / failed
+    skip_reason = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    job = relationship("Job")
+    pages = relationship("TikaRunPage", back_populates="run", cascade="all, delete-orphan")
+
+
+class TikaRunPage(Base):
+    """
+    Tika 트랙 페이지별 상세 결과 (페이지당 1행).
+    """
+
+    __tablename__ = "tika_run_pages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(String(36), ForeignKey("tika_runs.run_id", ondelete="CASCADE"), index=True, nullable=False)
+    job_id = Column(String(36), index=True, nullable=False)
+    page_number = Column(Integer, nullable=False)
+
+    has_text_layer = Column(Boolean, default=False)
+    tika_text = Column(Text, nullable=True)
+    skipped_reason = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    run = relationship("TikaRun", back_populates="pages")
+
+
 class Session(Base):
     """Session model for grouping multiple documents"""
     __tablename__ = "sessions"

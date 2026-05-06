@@ -13,6 +13,7 @@ import json
 import asyncio
 import shutil
 import time
+from datetime import datetime
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -333,10 +334,12 @@ def upload_file(
             raise HTTPException(status_code=400, detail="No filename provided")
 
         file_ext = Path(file.filename).suffix.lower()
-        if file_ext not in ['.pdf', '.png', '.jpg', '.jpeg', '.hwp', '.hwpx']:
+        from utils.document_extract import ALLOWED_UPLOAD_EXTENSIONS, OFFICE_EXTENSIONS
+
+        if file_ext not in ALLOWED_UPLOAD_EXTENSIONS:
             raise HTTPException(
                 status_code=400,
-                detail="Unsupported file type. Only PDF, PNG, JPG, HWP, and HWPX are supported."
+                detail="Unsupported file type. See server ALLOWED_UPLOAD_EXTENSIONS (PDF, 이미지, TXT, HWP, Office 등).",
             )
 
         # Generate job ID
@@ -407,9 +410,32 @@ def upload_file(
         elif file_ext in (".hwp", ".hwpx"):
             try:
                 shutil.copy2(job_dir / "ocr_input.pdf", output_pdf)
-                logger.info(f"Created preview PDF from HWP conversion: {output_pdf}")
+                logger.info(f"Created preview PDF from conversion: {output_pdf}")
             except Exception as e:
-                logger.error(f"Failed to copy preview PDF from HWP: {e}")
+                logger.error(f"Failed to copy preview PDF from conversion: {e}")
+                raise
+        elif file_ext == ".txt":
+            from utils.text_to_pdf import convert_plain_text_to_pdf, TextToPdfError
+
+            try:
+                convert_plain_text_to_pdf(file_path, output_pdf)
+                logger.info(f"Created preview PDF from raw text file: {output_pdf}")
+            except TextToPdfError as e:
+                logger.error(f"Failed to create preview PDF from text: {e}")
+                raise
+        elif file_ext in OFFICE_EXTENSIONS:
+            hint_path = job_dir / "_office_preview_hint.txt"
+            hint_path.write_text(
+                "Office 문서입니다. 작업을 시작하면 Tika 서버에서 본문 텍스트를 추출합니다.",
+                encoding="utf-8",
+            )
+            try:
+                from utils.text_to_pdf import convert_plain_text_to_pdf
+
+                convert_plain_text_to_pdf(hint_path, output_pdf)
+                logger.info(f"Created placeholder preview PDF for Office: {output_pdf}")
+            except Exception as e:
+                logger.error(f"Failed preview PDF for Office: {e}")
                 raise
         else:
             # For image files, create a simple PDF for preview with EXIF handling
@@ -477,6 +503,111 @@ def _resolve_job_ocr_input(job_dir: Path) -> Path:
     return files[0]
 
 
+def _complete_job_from_extracted_pages(
+    job_id: str,
+    page_texts: List[str],
+    temp_files: List[str],
+    extraction_method: str,
+) -> None:
+    """Tika / PyMuPDF / 텍스트 파일 등으로 추출된 본문만으로 작업을 완료한다 (OCR 미사용)."""
+    job_manager.update_job(
+        job_id,
+        sub_stage=f"텍스트 추출 완료 ({extraction_method}), 결과 PDF 생성 중",
+        progress_percent=88.0,
+    )
+    output_pdf = Config.PROCESSED_DIR / f"{job_id}.pdf"
+    from utils.text_to_pdf import convert_plain_page_texts_to_pdf, TextToPdfError
+
+    try:
+        convert_plain_page_texts_to_pdf(page_texts, output_pdf)
+    except TextToPdfError as e:
+        raise RuntimeError(str(e)) from e
+
+    ocr_pages: List[OCRPage] = []
+    for i, t in enumerate(page_texts):
+        lines: List[OCRLine] = []
+        for line in (t or "").split("\n"):
+            s = line.strip()
+            if s:
+                lines.append(OCRLine(text=s, bbox=None, confidence=1.0))
+        if not lines and (t or "").strip():
+            lines.append(OCRLine(text=(t or "").strip(), bbox=None, confidence=1.0))
+        ocr_pages.append(
+            OCRPage(
+                page_number=i + 1,
+                width=595,
+                height=842,
+                lines=lines,
+                is_multi_column=False,
+                column_boundary=None,
+            )
+        )
+
+    ocr_result = OCRResult(
+        job_id=job_id,
+        has_bbox=False,
+        page_count=len(ocr_pages),
+        total_bboxes=sum(len(p.lines) for p in ocr_pages),
+        pages=ocr_pages,
+        layout_summary=None,
+    )
+    ocr_json_path = Config.PROCESSED_DIR / f"{job_id}_ocr.json"
+    with open(ocr_json_path, "w", encoding="utf-8") as f:
+        json.dump(ocr_result.dict(), f, ensure_ascii=False, indent=2)
+
+    try:
+        from core.pii_extractor import extract_pii_from_pages, mask_value
+        from api.masking import _apply_masking
+
+        ocr_pages_dict = ocr_result.dict()["pages"]
+        job_manager.update_job(job_id, message="개인정보 감지 중...")
+        pii_boxes = extract_pii_from_pages(ocr_pages_dict)
+        for box in pii_boxes:
+            box["masked_value"] = mask_value(box["type"], box["value"])
+
+        pii_items = [
+            {"type": b["type"], "value": b["value"], "masked_value": b["masked_value"]}
+            for b in pii_boxes
+        ]
+        pii_result = {"job_id": job_id, "pii_items": pii_items, "masked_boxes": pii_boxes}
+        pii_json_path = Config.PROCESSED_DIR / f"{job_id}_pii.json"
+        with open(pii_json_path, "w", encoding="utf-8") as f:
+            json.dump(pii_result, f, ensure_ascii=False, indent=2)
+
+        if output_pdf.exists():
+            boxes_with_bbox = [
+                b for b in pii_boxes
+                if b.get("bbox") and b.get("masked_value") != b.get("value")
+            ]
+            if boxes_with_bbox:
+                masked_pdf_bytes = _apply_masking(output_pdf, boxes_with_bbox, ocr_result.dict())
+                with open(Config.PROCESSED_DIR / f"{job_id}_masked.pdf", "wb") as f:
+                    f.write(masked_pdf_bytes)
+                logger.info(f"[{job_id}] 마스킹 PDF 생성 완료 (텍스트 추출 경로)")
+    except Exception as pii_e:
+        logger.error(f"[{job_id}] PII/마스킹 처리 실패: {pii_e}")
+
+    timestamp = int(time.time() * 1000)
+    pdf_url = f"/files/processed/{job_id}.pdf?v={timestamp}"
+    job_manager.update_job(
+        job_id,
+        status=JobStatus.COMPLETED,
+        progress_percent=100.0,
+        message="텍스트 추출 처리 완료",
+        pdf_url=pdf_url,
+    )
+    from utils.db_helper import update_job_status, update_job_ocr_results
+
+    update_job_status(job_id, "completed", progress=100.0)
+    update_job_ocr_results(
+        job_id,
+        ocr_data=ocr_result.dict(),
+        pdf_path=str(output_pdf),
+        ocr_json_path=str(ocr_json_path),
+    )
+    logger.info(f"Job {job_id} completed via text extraction ({extraction_method})")
+
+
 @router.get("/page-image/{job_id}/{page_number}")
 def get_page_image(job_id: str, page_number: int):
     """Get a specific page image for rendering"""
@@ -509,7 +640,6 @@ def process_job(job_id: str):
 
         # If job not in memory, try to restore from database
         if not job:
-            from database import SessionLocal, Job as DBJob
             db = SessionLocal()
             try:
                 db_job = db.query(DBJob).filter_by(job_id=job_id).first()
@@ -565,6 +695,14 @@ def process_job(job_id: str):
             from tasks.celery_app import celery_app as _celery
             _celery.send_task('ocr.process', args=[job_id], queue='ocr')
             logger.info(f"Dispatched job {job_id} to Celery OCR queue")
+
+            # Tika 트랙은 OCR과 독립적으로 병렬 실행 (결과는 DB tika_page_texts에 저장)
+            try:
+                _celery.send_task('tika.process', args=[job_id], queue='tika')
+                logger.info(f"Dispatched job {job_id} to Celery Tika queue")
+            except Exception as tika_err:
+                # Tika 트랙은 비필수: 디스패치 실패해도 OCR은 계속 진행
+                logger.warning(f"Failed to dispatch job {job_id} to Tika queue: {tika_err}")
             
             # 작업이 성공적으로 전달된 경우에만 상태를 QUEUED로 전환
             # 세션/목록 화면은 DB 상태를 기준으로 읽기 때문에 DB도 즉시 갱신해야
@@ -773,6 +911,38 @@ def process_job_task(job_id: str):
 
         input_file = _resolve_job_ocr_input(job_dir)
         logger.info(f"Processing file: {input_file}")
+
+        db_sess = SessionLocal()
+        db_job_row = db_sess.query(DBJob).filter_by(job_id=job_id).first()
+        db_sess.close()
+        orig_ext = ""
+        if db_job_row:
+            orig_ext = Path(db_job_row.original_filename or "").suffix.lower()
+        # NOTE: OCR 파이프라인은 그대로 유지한다.
+        # Tika 텍스트 추출은 별도 트랙(utils/tika_track.py)에서 수행되며
+        # 여기서는 OCR을 절대 스킵(조기 완료)하지 않는다.
+
+        # Frontend surfaces this via `sub_stage` in the progress list.
+        try:
+            ext_for_stage = (orig_ext or input_file.suffix.lower() or "").lower()
+            if ext_for_stage in {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".hwp", ".hwpx"}:
+                job_manager.update_job(job_id, sub_stage="문서 처리 준비 중…", progress_percent=2.0)
+            elif ext_for_stage == ".pdf":
+                job_manager.update_job(job_id, sub_stage="텍스트 레이어 확인 중…", progress_percent=1.5)
+        except Exception:
+            # non-critical UI hint
+            pass
+
+        # Office 문서(.doc 등)는 현재 파이프라인에서 "원본 → 페이지 이미지" 변환이 필요하다.
+        # (Tika 트랙은 별도이며, 여기서 OCR을 스킵/대체하지 않는다.)
+        #
+        # 로컬 개발 환경마다 LibreOffice/Word/변환기가 달라 오류 메시지가 복잡해지는 것을 방지하기 위해
+        # 여기서는 변환 구현/의존성을 강제하지 않고, 사용자가 PDF로 변환해 업로드하도록 안내한다.
+        if orig_ext in {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"}:
+            raise RuntimeError(
+                "Office 문서는 PDF로 변환한 뒤 업로드해 주세요. "
+                "(현재 환경에서는 Office 원본을 바로 OCR 처리할 수 없습니다.)"
+            )
 
         # Check file type
         pdf_processor = PDFProcessor()
@@ -1518,7 +1688,6 @@ async def export_with_smart_tools(job_id: str, payload: PDFExportRequest, user_i
 @router.get("/status/{job_id}", response_model=JobResponse)
 async def get_job_status(job_id: str):
     """Get job status from file or database (non-blocking)"""
-    from database import SessionLocal, Job as DBJob
     from utils.job_manager import JobManager
     import time
 
@@ -1777,8 +1946,6 @@ async def save_ocr_edits(job_id: str, payload: dict):
     Save user's OCR text edits for model fine-tuning.
     Logs edits separately and updates the main OCR JSON.
     """
-    from datetime import datetime
-
     try:
         # Validate job exists
         job = job_manager.get_job(job_id)

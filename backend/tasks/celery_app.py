@@ -28,5 +28,6 @@ celery_app.conf.update(
     broker_connection_timeout=1, 
     task_routes={
         'ocr.process': {'queue': 'ocr'},
+        'tika.process': {'queue': 'tika'},
     },
 )

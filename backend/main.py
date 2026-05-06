@@ -48,7 +48,7 @@ from core.ctc_patch import patch_ctc_decoder
 
 # PaddleOCR/paddlex 먼저 임포트 (paddlex 초기화 1회 수행)
 
-from api import ocr, storage, drive, jobs, sessions, settings, export, auth, users, masking, search
+from api import ocr, storage, drive, jobs, sessions, settings, export, auth, users, masking, search, tika
 from api import metadata_settings
 from api import metadata_v2
 from api import metadata_v3
@@ -118,6 +118,7 @@ app.include_router(metadata_v2.router, prefix="/api", tags=["MetadataV2"])
 app.include_router(metadata_v3.router, prefix="/api", tags=["MetadataV3"])
 app.include_router(history.router, prefix="/api", tags=["History"])
 app.include_router(search.router, tags=["Search"])
+app.include_router(tika.router, prefix="/api", tags=["Tika"])
 
 # Mount static files
 try:

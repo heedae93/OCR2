@@ -3,7 +3,7 @@ Celery Worker for BBOCR OCR processing
 
 실행 방법:
   cd backend
-  celery -A ocr_worker worker -Q ocr --loglevel=info --pool=solo
+  celery -A tasks.celery_app worker -Q ocr --loglevel=info --pool=solo
 
 Windows에서는 반드시 --pool=solo 옵션 필요 (fork 미지원)
 """
@@ -138,3 +138,53 @@ def process_ocr_task(self, job_id: str):
             # raise self.retry(exc=exc)
     finally:
         executor.shutdown(wait=False)
+
+
+@celery_app.task(
+    bind=True,
+    name="tika.process",
+    max_retries=0,
+    acks_late=True,
+)
+def process_tika_task(self, job_id: str):
+    """
+    Tika 트랙 Celery Task (OCR과 병렬).
+    - OCR을 대체/스킵하지 않으며, 결과는 DB(tika_page_texts)에만 저장한다.
+    - PDF 텍스트 레이어가 있는 페이지만 Tika 서버로 추출한다.
+    """
+    logger.info(f"[Worker] Tika task received: job_id={job_id}")
+
+    try:
+        from database import SessionLocal, Job as DBJob
+        from pathlib import Path
+        from utils.tika_track import run_tika_track_for_pdf, save_tika_track_result, persist_tika_track_to_db
+
+        db = SessionLocal()
+        try:
+            db_job = db.query(DBJob).filter_by(job_id=job_id).first()
+            if not db_job:
+                logger.warning("[Worker] TikaTrack skipped (job not found): %s", job_id)
+                return
+
+            pdf_path: Path | None = None
+            if db_job.pdf_file_path:
+                p = Path(db_job.pdf_file_path)
+                if p.is_file() and p.suffix.lower() == ".pdf":
+                    pdf_path = p
+            if pdf_path is None and db_job.raw_file_path:
+                p = Path(db_job.raw_file_path)
+                if p.is_file() and p.suffix.lower() == ".pdf":
+                    pdf_path = p
+        finally:
+            db.close()
+
+        if not pdf_path:
+            logger.info("[Worker] TikaTrack skipped (no pdf source): %s", job_id)
+            return
+
+        tika_result = run_tika_track_for_pdf(job_id, pdf_path)
+        out = save_tika_track_result(job_id, tika_result)
+        cnt = persist_tika_track_to_db(job_id, tika_result)
+        logger.info("[Worker] TikaTrack saved: %s (db rows=%s)", out, cnt)
+    except Exception as exc:
+        logger.warning("[Worker] TikaTrack failed (non-fatal): %s", exc, exc_info=True)
