@@ -791,9 +791,6 @@ export default function OcrWorkPage() {
               <h1 className="text-text-primary-light dark:text-text-primary-dark text-3xl font-bold leading-tight tracking-tight">
                 문서 작업하기
               </h1>
-              <p className="text-text-secondary-light dark:text-text-secondary-dark text-base mt-1 truncate">
-                파일 또는 폴더를 선택하고 문서 작업을 Redis 큐에 등록합니다.
-              </p>
             </div>
             
             <div className="flex items-center gap-3">
