@@ -5,7 +5,6 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from '
 import { useDropzone } from 'react-dropzone'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
-import ThemeToggle from '@/components/ThemeToggle'
 import { useOcrActivity } from '@/contexts/OcrActivityContext'
 import {
   AlertCircle,
@@ -808,7 +807,6 @@ export default function OcrWorkPage() {
                   <span className="material-symbols-outlined !text-xs group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
                 </Link>
               )}
-              <ThemeToggle />
             </div>
           </div>
 
