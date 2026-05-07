@@ -53,6 +53,7 @@ export default function PipelineProgress({ status, progress, subStage, failedSta
   const iconPx = compact ? 11 : 13
   const labelCls = compact ? 'text-[9px]' : 'text-[10.5px]'
   const lineMb = compact ? 'mb-[11px]' : 'mb-[14px]'
+  const labelBox = compact ? '' : 'w-[72px] text-center min-h-[24px]'
 
   return (
     <div className={`flex flex-col ${compact ? 'gap-1 mt-1' : 'gap-2 mt-1.5'}`}>
@@ -60,6 +61,7 @@ export default function PipelineProgress({ status, progress, subStage, failedSta
         {PIPELINE_STAGES.map((stage, idx) => {
           const isDone = activeStage >= 0 && idx < activeStage
           const isActive = idx === activeStage
+          const isLongLabel = false
           return (
             <div key={stage.key} className="flex items-center" style={{ flex: idx < PIPELINE_STAGES.length - 1 ? '1 1 0' : '0 0 auto' }}>
               <div className="flex shrink-0 flex-col items-center gap-0.5">
@@ -76,7 +78,7 @@ export default function PipelineProgress({ status, progress, subStage, failedSta
                     {isDone ? 'check' : (isFailed && isActive) ? 'error' : stage.icon}
                   </span>
                 </div>
-                <span className={`${labelCls} mt-0.5 whitespace-nowrap leading-none ${
+                <span className={`${labelCls} mt-0.5 ${labelBox} whitespace-nowrap leading-none ${
                   isFailed && isActive
                     ? 'text-red-500 font-semibold'
                     : isDone || isActive ? 'text-primary font-semibold' : 'text-gray-400 dark:text-gray-500'

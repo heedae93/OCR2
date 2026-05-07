@@ -234,7 +234,7 @@ export default function SessionDetailPage() {
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen text-text-primary-light dark:text-text-primary-dark">
       <Sidebar />
-      <main className="ml-64 p-8 lg:p-12 transition-all duration-300">
+      <main className="ml-64 mt-14 p-8 lg:p-12 transition-all duration-300">
         <div className="max-w-6xl mx-auto">
           {/* Breadcrumbs */}
           <nav className="flex items-center gap-2 text-sm font-bold text-text-secondary-light mb-8">
@@ -359,10 +359,10 @@ export default function SessionDetailPage() {
                   <th className="px-6 py-4 text-xs font-bold text-text-secondary-light uppercase tracking-wider text-center">
                     상태
                   </th>
-                  <th className="px-6 py-4 text-xs font-bold text-text-secondary-light uppercase tracking-wider text-center">
+                  <th className="px-6 py-4 text-xs font-bold text-text-secondary-light uppercase tracking-wider text-center whitespace-nowrap">
                     페이지
                   </th>
-                  <th className="px-6 py-4 text-xs font-bold text-text-secondary-light uppercase tracking-wider text-right">
+                  <th className="px-6 py-4 text-xs font-bold text-text-secondary-light uppercase tracking-wider text-right whitespace-nowrap">
                     관리
                   </th>
                 </tr>
@@ -461,15 +461,15 @@ export default function SessionDetailPage() {
                             })()}
                           </div>
                         </td>
-                        <td className="px-6 py-5 text-center font-bold text-sm">
+                        <td className="px-6 py-5 text-center font-bold text-sm whitespace-nowrap">
                           {job.total_pages > 0 ? `${job.total_pages}p` : "-"}
                         </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center justify-end gap-2">
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
                             {job.status === "uploaded" ? (
                               <button
                                 onClick={() => handleStartOCR(job.job_id)}
-                                className="rounded-lg bg-green-500/10 px-3 py-1.5 text-xs font-black text-green-600 transition-all hover:bg-green-500 hover:text-white"
+                                className="inline-flex shrink-0 items-center rounded-lg bg-green-500/10 px-3 py-1.5 text-xs font-black text-green-600 transition-all hover:bg-green-500 hover:text-white whitespace-nowrap"
                               >
                                 OCR 시작
                               </button>
@@ -479,7 +479,7 @@ export default function SessionDetailPage() {
                                   <a
                                     href={`${API_BASE_URL}${job.pdf_url}`}
                                     download
-                                    className="inline-flex items-center gap-1 rounded-lg bg-blue-500/10 px-2.5 py-1.5 text-xs font-bold text-blue-600 transition-all hover:bg-blue-500 hover:text-white"
+                                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-500/10 px-2.5 py-1.5 text-xs font-bold text-blue-600 transition-all hover:bg-blue-500 hover:text-white whitespace-nowrap"
                                   >
                                     <span className="material-symbols-outlined text-lg">
                                       download
@@ -492,7 +492,7 @@ export default function SessionDetailPage() {
                                   <button
                                     onClick={() => requestReprocess(job)}
                                     disabled={reprocessingJobs.has(job.job_id)}
-                                    className="inline-flex items-center gap-1 rounded-lg bg-orange-500/10 px-2.5 py-1.5 text-xs font-bold text-orange-600 transition-all hover:bg-orange-500 hover:text-white disabled:opacity-50"
+                                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-orange-500/10 px-2.5 py-1.5 text-xs font-bold text-orange-600 transition-all hover:bg-orange-500 hover:text-white disabled:opacity-50 whitespace-nowrap"
                                   >
                                     <span className="material-symbols-outlined text-lg">
                                       refresh
@@ -504,7 +504,7 @@ export default function SessionDetailPage() {
                             )}
                             <button
                               onClick={() => handleDeleteJob(job.job_id)}
-                              className="inline-flex items-center gap-1 rounded-lg bg-red-500/10 px-2.5 py-1.5 text-xs font-bold text-red-600 transition-all hover:bg-red-500 hover:text-white"
+                              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-red-500/10 px-2.5 py-1.5 text-xs font-bold text-red-600 transition-all hover:bg-red-500 hover:text-white whitespace-nowrap"
                             >
                               <span className="material-symbols-outlined text-lg">
                                 delete
