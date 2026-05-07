@@ -206,6 +206,41 @@ def try_extract_pages_skip_ocr(
     return None, "unknown_extension_ocr"
 
 
+def detect_pdf_type(raw_path: Path) -> dict:
+    """
+    PDF 페이지별 텍스트/스캔 여부를 감지한다.
+
+    Returns dict with keys:
+        total_pages, text_pages, scan_pages, text_ratio (0.0~1.0),
+        page_types (list of "text" | "scan")
+    """
+    try:
+        import fitz
+    except ImportError:
+        return {"total_pages": 0, "text_pages": 0, "scan_pages": 0,
+                "text_ratio": 0.0, "page_types": []}
+
+    min_chars = getattr(Config, "FITZ_TEXT_MIN_CHARS_PER_PAGE", 20)
+    doc = fitz.open(str(raw_path))
+    try:
+        total = len(doc)
+        page_types: List[str] = []
+        for i in range(total):
+            compact = "".join((doc[i].get_text("text") or "").split())
+            page_types.append("text" if len(compact) >= min_chars else "scan")
+    finally:
+        doc.close()
+
+    text_count = page_types.count("text")
+    return {
+        "total_pages": total,
+        "text_pages": text_count,
+        "scan_pages": total - text_count,
+        "text_ratio": text_count / total if total > 0 else 0.0,
+        "page_types": page_types,
+    }
+
+
 def describe_office_failure() -> str:
     return (
         "Office 문서는 Java Tika 서버가 필요합니다. "

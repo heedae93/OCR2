@@ -20,7 +20,7 @@ ocr:
   use_gpu: true
 
   # OCR 엔진 선택 (pp_structure: 레이아웃 분석 포함 / paddleocr: 텍스트 인식만, CPU에서 안정적)
-  engine: paddleocr
+  engine: pp_structure
 
   # 단일 GPU 모드에서 사용할 GPU 번호 (nvidia-smi 기준 index)
   gpu_id: 0
@@ -63,7 +63,7 @@ ocr:
   wireless_table_model_name: "SLANet"
 
   # ── Table Transformer (Microsoft DETR 기반) ──
-  table_recognition_backend: "slanet"
+  table_recognition_backend: "transformer"
   table_transformer:
     detection_model: "microsoft/table-transformer-detection"
     structure_model: "microsoft/table-transformer-structure-recognition-v1.1-all"

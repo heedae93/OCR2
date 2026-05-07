@@ -64,6 +64,8 @@ export default function StatisticsPage() {
   const [monthlyPages, setMonthlyPages] = useState<MonthlyPages | null>(null)
   const [sessions, setSessions] = useState<SessionStat[]>([])
   const [loading, setLoading] = useState(true)
+  const [sessionPage, setSessionPage] = useState(0)
+  const [sessionPageSize, setSessionPageSize] = useState(10)
 
   const getUserId = () => {
     try { return JSON.parse(localStorage.getItem('user') || '{}').user_id || '' } catch { return '' }
@@ -315,40 +317,88 @@ export default function StatisticsPage() {
 
               {/* 세션별 작업 현황 */}
               <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
-                <div className="px-6 py-4 border-b border-border-light dark:border-border-dark">
-                  <h2 className="text-lg font-semibold text-text-primary-light dark:text-text-primary-dark">세션별 작업 현황</h2>
+                <div className="px-6 py-4 border-b border-border-light dark:border-border-dark flex items-center justify-between gap-4">
+                  <h2 className="text-lg font-semibold text-text-primary-light dark:text-text-primary-dark">
+                    세션별 작업 현황
+                    <span className="ml-2 text-sm font-normal text-text-secondary-light dark:text-text-secondary-dark">
+                      ({sessions.length}개)
+                    </span>
+                  </h2>
+                  <select
+                    value={sessionPageSize}
+                    onChange={e => { setSessionPageSize(Number(e.target.value)); setSessionPage(0); }}
+                    className="h-8 px-2 text-xs bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark outline-none"
+                  >
+                    {[10, 20, 50].map(n => <option key={n} value={n}>{n}개씩</option>)}
+                  </select>
                 </div>
                 {sessions.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-background-light dark:bg-background-dark">
-                        <tr>
-                          {['세션명', '총 문서', '완료', '실패', '완료율', '마지막 작업'].map(h => (
-                            <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border-light dark:divide-border-dark">
-                        {sessions.map(s => (
-                          <tr key={s.session_id} className="hover:bg-background-light dark:hover:bg-background-dark transition-colors">
-                            <td className="px-5 py-3 text-sm font-medium text-text-primary-light dark:text-text-primary-dark">{s.session_name}</td>
-                            <td className="px-5 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">{s.total}</td>
-                            <td className="px-5 py-3 text-sm text-green-600 dark:text-green-400 font-medium">{s.completed}</td>
-                            <td className="px-5 py-3 text-sm text-red-500 dark:text-red-400 font-medium">{s.failed}</td>
-                            <td className="px-5 py-3">
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1 h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden min-w-[60px]">
-                                  <div className="h-full rounded-full bg-green-500 transition-all duration-500" style={{ width: `${s.completion_rate}%` }} />
-                                </div>
-                                <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark whitespace-nowrap">{s.completion_rate}%</span>
-                              </div>
-                            </td>
-                            <td className="px-5 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark whitespace-nowrap">{formatDate(s.last_activity)}</td>
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-background-light dark:bg-background-dark">
+                          <tr>
+                            {['세션명', '총 문서', '완료', '실패', '완료율', '마지막 작업'].map(h => (
+                              <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">{h}</th>
+                            ))}
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-border-light dark:divide-border-dark">
+                          {sessions.slice(sessionPage * sessionPageSize, (sessionPage + 1) * sessionPageSize).map(s => (
+                            <tr key={s.session_id} className="hover:bg-background-light dark:hover:bg-background-dark transition-colors">
+                              <td className="px-5 py-3 text-sm font-medium text-text-primary-light dark:text-text-primary-dark">{s.session_name}</td>
+                              <td className="px-5 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">{s.total}</td>
+                              <td className="px-5 py-3 text-sm text-green-600 dark:text-green-400 font-medium">{s.completed}</td>
+                              <td className="px-5 py-3 text-sm text-red-500 dark:text-red-400 font-medium">{s.failed}</td>
+                              <td className="px-5 py-3">
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden min-w-[60px]">
+                                    <div className="h-full rounded-full bg-green-500 transition-all duration-500" style={{ width: `${s.completion_rate}%` }} />
+                                  </div>
+                                  <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark whitespace-nowrap">{s.completion_rate}%</span>
+                                </div>
+                              </td>
+                              <td className="px-5 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark whitespace-nowrap">{formatDate(s.last_activity)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {Math.ceil(sessions.length / sessionPageSize) > 1 && (
+                      <div className="flex items-center justify-between px-5 py-3 border-t border-border-light dark:border-border-dark">
+                        <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                          {sessionPage * sessionPageSize + 1}–{Math.min((sessionPage + 1) * sessionPageSize, sessions.length)} / {sessions.length}개
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setSessionPage(p => Math.max(0, p - 1))}
+                            disabled={sessionPage === 0}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-light dark:border-border-dark text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-base leading-none">chevron_left</span>
+                          </button>
+                          {Array.from({ length: Math.ceil(sessions.length / sessionPageSize) }, (_, i) => i)
+                            .filter(i => Math.abs(i - sessionPage) <= 2)
+                            .map(i => (
+                              <button
+                                key={i}
+                                onClick={() => setSessionPage(i)}
+                                className={`h-8 min-w-8 rounded-lg px-2.5 text-xs font-medium transition-colors ${i === sessionPage ? 'bg-primary text-white' : 'border border-border-light dark:border-border-dark text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40'}`}
+                              >
+                                {i + 1}
+                              </button>
+                            ))}
+                          <button
+                            onClick={() => setSessionPage(p => Math.min(Math.ceil(sessions.length / sessionPageSize) - 1, p + 1))}
+                            disabled={sessionPage >= Math.ceil(sessions.length / sessionPageSize) - 1}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-light dark:border-border-dark text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-base leading-none">chevron_right</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="p-16 text-center text-text-secondary-light dark:text-text-secondary-dark">세션 데이터 없음</div>
                 )}
