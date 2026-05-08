@@ -408,6 +408,16 @@ def update_job_ocr_results(
         except Exception as meta_err:
             logger.error(f"Metadata extraction failed for job {job_id}: {meta_err}")
 
+        # 메타데이터 추출 실패 또는 full_text 미추출 시 OCR 페이지에서 직접 텍스트 추출
+        if not _os_text and ocr_data.get("pages"):
+            _raw_lines = []
+            for _pg in ocr_data["pages"]:
+                for _ln in _pg.get("lines", []):
+                    _t = _ln.get("text", "").strip()
+                    if _t:
+                        _raw_lines.append(_t)
+            _os_text = " ".join(_raw_lines)
+
         # OpenSearch 인덱싱 — 메타데이터 추출 성공·실패 무관하게 항상 실행
         try:
             from core.search_engine import search_engine
