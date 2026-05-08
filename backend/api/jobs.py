@@ -151,8 +151,11 @@ async def get_masking_history(
         except Exception:
             continue
 
+        masked_boxes = pii_data.get("masked_boxes", [])
         pii_items = pii_data.get("pii_items", [])
-        if not pii_items:
+        # masked_boxes 우선 사용 (페이지 정보 포함), 없으면 pii_items 폴백
+        source_items = masked_boxes if masked_boxes else pii_items
+        if not source_items:
             continue
 
         sd = db.query(SessionDocument).filter(SessionDocument.job_id == job.job_id).first()
@@ -162,9 +165,19 @@ async def get_masking_history(
             session_name = sess.session_name if sess else None
 
         type_counts: dict = {}
-        for item in pii_items:
+        for item in source_items:
             t = item.get("type", "UNKNOWN")
             type_counts[t] = type_counts.get(t, 0) + 1
+
+        items_out = [
+            {
+                "type": it.get("type", "UNKNOWN"),
+                "value": it.get("value", ""),
+                "masked_value": it.get("masked_value", ""),
+                **({"page": it["page"]} if "page" in it else {}),
+            }
+            for it in source_items[:200]
+        ]
 
         results.append({
             "job_id": job.job_id,
@@ -172,9 +185,9 @@ async def get_masking_history(
             "session_id": sd.session_id if sd else None,
             "session_name": session_name,
             "processed_at": job.completed_at.isoformat() if job.completed_at else job.created_at.isoformat(),
-            "total_masked": len(pii_items),
+            "total_masked": len(source_items),
             "type_counts": type_counts,
-            "items": pii_items[:200],
+            "items": items_out,
         })
 
     return results

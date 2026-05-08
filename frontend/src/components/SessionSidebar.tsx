@@ -206,6 +206,20 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId }: Sessi
     setNavigatingJobId(null)
   }, [currentJobId])
 
+  // currentJobId가 바뀌면 해당 세션을 자동으로 펼침
+  useEffect(() => {
+    if (!currentJobId || sessions.length === 0) return
+    const target = sessions.find(s => s.documents.some(d => d.job_id === currentJobId))
+    if (target) {
+      setExpandedSessions(prev => {
+        if (prev.has(target.session_id)) return prev
+        const next = new Set(prev)
+        next.add(target.session_id)
+        return next
+      })
+    }
+  }, [currentJobId, sessions])
+
   const fetchSessions = async (showRefreshAnimation = false) => {
     try {
       if (showRefreshAnimation) {
@@ -1318,10 +1332,15 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId }: Sessi
 
       {/* Sessions List */}
       <div className="flex-1 overflow-y-auto">
-        {sessions.map((session) => {
+        {[...sessions].sort((a, b) => {
+          const aActive = !!currentJobId && a.documents.some(d => d.job_id === currentJobId)
+          const bActive = !!currentJobId && b.documents.some(d => d.job_id === currentJobId)
+          return aActive === bActive ? 0 : aActive ? -1 : 1
+        }).map((session) => {
           const filteredDocs = getFilteredDocuments(session.documents)
           const allSelected = filteredDocs.length > 0 && filteredDocs.every(doc => selectedDocs.has(doc.job_id))
           const someSelected = filteredDocs.some(doc => selectedDocs.has(doc.job_id))
+          const isActiveSession = !!currentJobId && session.documents.some(d => d.job_id === currentJobId)
 
           return (
             <div key={session.session_id} className="border-b border-border-light dark:border-border-dark">
@@ -1352,7 +1371,9 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId }: Sessi
               )}
 
               {/* Session Header */}
-              <div className="flex items-center px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800">
+              <div className={`flex items-center px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${
+                isActiveSession ? 'bg-primary/5 dark:bg-primary/10 border-l-2 border-primary' : 'border-l-2 border-transparent'
+              }`}>
                 {/* Select All Checkbox */}
                 <button
                   onClick={() => selectAll(session.session_id)}
@@ -1376,14 +1397,19 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId }: Sessi
                   onClick={() => toggleSession(session.session_id)}
                 >
                   {expandedSessions.has(session.session_id) ? (
-                    <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
+                    <ChevronDown className={`w-3.5 h-3.5 ${isActiveSession ? 'text-primary' : 'text-gray-500'}`} />
                   ) : (
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+                    <ChevronRight className={`w-3.5 h-3.5 ${isActiveSession ? 'text-primary' : 'text-gray-500'}`} />
                   )}
-                  <FolderOpen className="w-3.5 h-3.5 text-primary" />
-                  <span className="text-xs font-medium text-gray-900 dark:text-white flex-1 truncate">
+                  <FolderOpen className={`w-3.5 h-3.5 ${isActiveSession ? 'text-primary' : 'text-primary'}`} />
+                  <span className={`text-xs font-medium flex-1 truncate ${
+                    isActiveSession ? 'text-primary dark:text-primary' : 'text-gray-900 dark:text-white'
+                  }`}>
                     {session.session_name}
                   </span>
+                  {isActiveSession && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0 mr-1" />
+                  )}
                   <span className="text-xs text-gray-400">
                     {session.completed_documents}/{session.total_documents}
                   </span>

@@ -668,12 +668,19 @@ def process_job(job_id: str):
             logger.info(f"Re-processing job {job_id} (previous status: {job.status})")
             # Clean up old processed files
             try:
-                old_pdf = Config.PROCESSED_DIR / f"{job_id}.pdf"
-                if old_pdf.exists():
-                    old_pdf.unlink()
-                old_json = Config.PROCESSED_DIR / f"{job_id}_ocr.json"
-                if old_json.exists():
-                    old_json.unlink()
+                for _fname in [
+                    f"{job_id}.pdf",
+                    f"{job_id}_masked.pdf",
+                    f"{job_id}_ocr.json",
+                    f"{job_id}_pii.json",
+                ]:
+                    _p = Config.PROCESSED_DIR / _fname
+                    if _p.exists():
+                        _p.unlink()
+                # 페이지 이미지 디렉토리 전체 삭제 (새 플로우에서 재생성됨)
+                _pages_dir = Config.PROCESSED_DIR / f"{job_id}_pages"
+                if _pages_dir.exists():
+                    shutil.rmtree(_pages_dir, ignore_errors=True)
             except Exception as e:
                 logger.warning(f"Failed to clean up old files for {job_id}: {e}")
         # Celery Worker에 작업 전달 전 Redis 상태 확인
@@ -918,63 +925,54 @@ def process_job_task(job_id: str):
         orig_ext = ""
         if db_job_row:
             orig_ext = Path(db_job_row.original_filename or "").suffix.lower()
-        # NOTE: OCR 파이프라인은 그대로 유지한다.
-        # Tika 텍스트 추출은 별도 트랙(utils/tika_track.py)에서 수행되며
-        # 여기서는 OCR을 절대 스킵(조기 완료)하지 않는다.
-
-        # Frontend surfaces this via `sub_stage` in the progress list.
-        try:
-            ext_for_stage = (orig_ext or input_file.suffix.lower() or "").lower()
-            if ext_for_stage in {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".hwp", ".hwpx"}:
-                job_manager.update_job(job_id, sub_stage="문서 처리 준비 중…", progress_percent=2.0)
-            elif ext_for_stage == ".pdf":
-                job_manager.update_job(job_id, sub_stage="텍스트 레이어 확인 중…", progress_percent=1.5)
-        except Exception:
-            # non-critical UI hint
-            pass
-
-        # Office 문서(.doc 등)는 현재 파이프라인에서 "원본 → 페이지 이미지" 변환이 필요하다.
-        # (Tika 트랙은 별도이며, 여기서 OCR을 스킵/대체하지 않는다.)
-        #
-        # 로컬 개발 환경마다 LibreOffice/Word/변환기가 달라 오류 메시지가 복잡해지는 것을 방지하기 위해
-        # 여기서는 변환 구현/의존성을 강제하지 않고, 사용자가 PDF로 변환해 업로드하도록 안내한다.
         if orig_ext in {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"}:
             raise RuntimeError(
                 "Office 문서는 PDF로 변환한 뒤 업로드해 주세요. "
                 "(현재 환경에서는 Office 원본을 바로 OCR 처리할 수 없습니다.)"
             )
 
-        # Check file type
+        # ── TXT 파일: 텍스트 직접 추출, OCR 스킵 ───────────────────────────
+        _actual_ext = input_file.suffix.lower()
+        if orig_ext == ".txt" or _actual_ext == ".txt":
+            from utils.document_extract import _read_plain_txt
+            t = _read_plain_txt(input_file).strip()
+            _complete_job_from_extracted_pages(job_id, [t if t else "(빈 텍스트 파일)"], temp_files, "plaintext")
+            return
+
+        # ── MIME/파일 유형 확인 ──────────────────────────────────────────────
         pdf_processor = PDFProcessor()
         is_pdf = pdf_processor.is_pdf(str(input_file))
 
-        # Convert to images
+        # PDF 페이지 유형 목록 ("text" | "scan") — process_single_page 클로저에서 참조
+        pdf_page_types: list = []
+        # 혼합/스캔 PDF 스트리밍 플래그 — 변환과 OCR을 페이지 단위로 중첩 실행
+        _pdf_streaming = False
+        _pdf_total_pages = 0
+        image_dir = None
+
+        # ── PDF 처리 ─────────────────────────────────────────────────────────
         if is_pdf:
-            job_manager.update_job(job_id, sub_stage="Converting PDF to images", progress_percent=1.0)
-            # Save images to processed directory for frontend access
+            # 1단계: 페이지별 텍스트/스캔 감지
+            from utils.document_extract import detect_pdf_type, _pdf_pages_text_pymupdf
+            job_manager.update_job(job_id, sub_stage="PDF 페이지 유형 분석 중…", progress_percent=1.5)
+            _pdf_type = detect_pdf_type(input_file)
+            _text_ratio = _pdf_type["text_ratio"]
+            pdf_page_types = _pdf_type["page_types"]
+            logger.info(
+                "PDF type: %d/%d 텍스트 페이지 (%.0f%%)",
+                _pdf_type["text_pages"], _pdf_type["total_pages"], _text_ratio * 100,
+            )
+
+            # 2단계: 모든 PDF → 스트리밍 파이프라인
+            # 100% 텍스트 PDF도 스트리밍으로 처리해야 원본 이미지 + bbox 가 보존됨.
+            # (단축 경로로 _complete_job_from_extracted_pages 를 쓰면 원본 PDF 외관이
+            #  사라지고 has_bbox=False 로 저장되어 에디터/OCR 비교/시각화 기능이 망가짐)
+            # (페이지 변환 완료 즉시 OCR/fitz 큐 투입 — executor 블록에서 수행)
             image_dir = Config.PROCESSED_DIR / f"{job_id}_pages"
             image_dir.mkdir(exist_ok=True)
-            pdf_convert_start = time.time()
-
-            # Progress callback for PDF conversion (1-10% of total progress)
-            def pdf_progress_callback(current_page: int, total_pages: int):
-                # PDF conversion represents 1-10% of total progress
-                progress = 1.0 + (current_page / total_pages) * 9.0
-                job_manager.update_job(
-                    job_id,
-                    sub_stage=f"Converting PDF page {current_page}/{total_pages}",
-                    progress_percent=progress
-                )
-
-            image_paths = pdf_processor.pdf_to_images(
-                str(input_file),
-                image_dir,
-                dpi=Config.PDF_DPI or 300,
-                progress_callback=pdf_progress_callback
-            )
-            pdf_convert_time = time.time() - pdf_convert_start
-            logger.info(f"[TIMING] PDF to images: {pdf_convert_time:.2f}s ({len(image_paths)} pages)")
-            # Don't add to temp_files - keep images for frontend
+            _pdf_streaming = True
+            _pdf_total_pages = _pdf_type["total_pages"]
+            image_paths = []  # 스트리밍에서는 executor 블록이 직접 채움
         else:
             # Single image - get dimensions
             from PIL import Image, ImageOps
@@ -986,7 +984,7 @@ def process_job_task(job_id: str):
                 width, height = img.size
             image_paths = [(str(input_file), width, height)]
 
-        total_pages = len(image_paths)
+        total_pages = _pdf_total_pages if _pdf_streaming else len(image_paths)
         job_manager.update_job(job_id, total_pages=total_pages)
 
         # Use global pre-loaded PDF generator (much faster than creating new instance)
@@ -994,16 +992,17 @@ def process_job_task(job_id: str):
         # Set job_id for debugging
         pdf_generator.current_job_id = job_id
 
-        logger.info(f"Starting OCR processing for {total_pages} pages (models pre-loaded: {models_preloaded})")
+        logger.info(f"Starting {'streaming ' if _pdf_streaming else ''}OCR processing for {total_pages} pages (models pre-loaded: {models_preloaded})")
 
-        # Prepare parallel page processing
+        # 스트리밍 PDF는 executor 블록에서 직접 변환+제출하므로 page_contexts 불필요
         page_contexts = []
-        for page_num, (image_path, width, height) in enumerate(image_paths, 1):
-            if width == 0 or height == 0:
-                from PIL import Image
-                with Image.open(image_path) as img:
-                    width, height = img.size
-            page_contexts.append((page_num, image_path, width, height))
+        if not _pdf_streaming:
+            for page_num, (image_path, width, height) in enumerate(image_paths, 1):
+                if width == 0 or height == 0:
+                    from PIL import Image
+                    with Image.open(image_path) as img:
+                        width, height = img.size
+                page_contexts.append((page_num, image_path, width, height))
 
         # Locks removed - each GPU has its own engine instance
         layout_image_cache: Dict[str, str] = {}
@@ -1054,18 +1053,89 @@ def process_job_task(job_id: str):
                     logger.info(f"[Page {page_num}] Cancelled before processing")
                     return {'page_number': page_num, 'cancelled': True}
 
-                # Assign GPU for this page (round-robin across GPUs 1, 2, 3)
-                gpu_id = AVAILABLE_GPUS[(page_num - 1) % len(AVAILABLE_GPUS)]
-                logger.info(f"[Page {page_num}/{total_pages}] Starting OCR on GPU {gpu_id}")
+                # 텍스트 페이지 → fitz 직접 추출 / 스캔 페이지 → OCR 엔진
+                _page_idx = page_num - 1
+                _use_fitz = (
+                    is_pdf
+                    and bool(pdf_page_types)
+                    and _page_idx < len(pdf_page_types)
+                    and pdf_page_types[_page_idx] == "text"
+                )
 
-                # Get GPU-specific OCR engine with per-GPU lock (PaddlePaddle is not thread-safe)
-                ocr_start = time.time()
-                page_ocr_model = get_ocr_engine_for_gpu(gpu_id)
-                # Use per-GPU lock to prevent concurrent access to the same model
-                with gpu_predict_locks[gpu_id]:
-                    ocr_results = page_ocr_model.predict(image_path)
-                structured_result = getattr(page_ocr_model, 'structured_result', None) or {}
-                ocr_elapsed = time.time() - ocr_start
+                if _use_fitz:
+                    import fitz as _fitz
+                    _fdoc = _fitz.open(str(input_file))
+                    try:
+                        _fp = _fdoc[_page_idx]
+                        _fw = _fp.rect.width or width
+                        _fh = _fp.rect.height or height
+                        _sx = (width / _fw) if _fw else 1.0
+                        _sy = (height / _fh) if _fh else 1.0
+                        ocr_results = []
+                        # dict 모드: block→line→span 계층으로 테이블 셀을 라인 단위로 분리
+                        # blocks 모드는 테이블 한 행 전체를 하나의 bbox로 묶어버려 셀 분리 불가
+                        _page_dict = _fp.get_text("dict", flags=_fitz.TEXT_PRESERVE_WHITESPACE)
+                        for _blk in _page_dict.get("blocks", []):
+                            if _blk.get("type") != 0:  # 0 = text
+                                continue
+                            for _line in _blk.get("lines", []):
+                                _spans = _line.get("spans", [])
+                                if not _spans:
+                                    continue
+                                # 같은 라인 안에서도 스팬 간 큰 수평 간격(>15px) → 별도 셀
+                                _parts: list = []
+                                _cur_spans: list = []
+                                _prev_x1 = None
+                                for _sp in _spans:
+                                    _spx0, _spy0, _spx1, _spy1 = _sp["bbox"]
+                                    _sp_txt = _sp.get("text", "")
+                                    if not _sp_txt.strip():
+                                        # 공백 스팬은 현재 파트에 붙이되 x1만 갱신
+                                        if _cur_spans:
+                                            _cur_spans.append(_sp)
+                                            _prev_x1 = _spx1
+                                        continue
+                                    if _prev_x1 is not None and (_spx0 - _prev_x1) > 15:
+                                        if _cur_spans:
+                                            _parts.append(_cur_spans)
+                                        _cur_spans = []
+                                    _cur_spans.append(_sp)
+                                    _prev_x1 = _spx1
+                                if _cur_spans:
+                                    _parts.append(_cur_spans)
+                                for _part in _parts:
+                                    _ptxt = "".join(s.get("text", "") for s in _part).strip()
+                                    if not _ptxt:
+                                        continue
+                                    _px0 = min(s["bbox"][0] for s in _part)
+                                    _py0 = min(s["bbox"][1] for s in _part)
+                                    _px1 = max(s["bbox"][2] for s in _part)
+                                    _py1 = max(s["bbox"][3] for s in _part)
+                                    ocr_results.append({
+                                        'text': _ptxt,
+                                        'bbox': (
+                                            _px0 * _sx, _py0 * _sy,
+                                            _px1 * _sx, _py1 * _sy,
+                                        ),
+                                        'score': 1.0,
+                                        'layout_type': 'text',
+                                        'reading_order': len(ocr_results),
+                                    })
+                    finally:
+                        _fdoc.close()
+                    logger.info(f"[Page {page_num}/{total_pages}] fitz 텍스트 추출: {len(ocr_results)}블록 (OCR 스킵)")
+                    structured_result = {}
+                    ocr_elapsed = 0.0
+                else:
+                    # 스캔 페이지 → GPU OCR 엔진
+                    gpu_id = AVAILABLE_GPUS[(page_num - 1) % len(AVAILABLE_GPUS)]
+                    logger.info(f"[Page {page_num}/{total_pages}] Starting OCR on GPU {gpu_id}")
+                    ocr_start = time.time()
+                    page_ocr_model = get_ocr_engine_for_gpu(gpu_id)
+                    with gpu_predict_locks[gpu_id]:
+                        ocr_results = page_ocr_model.predict(image_path)
+                    structured_result = getattr(page_ocr_model, 'structured_result', None) or {}
+                    ocr_elapsed = time.time() - ocr_start
 
                 if not ocr_results:
                     logger.warning(f"[Page {page_num}] No OCR results")
@@ -1212,9 +1282,45 @@ def process_job_task(job_id: str):
         logger.info(f"Starting parallel OCR with {max_workers} workers for {total_pages} pages")
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_map = {executor.submit(process_single_page, ctx): ctx[0] for ctx in page_contexts}
+            future_map: Dict[Any, int] = {}
             processed_pages = 0
             cancelled = False
+
+            if _pdf_streaming:
+                # ── 스트리밍: 페이지 변환 즉시 OCR/fitz 큐 투입 ──────────────
+                import fitz as _fitz_s
+                _sdoc = _fitz_s.open(str(input_file))
+                _dpi = Config.PDF_DPI or 300
+                try:
+                    for _pidx in range(total_pages):
+                        if _is_job_cancelled(job_id):
+                            cancelled = True
+                            break
+                        _pnum = _pidx + 1
+                        _sp = _sdoc[_pidx]
+                        _zoom = 1.0 if (_sp.rect.width > 1000 or _sp.rect.height > 1000) else _dpi / 72
+                        _pix = _sp.get_pixmap(matrix=_fitz_s.Matrix(_zoom, _zoom))
+                        _img = str(image_dir / f"page_{_pnum:04d}.png")
+                        _pix.save(_img)
+                        _sw, _sh = _pix.width, _pix.height
+
+                        ctx = (_pnum, _img, _sw, _sh)
+                        _ptype = pdf_page_types[_pidx] if _pidx < len(pdf_page_types) else "scan"
+                        future = executor.submit(process_single_page, ctx)
+                        future_map[future] = _pnum
+
+                        job_manager.update_job(
+                            job_id,
+                            sub_stage=f"변환 {_pnum}/{total_pages} → {'fitz' if _ptype == 'text' else 'OCR'} 큐 투입",
+                            progress_percent=1.0 + (_pnum / total_pages) * 9.0,
+                        )
+                        logger.info(f"[Stream] Page {_pnum}/{total_pages} ({_ptype}) 변환 완료 → 큐 투입")
+                finally:
+                    _sdoc.close()
+            else:
+                # ── 기존: 전체 컨텍스트 일괄 제출 ────────────────────────────
+                future_map = {executor.submit(process_single_page, ctx): ctx[0] for ctx in page_contexts}
+
             for future in as_completed(future_map):
                 # Check for cancellation
                 if _is_job_cancelled(job_id):

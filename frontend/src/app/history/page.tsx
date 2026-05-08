@@ -29,6 +29,7 @@ interface MaskingItem {
   type: string
   value: string
   masked_value: string
+  page?: number
 }
 
 interface MaskingRecord {
@@ -82,7 +83,7 @@ export default function HistoryPage() {
   const [formLabel, setFormLabel] = useState('')
   const [formNote, setFormNote] = useState('')
   const [jobs, setJobs] = useState<{job_id: string, filename: string}[]>([])
-  const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
+  const [selectedMaskingRecord, setSelectedMaskingRecord] = useState<MaskingRecord | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
 
   const getUserId = () => {
@@ -223,7 +224,7 @@ export default function HistoryPage() {
               ['downloads', 'download', '다운로드 이력'],
               ...(isAdmin ? [['masking', 'shield_lock', '마스킹 처리 이력']] : []),
             ] as const).map(([id, icon, label]) => (
-              <button key={id} onClick={() => setTab(id)}
+              <button key={id} onClick={() => setTab(id as Tab)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                   tab === id ? 'bg-primary text-white' : 'text-text-secondary-light dark:text-text-secondary-dark hover:text-text-primary-light dark:hover:text-text-primary-dark'
                 }`}>
@@ -319,8 +320,6 @@ export default function HistoryPage() {
                 <div className="divide-y divide-border-light dark:divide-border-dark">
                   {Object.entries(maskingBySession).map(([sessionName, records]) => {
                     const totalMasked = records.reduce((s, r) => s + r.total_masked, 0)
-                    const allTypes: Record<string, number> = {}
-                    records.forEach(r => Object.entries(r.type_counts).forEach(([t, c]) => { allTypes[t] = (allTypes[t] ?? 0) + c }))
 
                     return (
                       <div key={sessionName}>
@@ -332,65 +331,28 @@ export default function HistoryPage() {
                           <span className="ml-1 px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
                             총 {totalMasked}건 마스킹
                           </span>
-                          <div className="flex flex-wrap gap-1 ml-2">
-                            {Object.entries(allTypes).map(([t, c]) => piiChip(t, c))}
-                          </div>
                         </div>
 
                         {/* 문서 행 */}
                         {records.map(record => (
-                          <div key={record.job_id}>
-                            <div
-                              className="flex items-center gap-3 px-8 py-3 hover:bg-background-light dark:hover:bg-background-dark cursor-pointer transition-colors"
-                              onClick={() => setExpandedJobId(expandedJobId === record.job_id ? null : record.job_id)}
+                          <div
+                            key={record.job_id}
+                            className="flex items-center gap-3 px-8 py-3 hover:bg-background-light dark:hover:bg-background-dark cursor-pointer transition-colors"
+                            onClick={() => setSelectedMaskingRecord(record)}
+                          >
+                            <span className="material-symbols-outlined text-base text-text-secondary-light dark:text-text-secondary-dark">description</span>
+                            <span
+                              className="text-sm text-primary hover:underline max-w-[300px] truncate text-left"
+                              title={record.filename}
                             >
-                              <span className={`material-symbols-outlined text-sm text-text-secondary-light dark:text-text-secondary-dark transition-transform ${expandedJobId === record.job_id ? 'rotate-90' : ''}`}>
-                                chevron_right
-                              </span>
-                              <span className="material-symbols-outlined text-base text-text-secondary-light dark:text-text-secondary-dark">description</span>
-                              <button
-                                onClick={e => { e.stopPropagation(); window.open(`/editor/${record.job_id}`, '_blank') }}
-                                className="text-sm text-primary hover:underline max-w-[220px] truncate text-left"
-                                title={record.filename}
-                              >
-                                {record.filename}
-                              </button>
-                              <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark whitespace-nowrap ml-1">
-                                {formatDate(record.processed_at)}
-                              </span>
-                              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 whitespace-nowrap">
-                                {record.total_masked}건
-                              </span>
-                              <div className="flex flex-wrap gap-1">
-                                {Object.entries(record.type_counts).map(([t, c]) => piiChip(t, c))}
-                              </div>
-                            </div>
-
-                            {/* 상세 펼치기 */}
-                            {expandedJobId === record.job_id && (
-                              <div className="px-14 pb-4">
-                                <div className="rounded-lg border border-border-light dark:border-border-dark overflow-hidden">
-                                  <table className="w-full text-xs">
-                                    <thead className="bg-background-light dark:bg-background-dark">
-                                      <tr>
-                                        {['유형', '원본값', '마스킹값'].map(h => (
-                                          <th key={h} className="px-4 py-2 text-left font-semibold text-text-secondary-light dark:text-text-secondary-dark">{h}</th>
-                                        ))}
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border-light dark:divide-border-dark">
-                                      {record.items.map((item, i) => (
-                                        <tr key={i} className="hover:bg-background-light dark:hover:bg-background-dark">
-                                          <td className="px-4 py-2">{piiChip(item.type)}</td>
-                                          <td className="px-4 py-2 font-mono text-text-primary-light dark:text-text-primary-dark">{item.value}</td>
-                                          <td className="px-4 py-2 font-mono text-rose-600 dark:text-rose-400">{item.masked_value}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            )}
+                              {record.filename}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 whitespace-nowrap ml-auto">
+                              {record.total_masked}건
+                            </span>
+                            <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark whitespace-nowrap">
+                              {formatDate(record.processed_at)}
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -450,6 +412,77 @@ export default function HistoryPage() {
                 className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
                 저장
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 마스킹 상세 모달 */}
+      {selectedMaskingRecord && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedMaskingRecord(null)}>
+          <div className="bg-surface-light dark:bg-surface-dark rounded-2xl border border-border-light dark:border-border-dark p-6 w-full max-w-3xl max-h-[80vh] flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-2 min-w-0">
+                <h2 className="text-base font-semibold text-text-primary-light dark:text-text-primary-dark break-all leading-snug">
+                  {selectedMaskingRecord.filename}
+                </h2>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                    {formatDate(selectedMaskingRecord.processed_at)}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                    총 {selectedMaskingRecord.total_masked}건 마스킹
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {Object.entries(selectedMaskingRecord.type_counts).map(([t, c]) => piiChip(t, c))}
+                </div>
+              </div>
+              <button onClick={() => setSelectedMaskingRecord(null)} className="text-text-secondary-light dark:text-text-secondary-dark shrink-0 hover:text-text-primary-light dark:hover:text-text-primary-dark">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 rounded-lg border border-border-light dark:border-border-dark">
+              <table className="w-full text-xs">
+                <thead className="bg-background-light dark:bg-background-dark sticky top-0">
+                  <tr>
+                    {['유형', '원본값', '마스킹값'].map(h => (
+                      <th key={h} className="px-4 py-2 text-left font-semibold text-text-secondary-light dark:text-text-secondary-dark">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border-light dark:divide-border-dark">
+                  {(() => {
+                    const hasPages = selectedMaskingRecord.items.some(it => it.page !== undefined)
+                    const multiPage = hasPages && new Set(selectedMaskingRecord.items.map(it => it.page)).size > 1
+                    let lastPage: number | undefined = undefined
+                    return selectedMaskingRecord.items.flatMap((item, i) => {
+                      const rows = []
+                      if (multiPage && item.page !== undefined && item.page !== lastPage) {
+                        lastPage = item.page
+                        rows.push(
+                          <tr key={`page-${item.page}`} className="bg-primary/5 dark:bg-primary/10">
+                            <td colSpan={3} className="px-4 py-1.5">
+                              <span className="text-xs font-semibold text-primary flex items-center gap-1">
+                                <span className="material-symbols-outlined text-sm">description</span>
+                                {item.page}페이지
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      }
+                      rows.push(
+                        <tr key={i} className="hover:bg-background-light dark:hover:bg-background-dark">
+                          <td className="px-4 py-2 whitespace-nowrap">{piiChip(item.type)}</td>
+                          <td className="px-4 py-2 font-mono text-text-primary-light dark:text-text-primary-dark">{item.value}</td>
+                          <td className="px-4 py-2 font-mono text-rose-600 dark:text-rose-400">{item.masked_value}</td>
+                        </tr>
+                      )
+                      return rows
+                    })
+                  })()}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

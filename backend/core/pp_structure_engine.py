@@ -743,6 +743,9 @@ class PPStructureEngine:
                     if filtered_count > 0:
                         logger.info(f"Filtered {filtered_count}/{len(dt_polys)} low-confidence boxes (threshold=0.3)")
 
+            # 표 셀 단위 분리: 표 영역 내 OCR 블록을 셀 bbox 기준으로 교체
+            ocr_blocks = self._split_table_blocks(ocr_blocks, table_regions)
+
             # Sort blocks by reading order (top-to-bottom, left-to-right)
             ocr_blocks.sort(key=lambda b: (b['bbox'][1], b['bbox'][0]))
 
@@ -866,6 +869,125 @@ class PPStructureEngine:
                 }
             )
         return extracted
+
+    def _split_table_blocks(
+        self,
+        ocr_blocks: List[Dict],
+        table_regions: List[Dict],
+    ) -> List[Dict]:
+        """
+        표 영역 안에 있는 OCR 블록을 셀 단위로 쪼갠다.
+
+        우선순위:
+        1) SLANet/Transformer 셀에 text가 있으면 그 text를 그대로 사용
+        2) text가 없으면 각 셀 bbox에 겹치는 OCR 블록을 셀 bbox로 잘라 할당
+        """
+        if not table_regions:
+            return ocr_blocks
+
+        def _iou_x(b1, b2):
+            """두 bbox 의 x 축 겹침 비율 (작은 쪽 기준)."""
+            ox = max(0.0, min(b1[2], b2[2]) - max(b1[0], b2[0]))
+            w1 = max(1e-6, b1[2] - b1[0])
+            w2 = max(1e-6, b2[2] - b2[0])
+            return ox / min(w1, w2)
+
+        def _overlap_ratio(inner, outer):
+            """inner 가 outer 에 얼마나 포함되는지 (0~1)."""
+            ix = max(inner[0], outer[0]);  ax = min(inner[2], outer[2])
+            iy = max(inner[1], outer[1]);  ay = min(inner[3], outer[3])
+            if ax <= ix or ay <= iy:
+                return 0.0
+            inter = (ax - ix) * (ay - iy)
+            area  = max(1e-6, (inner[2]-inner[0]) * (inner[3]-inner[1]))
+            return inter / area
+
+        result_blocks = list(ocr_blocks)
+
+        for table in table_regions:
+            t_bbox = table.get("bbox")
+            cells  = table.get("cells") or []
+            if not t_bbox or not cells:
+                continue
+
+            # 셀 bbox 정규화
+            norm_cells = []
+            for c in cells:
+                cb = c.get("bbox") or c.get("box") or c.get("coordinate")
+                if cb is None:
+                    continue
+                cb = self._normalize_bbox(cb)
+                if cb == [0, 0, 0, 0]:
+                    continue
+                norm_cells.append({"bbox": cb, "text": (c.get("text") or "").strip()})
+
+            if not norm_cells:
+                continue
+
+            # 표 영역에 80% 이상 겹치는 OCR 블록 제거
+            keep, table_ocr = [], []
+            for blk in result_blocks:
+                if _overlap_ratio(blk["bbox"], t_bbox) >= 0.8:
+                    table_ocr.append(blk)
+                else:
+                    keep.append(blk)
+
+            new_cell_blocks = []
+
+            # ── Case 1: 셀에 text 있음 → SLANet/Transformer 결과 직접 사용 ──
+            cells_with_text = [c for c in norm_cells if c["text"]]
+            if cells_with_text:
+                for c in norm_cells:
+                    if not c["text"]:
+                        continue
+                    new_cell_blocks.append({
+                        "text":         c["text"],
+                        "bbox":         c["bbox"],
+                        "confidence":   1.0,
+                        "score":        1.0,
+                        "block_type":   "table_cell",
+                        "reading_order": 0,
+                    })
+                logger.info(
+                    "표 셀 분리 (SLANet text): %d블록 → %d셀",
+                    len(table_ocr), len(new_cell_blocks),
+                )
+
+            # ── Case 2: 셀 text 없음 → OCR 블록을 셀 bbox 로 할당 ──
+            else:
+                assigned: set = set()
+                for c in norm_cells:
+                    cb = c["bbox"]
+                    best_blk, best_score = None, 0.0
+                    for i, blk in enumerate(table_ocr):
+                        if i in assigned:
+                            continue
+                        score = _overlap_ratio(blk["bbox"], cb)
+                        if score > best_score:
+                            best_score, best_blk = score, i
+                    if best_blk is not None and best_score >= 0.3:
+                        assigned.add(best_blk)
+                        src = table_ocr[best_blk]
+                        new_cell_blocks.append({
+                            "text":         src["text"],
+                            "bbox":         cb,   # 셀 bbox 로 교체
+                            "confidence":   src.get("confidence", src.get("score", 1.0)),
+                            "score":        src.get("score", src.get("confidence", 1.0)),
+                            "block_type":   "table_cell",
+                            "reading_order": 0,
+                        })
+                # 매칭 안 된 OCR 블록은 그대로 복원
+                for i, blk in enumerate(table_ocr):
+                    if i not in assigned:
+                        keep.append(blk)
+                logger.info(
+                    "표 셀 분리 (bbox 매칭): %d블록 → %d셀",
+                    len(table_ocr), len(new_cell_blocks),
+                )
+
+            result_blocks = keep + new_cell_blocks
+
+        return result_blocks
 
     def _analyze_column_layout(self, layout_regions: List[Dict], page_width: float) -> Dict:
         """
