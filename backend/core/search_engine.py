@@ -81,10 +81,33 @@ class SearchEngine:
             "from": from_,
             "size": size,
             "query": {
-                "multi_match": {
-                    "query": query_text,
-                    "fields": ["text^1", "summary^2", "keywords^3"],  # keywords > summary > text 순으로 가중치
-                    "type": "best_fields"
+                "bool": {
+                    "should": [
+                        {
+                            "multi_match": {
+                                "query": query_text,
+                                "fields": ["text^1", "summary^2", "keywords^3", "filename^4"],
+                                "type": "best_fields"
+                            }
+                        },
+                        {
+                            "wildcard": {
+                                "filename": {
+                                    "value": f"*{query_text}*",
+                                    "boost": 4.0
+                                }
+                            }
+                        },
+                        {
+                            "wildcard": {
+                                "filename.keyword": {
+                                    "value": f"*{query_text}*",
+                                    "boost": 4.0
+                                }
+                            }
+                        }
+                    ],
+                    "minimum_should_match": 1
                 }
             },
             "highlight": {
