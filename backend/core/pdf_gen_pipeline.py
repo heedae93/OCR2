@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 한중일영 통합 OCR PDF 생성 파이프라인 (균형잡힌 텍스트 커버리지)
 """
@@ -2079,6 +2079,7 @@ class OCRPDFGenerator:
         excluded_blocks = 0
         
         low_confidence_threshold = CONFIG.get('TEXT_COVERAGE', {}).get('LOW_CONFIDENCE_THRESHOLD', 0.3)
+        
         
         for i, block in enumerate(text_blocks):
             try:

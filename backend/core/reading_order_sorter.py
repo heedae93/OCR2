@@ -439,3 +439,96 @@ class ReadingOrderSorter:
 
         rows = self._cluster_into_rows(blocks)
         return self._sort_single_column(rows)
+
+    @staticmethod
+    def _is_sentence_end(text: str) -> bool:
+        """Return True only when text clearly ends a sentence with a period."""
+        import re
+        if not text:
+            return True
+        t = text.strip()
+        if re.search(r'[.。!?！？]\s*$', t):
+            return True
+        # Korean OCR often reads '.' as ',' after sentence-final endings
+        if re.search(r'[다요죠][,，]\s*$', t):
+            return True
+        return False
+
+    def group_into_sentences(
+        self,
+        blocks: List[Dict],
+        wrap_gap_multiplier: float = 2.8,
+    ) -> List[Dict]:
+        """
+        줄바꿈된 같은 문장을 하나로 묶는다 (문단 병합 아님).
+
+        병합 조건 (모두 충족해야):
+        1. 같은 column
+        2. layout_type 이 "title" 아님
+        3. 수직 gap ≤ wrap_gap_multiplier × 이전 라인 높이 (매우 촘촘 = 줄바꿈 연속)
+        4. 이전 라인이 문장 종료 부호로 끝나지 않음
+        """
+        if not blocks:
+            return blocks
+
+        def _finalize(group: List[Dict]) -> Dict:
+            if len(group) == 1:
+                blk = dict(group[0])
+                blk.setdefault('words', [{
+                    'text': blk['text'],
+                    'bbox': list(blk['bbox']),
+                    'confidence': blk.get('score', blk.get('confidence')),
+                }])
+                return blk
+            merged_text = ' '.join(b['text'] for b in group)
+            merged_bbox = [
+                min(b['bbox'][0] for b in group),
+                min(b['bbox'][1] for b in group),
+                max(b['bbox'][2] for b in group),
+                max(b['bbox'][3] for b in group),
+            ]
+            words = [
+                {
+                    'text': b['text'],
+                    'bbox': list(b['bbox']),
+                    'confidence': b.get('score', b.get('confidence')),
+                }
+                for b in group
+            ]
+            anchor = group[0]
+            return {
+                'text': merged_text,
+                'bbox': merged_bbox,
+                'score': max(b.get('score', 0.0) for b in group),
+                'confidence': max(b.get('score', b.get('confidence', 0.0)) for b in group),
+                'layout_type': anchor.get('layout_type', 'text'),
+                'reading_order': anchor.get('reading_order', 0),
+                'column': anchor.get('column'),
+                'char_confidences': None,
+                'words': words,
+            }
+
+        result: List[Dict] = []
+        group: List[Dict] = [blocks[0]]
+
+        for blk in blocks[1:]:
+            prev = group[-1]
+            prev_h = max(prev['bbox'][3] - prev['bbox'][1], 4.0)
+            gap = blk['bbox'][1] - prev['bbox'][3]
+            threshold = wrap_gap_multiplier * prev_h
+
+            same_col = blk.get('column') == prev.get('column')
+            is_title = blk.get('layout_type') == 'title' or prev.get('layout_type') == 'title'
+            # Sentence text can wrap to the next visual line with a normal line gap.
+            # Use the period as the hard boundary instead of requiring a very tight bbox gap.
+            tight_wrap = -prev_h * 0.35 <= gap <= max(threshold, 24.0)
+            prev_ended = self._is_sentence_end(prev.get('text', ''))
+
+            if same_col and not is_title and tight_wrap and not prev_ended:
+                group.append(blk)
+            else:
+                result.append(_finalize(group))
+                group = [blk]
+
+        result.append(_finalize(group))
+        return result

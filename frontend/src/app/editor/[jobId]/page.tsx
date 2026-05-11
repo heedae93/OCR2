@@ -96,6 +96,7 @@ export default function EditorPage() {
   const maskingFail = maskingData.filter(
     (b) => !b.bbox || !b.masked_value || b.masked_value === b.value,
   );
+  const [isReprocessingPage, setIsReprocessingPage] = useState(false);
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrCurrentPage, setOcrCurrentPage] = useState(0);
@@ -129,10 +130,10 @@ export default function EditorPage() {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // 항상 원본 PDF를 표시 — 마스킹은 프론트엔드 오버레이로 처리
-  const timestamp = useMemo(() => Date.now(), [jobId]);
+  const [pdfVersion, setPdfVersion] = useState(() => Date.now());
   const pdfUrl = useMemo(
-    () => `${getProcessedFileUrl(jobId)}?v=${timestamp}`,
-    [jobId, timestamp],
+    () => `${getProcessedFileUrl(jobId)}?v=${pdfVersion}`,
+    [jobId, pdfVersion],
   );
 
   // Debounced auto-save function
@@ -299,6 +300,38 @@ export default function EditorPage() {
   const handleCloseProgressOverlay = () => {
     // Allow users to continue working in background
     setShowProgressOverlay(false);
+  };
+
+  const reprocessCurrentPage = async () => {
+    if (!ocrResults || isReprocessingPage) return;
+    setIsReprocessingPage(true);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/reprocess-page/${jobId}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ page_number: currentPage }),
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      const updatedPage = await res.json();
+      setOcrResults((prev) => {
+        if (!prev) return prev;
+        const pages = prev.pages.map((p) =>
+          p.page_number === currentPage ? updatedPage : p
+        );
+        return { ...prev, pages };
+      });
+      setPdfVersion(Date.now());
+    } catch (e: any) {
+      alert(`페이지 재처리 실패: ${e.message}`);
+    } finally {
+      setIsReprocessingPage(false);
+    }
   };
 
   const triggerDownload = (relativePath: string, filename?: string) => {
@@ -1204,6 +1237,23 @@ export default function EditorPage() {
                       텍스트 레이어
                     </span>
                   </button>
+                  {hasOCRResults && (
+                    <button
+                      onClick={reprocessCurrentPage}
+                      disabled={isReprocessingPage}
+                      className="flex items-center gap-2 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 whitespace-nowrap text-text-secondary-light dark:text-text-secondary-dark disabled:opacity-50"
+                      title={`현재 페이지(${currentPage}) OCR 재처리`}
+                    >
+                      {isReprocessingPage ? (
+                        <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <span className="material-symbols-outlined">refresh</span>
+                      )}
+                      <span className="text-sm hidden lg:inline">
+                        {isReprocessingPage ? "재처리 중..." : "페이지 재처리"}
+                      </span>
+                    </button>
+                  )}
                   <button
                     onClick={() => setShowMasking(!showMasking)}
                     className={`flex items-center gap-2 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 whitespace-nowrap ${

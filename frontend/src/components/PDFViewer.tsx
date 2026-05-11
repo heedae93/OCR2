@@ -1,7 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { OCRResult } from "@/types";
+
+interface SentenceGroup {
+  text: string;
+  bbox: number[];
+  confidence: number;
+  column: string | null | undefined;
+  layout_type: string | null | undefined;
+  originalIndices: number[];
+}
+
 
 interface MaskedBox {
   type: string;
@@ -422,6 +432,22 @@ export default function PDFViewer({
     (p) => p.page_number === currentPage,
   );
 
+  // 각 OCR 라인을 그대로 개별 그룹으로 변환
+  const sentenceGroups = useMemo(
+    () =>
+      (currentPageOCR?.lines ?? [])
+        .map((line, idx) => ({
+          text: line.text,
+          bbox: line.bbox ?? [0, 0, 0, 0],
+          confidence: line.confidence ?? 0.9,
+          column: line.column,
+          layout_type: line.layout_type,
+          originalIndices: [idx],
+        }))
+        .filter((g) => g.bbox.length === 4),
+    [currentPageOCR],
+  );
+
   // Debug: log page matching
   useEffect(() => {
     if (ocrResults) {
@@ -575,116 +601,63 @@ export default function PDFViewer({
                 height: `${pageHeight}px`,
               }}
             >
-              {(() => {
-                const totalLines = currentPageOCR.lines?.length || 0;
-                const validLines =
-                  currentPageOCR.lines?.filter(
-                    (l) => l.bbox && l.bbox.length === 4,
-                  ).length || 0;
-                console.log(
-                  `[PDFViewer] Rendering ${validLines}/${totalLines} OCR boxes (page ${currentPage})`,
-                );
-                return null;
-              })()}
-              {currentPageOCR.lines?.map((line, idx) => {
-                if (!line.bbox || line.bbox.length !== 4) {
-                  console.warn(
-                    `[PDFViewer] Skipping line ${idx}: invalid bbox`,
-                    line,
-                  );
-                  return null;
-                }
-                const [x1, y1, x2, y2] = line.bbox;
+              {sentenceGroups.map((group, idx) => {
+                const [x1, y1, x2, y2] = group.bbox;
                 const x = x1 * scaleX;
                 const y = y1 * scaleY;
                 const width = (x2 - x1) * scaleX;
                 const height = (y2 - y1) * scaleY;
 
-                // Debug: log first 3 and last 3 boxes
-                const totalLines = currentPageOCR.lines?.length || 0;
-                if (idx < 3 || idx >= totalLines - 3) {
-                  console.log(
-                    `Box ${idx}/${totalLines}: OCR[${x1},${y1},${x2},${y2}] -> Canvas[${x.toFixed(1)},${y.toFixed(1)},${width.toFixed(1)}x${height.toFixed(1)}] pageH=${pageHeight.toFixed(1)}`,
-                  );
-                }
-
-                // Check if box is outside page bounds
-                if (y > pageHeight || y + height < 0) {
-                  console.warn(
-                    `Box ${idx} OUT OF BOUNDS: y=${y.toFixed(1)}, pageHeight=${pageHeight.toFixed(1)}`,
-                  );
-                }
-
-                // Calculate opacity based on confidence for accuracy visualization
-                const confidence = line.confidence || 0.9;
+                const confidence = group.confidence;
                 const opacity = showAccuracy ? confidence : 0.3;
-                const isHighlighted = idx === highlightedLineIndex;
+                const isHighlighted =
+                  highlightedLineIndex !== null &&
+                  group.originalIndices.includes(highlightedLineIndex);
 
-                // Column information
-                const column = line.column || null;
+                const column = group.column ?? null;
                 const isLeftColumn = column === "left";
                 const isRightColumn = column === "right";
 
-                // Color based on column and confidence
-                let borderColor = "rgba(124, 58, 237, 0.6)"; // primary color (default)
+                let borderColor = "rgba(124, 58, 237, 0.6)";
+                if (isLeftColumn) borderColor = "rgba(59, 130, 246, 0.7)";
+                else if (isRightColumn) borderColor = "rgba(139, 92, 246, 0.7)";
 
-                // Column-based coloring
-                if (isLeftColumn) {
-                  borderColor = "rgba(59, 130, 246, 0.7)"; // blue for left column
-                } else if (isRightColumn) {
-                  borderColor = "rgba(139, 92, 246, 0.7)"; // purple for right column
-                }
-
-                // Override with confidence-based color if accuracy mode is on
                 if (showAccuracy) {
-                  if (confidence > 0.9) {
-                    borderColor = "rgba(34, 197, 94, 0.8)"; // green
-                  } else if (confidence > 0.7) {
-                    borderColor = "rgba(234, 179, 8, 0.8)"; // yellow
-                  } else {
-                    borderColor = "rgba(239, 68, 68, 0.8)"; // red
-                  }
+                  if (confidence > 0.9) borderColor = "rgba(34, 197, 94, 0.8)";
+                  else if (confidence > 0.7) borderColor = "rgba(234, 179, 8, 0.8)";
+                  else borderColor = "rgba(239, 68, 68, 0.8)";
                 }
-
-                // Highlight color for selected line
-                if (isHighlighted) {
-                  borderColor = "rgba(255, 193, 7, 1)"; // bright yellow/orange
-                }
+                if (isHighlighted) borderColor = "rgba(255, 193, 7, 1)";
 
                 return (
                   <div key={idx}>
-                    {/* Text layer bounding box */}
+                    {/* 문장 단위 텍스트 레이어 박스 */}
                     {showTextLayer && (
                       <div
                         className={`absolute border pointer-events-auto transition-all duration-200 ${isHighlighted ? "animate-pulse" : ""}`}
                         style={{
                           left: `${x}px`,
-                          top: `${y}px`,
+                          top: `${y + (isHighlighted ? 0 : 1)}px`,
                           width: `${width}px`,
-                          height: `${height}px`,
-                          borderColor: borderColor,
-                          borderWidth: isHighlighted ? "3px" : "1px",
+                          height: `${Math.max(height - (isHighlighted ? 0 : 2), 4)}px`,
+                          borderColor,
+                          borderWidth: isHighlighted ? "2px" : "1px",
                           backgroundColor: isHighlighted
                             ? "rgba(255, 193, 7, 0.3)"
-                            : `${borderColor.replace("0.8", "0.1")}`,
+                            : `${borderColor.replace(/[\d.]+\)$/, "0.07)")}`,
                           boxShadow: isHighlighted
                             ? "0 0 10px rgba(255, 193, 7, 0.6)"
                             : "none",
                           zIndex: isHighlighted ? 100 : 1,
                         }}
-                        title={`${line.text}${column ? ` [${column}]` : ""} (신뢰도: ${(confidence * 100).toFixed(1)}%)`}
+                        title={`${group.text}${column ? ` [${column}]` : ""} (신뢰도: ${(confidence * 100).toFixed(1)}%)`}
                       >
-                        {/* Reading order number badge */}
                         <div
                           className="absolute -top-3 -left-3 bg-black/80 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-lg"
-                          style={{
-                            fontSize: "10px",
-                            zIndex: 10,
-                          }}
+                          style={{ fontSize: "10px", zIndex: 10 }}
                         >
                           {idx + 1}
                         </div>
-                        {/* Column badge */}
                         {column && (
                           <div
                             className="absolute -top-3 -right-3 text-white text-xs font-bold rounded px-1.5 py-0.5 shadow-lg"
@@ -702,7 +675,7 @@ export default function PDFViewer({
                       </div>
                     )}
 
-                    {/* OCR comparison - show text */}
+                    {/* OCR 텍스트 비교 */}
                     {showOCRComparison && (
                       <div
                         className="absolute text-xs pointer-events-auto overflow-hidden"
@@ -714,16 +687,17 @@ export default function PDFViewer({
                           backgroundColor: "rgba(255, 255, 255, 0.95)",
                           color: "black",
                           padding: "2px",
-                          fontSize: `${Math.max(8, height * 0.6)}px`,
-                          lineHeight: `${height}px`,
-                          whiteSpace: "nowrap",
+                          fontSize: `${Math.max(8, Math.min(height * 0.4, 12))}px`,
+                          lineHeight: "1.3",
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-all",
                         }}
                       >
-                        {line.text}
+                        {group.text}
                       </div>
                     )}
 
-                    {/* Accuracy visualization */}
+                    {/* 신뢰도 시각화 */}
                     {showAccuracy && (
                       <div
                         className="absolute border-2 pointer-events-auto"
@@ -732,8 +706,8 @@ export default function PDFViewer({
                           top: `${y}px`,
                           width: `${width}px`,
                           height: `${height}px`,
-                          borderColor: borderColor,
-                          backgroundColor: `${borderColor.replace("0.8", String(0.1 + opacity * 0.2))}`,
+                          borderColor,
+                          backgroundColor: `${borderColor.replace(/[\d.]+\)$/, String(0.1 + opacity * 0.2) + ")")}`,
                         }}
                         title={`신뢰도: ${(confidence * 100).toFixed(1)}%`}
                       >

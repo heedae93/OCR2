@@ -1211,6 +1211,7 @@ def process_job_task(job_id: str):
 
                     for block in ocr_results:
                         block.setdefault('layout_type', 'text')
+
                 else:
                     layout_regions = []
 
@@ -1235,6 +1236,7 @@ def process_job_task(job_id: str):
                     "table_regions": table_regions,
                 }
 
+                from models.ocr import OCRWord as _OCRWord
                 ocr_page = OCRPage(
                     page_number=page_num,
                     width=width,
@@ -1247,7 +1249,15 @@ def process_job_task(job_id: str):
                             char_confidences=r.get('char_confidences'),
                             column=r.get('column'),
                             layout_type=r.get('layout_type'),
-                            reading_order=r.get('reading_order')
+                            reading_order=r.get('reading_order'),
+                            words=[
+                                _OCRWord(
+                                    text=w['text'],
+                                    bbox=w['bbox'],
+                                    confidence=w.get('confidence'),
+                                )
+                                for w in r['words']
+                            ] if r.get('words') else None,
                         ) for r in ocr_results
                     ] if ocr_results else [],
                     is_multi_column=bool(column_info.get('is_double_column')),
@@ -1582,6 +1592,11 @@ def _convert_page_lines_to_raw(page: Optional[OCRPage]) -> list:
             raw_block['layout_type'] = line.layout_type
         if line.reading_order is not None:
             raw_block['reading_order'] = line.reading_order
+        if line.words:
+            raw_block['words'] = [
+                {'text': w.text, 'bbox': list(w.bbox)}
+                for w in line.words
+            ]
         raw_lines.append(raw_block)
     return raw_lines
 
@@ -2057,6 +2072,214 @@ async def get_ocr_results(job_id: str):
     except Exception as e:
         logger.error(f"Failed to read OCR results: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reprocess-page/{job_id}")
+async def reprocess_single_page(job_id: str, payload: dict):
+    """단일 페이지 OCR 재처리 (임시 기능)"""
+    page_number = payload.get("page_number")
+    if not page_number or not isinstance(page_number, int):
+        raise HTTPException(status_code=400, detail="page_number (int) required")
+
+    pages_dir = Config.PROCESSED_DIR / f"{job_id}_pages"
+    image_path = pages_dir / f"page_{page_number:04d}.png"
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail=f"Page {page_number} image not found in {pages_dir}")
+
+    try:
+        from PIL import Image as _PIL
+        with _PIL.open(image_path) as _img:
+            width, height = _img.size
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read page image: {e}")
+
+    # fitz vs OCR 경로 결정
+    job_dir = Config.RAW_DIR / job_id
+    try:
+        input_file = _resolve_job_ocr_input(job_dir)
+    except Exception:
+        input_file = None
+
+    _use_fitz = False
+    if input_file and input_file.suffix.lower() == '.pdf':
+        try:
+            import fitz as _fitz_check
+            _fd = _fitz_check.open(str(input_file))
+            try:
+                if page_number - 1 < _fd.page_count:
+                    _use_fitz = len(_fd[page_number - 1].get_text("text").strip()) > 20
+            finally:
+                _fd.close()
+        except Exception:
+            pass
+
+    ocr_results = []
+    if _use_fitz:
+        import fitz as _fitz
+        _fdoc = _fitz.open(str(input_file))
+        try:
+            _fp = _fdoc[page_number - 1]
+            _fw = _fp.rect.width or width
+            _fh = _fp.rect.height or height
+            _sx = (width / _fw) if _fw else 1.0
+            _sy = (height / _fh) if _fh else 1.0
+            _page_dict = _fp.get_text("dict", flags=_fitz.TEXT_PRESERVE_WHITESPACE)
+            for _blk in _page_dict.get("blocks", []):
+                if _blk.get("type") != 0:
+                    continue
+                for _line in _blk.get("lines", []):
+                    _spans = _line.get("spans", [])
+                    if not _spans:
+                        continue
+                    _parts: list = []
+                    _cur: list = []
+                    _prev_x1 = None
+                    for _sp in _spans:
+                        _sx0, _sy0, _sx1, _sy1 = _sp["bbox"]
+                        if not _sp.get("text", "").strip():
+                            if _cur:
+                                _cur.append(_sp)
+                                _prev_x1 = _sx1
+                            continue
+                        if _prev_x1 is not None and (_sx0 - _prev_x1) > 15:
+                            if _cur:
+                                _parts.append(_cur)
+                            _cur = []
+                        _cur.append(_sp)
+                        _prev_x1 = _sx1
+                    if _cur:
+                        _parts.append(_cur)
+                    for _part in _parts:
+                        _ptxt = "".join(s.get("text", "") for s in _part).strip()
+                        if not _ptxt:
+                            continue
+                        _px0 = min(s["bbox"][0] for s in _part)
+                        _py0 = min(s["bbox"][1] for s in _part)
+                        _px1 = max(s["bbox"][2] for s in _part)
+                        _py1 = max(s["bbox"][3] for s in _part)
+                        ocr_results.append({
+                            'text': _ptxt,
+                            'bbox': (_px0 * _sx, _py0 * _sy, _px1 * _sx, _py1 * _sy),
+                            'score': 1.0,
+                            'layout_type': 'text',
+                        })
+        finally:
+            _fdoc.close()
+        logger.info(f"[reprocess-page] job={job_id} page={page_number} fitz 추출: {len(ocr_results)}블록")
+    else:
+        gpu_id = AVAILABLE_GPUS[0]
+        ocr_model = get_ocr_engine_for_gpu(gpu_id)
+        with gpu_predict_locks[gpu_id]:
+            ocr_results = ocr_model.predict(str(image_path))
+        logger.info(f"[reprocess-page] job={job_id} page={page_number} OCR: {len(ocr_results)}블록")
+
+    # reading order 정렬
+    column_info: dict = {'is_double_column': False, 'column_boundary': None}
+    if ocr_results:
+        sorter = get_reading_order_sorter()
+        if Config.USE_SMART_READING_ORDER:
+            sorted_blocks, detected_col = sorter.sort_reading_order(
+                ocr_results, page_width=width, page_height=height
+            )
+            column_info = detected_col or column_info
+            ocr_results = sorter.add_column_labels(sorted_blocks, column_info, width)
+        ocr_results = sorter.sort_visual_left_to_right_top_to_bottom(ocr_results)
+        for idx, blk in enumerate(ocr_results):
+            blk['reading_order'] = idx
+            blk.setdefault('layout_type', 'text')
+
+    col_boundary = column_info.get('column_boundary') or column_info.get('boundary')
+
+    from models.ocr import OCRWord as _OCRWord
+    new_page = OCRPage(
+        page_number=page_number,
+        width=width,
+        height=height,
+        lines=[
+            OCRLine(
+                text=r['text'],
+                bbox=list(r['bbox']),
+                confidence=r.get('score'),
+                char_confidences=r.get('char_confidences'),
+                column=r.get('column'),
+                layout_type=r.get('layout_type'),
+                reading_order=r.get('reading_order'),
+                words=[
+                    _OCRWord(
+                        text=w['text'],
+                        bbox=w['bbox'],
+                        confidence=w.get('confidence'),
+                    )
+                    for w in r['words']
+                ] if r.get('words') else None,
+            ) for r in ocr_results
+        ] if ocr_results else [],
+        is_multi_column=bool(column_info.get('is_double_column')),
+        column_boundary=col_boundary,
+    )
+
+    # OCR JSON 업데이트
+    ocr_json_path = Config.PROCESSED_DIR / f"{job_id}_ocr.json"
+    if ocr_json_path.exists():
+        with open(ocr_json_path, 'r', encoding='utf-8') as f:
+            ocr_data = json.load(f)
+        pages = ocr_data.get('pages', [])
+        new_page_dict = new_page.model_dump()
+        idx = next((i for i, p in enumerate(pages) if p.get('page_number') == page_number), None)
+        if idx is not None:
+            pages[idx] = new_page_dict
+        else:
+            pages.append(new_page_dict)
+            pages.sort(key=lambda p: p.get('page_number', 0))
+        ocr_data['pages'] = pages
+        with open(ocr_json_path, 'w', encoding='utf-8') as f:
+            json.dump(ocr_data, f, ensure_ascii=False, indent=2)
+
+    # PDF 재생성 (문장 단위 텍스트 레이어 반영)
+    try:
+        image_dir = Config.PROCESSED_DIR / f"{job_id}_pages"
+        image_path = image_dir / f"page_{page_number:04d}.png"
+        logger.warning(f"[PDF-REGEN] image exists={image_path.exists()} page={page_number}")
+        if image_path.exists():
+            pdf_gen = get_pdf_generator()
+            col_det = get_column_detector()
+            raw_lines = _convert_page_lines_to_raw(new_page)
+            logger.warning(f"[PDF-REGEN] raw_lines={len(raw_lines)}")
+            column_info = None
+            if raw_lines and new_page.width and new_page.height:
+                column_info = col_det.detect_columns(raw_lines, new_page.width, new_page.height)
+                raw_lines = col_det.clamp_to_column_bounds(raw_lines, column_info, new_page.width)
+            tmp_page_pdf = Config.TEMP_DIR / f"{job_id}_reprocess_page_{page_number}.pdf"
+            pdf_gen.create_searchable_pdf(
+                image_path=str(image_path),
+                ocr_results=raw_lines,
+                output_path=str(tmp_page_pdf),
+                column_info=column_info
+            )
+            logger.warning(f"[PDF-REGEN] tmp_pdf exists={tmp_page_pdf.exists()}")
+            final_pdf_path = Config.PROCESSED_DIR / f"{job_id}.pdf"
+            if final_pdf_path.exists() and tmp_page_pdf.exists():
+                from PyPDF2 import PdfReader, PdfWriter
+                reader = PdfReader(str(final_pdf_path))
+                total_pages = len(reader.pages)
+                writer = PdfWriter()
+                new_page_reader = PdfReader(str(tmp_page_pdf))
+                for i, pg in enumerate(reader.pages):
+                    if i == page_number - 1:
+                        writer.add_page(new_page_reader.pages[0])
+                    else:
+                        writer.add_page(pg)
+                with open(str(final_pdf_path), 'wb') as f:
+                    writer.write(f)
+                logger.warning(f"[PDF-REGEN] done total_pages={total_pages} replaced={page_number}")
+            try:
+                tmp_page_pdf.unlink()
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"[PDF-REGEN] FAILED page={page_number}: {e}")
+
+    return new_page.model_dump()
 
 
 @router.get("/download-json/{job_id}")
