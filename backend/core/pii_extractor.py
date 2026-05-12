@@ -70,21 +70,6 @@ PII_PATTERNS = {
         # 줄 바꿈(2차 병합)에서도 끊어진 주소를 감지할 수 있도록 유연한 정규식 추가
         r"(?:[가-힣]+(?:도|특별시|광역시|시|군|구)[\s\n]+)?[가-힣]+(?:구|시|군|읍|면|동|가|리)[\s\n]+[가-힣\d\s\n]+(?:로|길)[\s\n]+\d+(?:-\d+)?"
     ],
-    "NAME": [
-        # 레이블이 명확할 때만 정규식으로 강제 추출 (NER 보완용)
-        # 한국어 이름: 레이블 뒤 2~4글자 한글
-        r"(?:성\s*명|이\s*름|대\s*표\s*이\s*사|대\s*표\s*자|대\s*표|신청인|보호자|환\s*자|예\s*금\s*주|본\s*인|세\s*대\s*주|사업주|고용주|근로자|계약자|수취인|담당자|작성자|발주자|수주자|임대인|임차인|보증인|연대보증인|피보험자|수익자|피고인|원고|피고|신고인|민원인|접수자|신청자)\s*[:：]?\s*([가-힣]{2,4})\b",
-        # 회사명(주식회사/유한회사 등) 뒤 직함 뒤 이름 (예: "(주)테크솔루션 대표 김철수", "주식회사 ABC 대표이사 홍길동")
-        r"(?:주식회사|유한회사|합명회사|합자회사|\(주\)|\(유\)|\(사\))[가-힣A-Za-z\s\d]*\s+(?:대표이사|대표자|대표|이사|사장|원장|관장|이사장|부원장|부사장|전무|상무|이사)\s+([가-힣]{2,4})\b",
-        # 영문 이름과 괄호로 병기된 한글 이름 (라벨 없이 강제 추출, 예: 이영희 (Lee Young-hee))
-        r"([가-힣]{2,4})\s*\(\s*[A-Za-z][A-Za-z\s\-]{0,20}[A-Za-z]\s*\)",
-    ],
-    "ENGLISH_NAME": [
-        # 한글/영문 레이블 뒤 영문 이름 (선택적으로 앞에 한글 이름과 괄호 포함)
-        r"(?:성\s*명|이\s*름|대\s*표\s*이\s*사|대\s*표\s*자|대\s*표|신청인|보호자|환\s*자|예\s*금\s*주|본\s*인|세\s*대\s*주|Name|Representative|Applicant|Patient|Depositor)\s*[:：]?\s*(?:[가-힣]{2,4}\s*\(\s*)?([A-Za-z][A-Za-z\s\-]{0,20}[A-Za-z])\b(?:\s*\))?",
-        # 한글 이름(2~4자) 뒤 괄호 안 영문 이름
-        r"[가-힣]{2,4}\s*\(\s*([A-Za-z][A-Za-z\s\-]{0,20}[A-Za-z])\s*\)"
-    ],
 }
 
 TYPE_NORMALIZE_MAP = {
@@ -382,20 +367,6 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
                         if entity_type in ['PER', 'PERSON', 'PS']:
                             cleaned_name = _clean_kobert_name(value, score)
                             if cleaned_name:
-                                # [추가] 문맥을 확인하여 명백한 오탐(False Positive) 필터링
-                                idx = text.find(cleaned_name)
-                                if idx != -1:
-                                    before_text = text[:idx]
-                                    after_text = text[idx + len(cleaned_name):]
-                                    
-                                    # 1. 문서 제목의 일부로 오인된 경우 (예: "프준근" + "로계약서")
-                                    if re.match(r'^(?:로|의|에)?\s*(?:계약서|신청서|동의서|보고서|명세서|증명서|확인서|설명서|계획서|제안서|영수증)', after_text):
-                                        continue
-                                        
-                                    # 2. 영문 이름 파편화 방지 (예: Hong Gil-dong 에서 '-dong'만 잡히는 현상)
-                                    if re.match(r'^[a-zA-Z]+$', cleaned_name) and before_text.rstrip().endswith('-'):
-                                        continue
-
                                 alnum = re.sub(r'[\s\-]', '', cleaned_name)
                                 is_english = alnum.isalpha() and not re.search(r'[가-힣]', cleaned_name)
                                 assigned_type = "ENGLISH_NAME" if is_english else "NAME"
@@ -428,37 +399,6 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
                             if re.search(r'(?:로|길|동|읍|면)\s*\d+', value) or re.search(r'\d+\s*번지', value) or re.search(r'\d+동\s*\d+호', value):
                                 sub_bbox = _estimate_sub_bbox(value, text, line.get("bbox")) or line.get("bbox")
                                 results.append({"type": "ROAD_ADDRESS", "value": value, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT)"})
-                                
-                        # 계좌번호 문맥 인식 1: 기관명(ORG) 뒤에 오는 계좌번호 탐색
-                        elif entity_type in ['ORG', 'ORGANIZATION', 'OG']:
-                            idx = text.find(value)
-                            if idx != -1:
-                                remainder = text[idx + len(value):]
-                                # 기관명 바로 뒤에 이어지는 10~25자리 숫자 패턴 탐색 (^ 추가로 엄격하게 매칭)
-                                match = re.search(r'^[:\s]*([\d\-\s]{10,25})', remainder)
-                                if match:
-                                    acc_num = match.group(1).strip()
-                                    if len(re.sub(r'[\s\-]', '', acc_num)) >= 10:
-                                        sub_bbox = _estimate_sub_bbox(acc_num, text, line.get("bbox")) or line.get("bbox")
-                                        results.append({"type": "ACCOUNT_NO", "value": acc_num, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT 문맥)"})
-                                # 기관명(회사) 뒤 직함+이름 탐색 (예: "(주)테크솔루션 대표 김철수")
-                                name_match = re.search(
-                                    r'^[\s]*(?:대표이사|대표자|대표|이사|사장|원장|관장|이사장|부사장|전무|상무)\s+([가-힣]{2,4})\b',
-                                    remainder
-                                )
-                                if name_match:
-                                    org_name = name_match.group(1)
-                                    if not _is_covered(org_name, "NAME", results):
-                                        sub_bbox = _estimate_sub_bbox(org_name, text, line.get("bbox")) or line.get("bbox")
-                                        results.append({"type": "NAME", "value": org_name, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT 문맥)"})
-                        
-                        # 계좌번호 문맥 인식 2: 수량/숫자(QT)로 인식된 값 중 계좌번호 형태이면서 문맥 키워드가 있는 경우
-                        elif entity_type in ['QT', 'QUANTITY', 'AF', 'ARTIFACT']:
-                            clean_val = re.sub(r'[\s\-]', '', value)
-                            if clean_val.isdigit() and 10 <= len(clean_val) <= 20:
-                                if re.search(r'(은행|뱅크|농협|수협|우체국|새마을|증권|투자|계좌)', text):
-                                    sub_bbox = _estimate_sub_bbox(value, text, line.get("bbox")) or line.get("bbox")
-                                    results.append({"type": "ACCOUNT_NO", "value": value, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT 문맥)"})
         except Exception as e:
             print(f"[오류] KoBERT NER 실행 중 에러: {e}")
     else:
@@ -629,18 +569,11 @@ def _validate_regex_names(results: list) -> list:
     """
     filtered = []
 
-    # 1. 정규식 탐지 단서로 쓴 라벨 키워드 (이 단어들은 이름 자체가 될 수 없음)
-    LABEL_KEYWORDS = {"성명", "이름", "대표이사", "대표자", "대표", "신청인", "보호자", "환자", "예금주", "본인", "세대주", "품목", "품목명", "단가", "수량", "금액", "이메일", "주소", "계좌", "발급사유", "신청부수", "용도", "목적"}
-
     for r in results:
         r.pop("_context", None)
         if r.get("type") == "NAME" and r.get("source", "").startswith("정규식"):
             val_clean = re.sub(r'\s+', '', r.get("value", ""))
             
-            # 규칙 A: 라벨 자체를 이름으로 오인한 경우 (예: "본인 성명") 무조건 제외
-            if val_clean in LABEL_KEYWORDS:
-                continue
-                
             # 규칙 B: 2글자 이하 단어는 정규식에서 과감히 버림 ("확인", "서명", "없음" 등 2글자 일반명사 오탐 원천 차단)
             # -> 공간 근접성(Table)이나 3차 KoBERT NER가 문맥으로 파악하여 살려냄
             if len(val_clean) < 3:
