@@ -52,6 +52,9 @@ interface QueueFile {
   sessionKey?: string
   failedStage?: number
   trackedOnly?: boolean
+  /** Tika 텍스트 추적 안내 (OCR 오류와 별개) */
+  tikaUserMessage?: string
+  tikaTrackStatus?: string
   createdAt: number
 }
 
@@ -173,6 +176,8 @@ export default function OcrWorkPage() {
               mappedStatus === 'failed'
                 ? (data?.message || (rawStatus === 'cancelled' ? '사용자가 중지했습니다.' : item.error))
                 : item.error,
+            tikaUserMessage: (data?.tika_user_message as string | undefined) ?? item.tikaUserMessage,
+            tikaTrackStatus: (data?.tika_track_status as string | undefined) ?? item.tikaTrackStatus,
           }
         }),
       )
@@ -284,6 +289,8 @@ export default function OcrWorkPage() {
           sessionKey: job.sessionKey,
           trackedOnly: true,
           error: job.message,
+          tikaUserMessage: job.tikaUserMessage,
+          tikaTrackStatus: job.tikaTrackStatus,
         }))
 
       return [...prev, ...trackedAddedItems]
@@ -559,7 +566,9 @@ export default function OcrWorkPage() {
         continue
       }
 
-          for (const queueFile of files) {
+      const UPLOAD_CONCURRENCY = 4
+
+      const processOne = async (queueFile: QueueFile) => {
         let jobId: string | undefined
         try {
           updateFile(queueFile.id, { status: 'uploading', progress: 0 })
@@ -628,14 +637,18 @@ export default function OcrWorkPage() {
             sessionName: sName,
             sessionKey: makeSessionKey(sName, sessionId),
           })
-          queuedJobs.push({
-            jobId: jobId!,
-            filename: queueFile.displayName,
-            sessionName: sName,
-            sessionKey: makeSessionKey(sName, sessionId),
-            sourceType: queueFile.sourceType,
-            userId,
-          })
+
+          return {
+            ok: true as const,
+            queuedJob: {
+              jobId: jobId!,
+              filename: queueFile.displayName,
+              sessionName: sName,
+              sessionKey: makeSessionKey(sName, sessionId),
+              sourceType: queueFile.sourceType,
+              userId,
+            },
+          }
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : '알 수 없는 오류'
           updateFile(queueFile.id, {
@@ -645,7 +658,7 @@ export default function OcrWorkPage() {
             // 실패해도 사용자 입력 작업명을 유지
             sessionName: sName,
           })
-          
+
           // If jobId exists, try to notify backend that it failed
           if (queueFile.jobId || jobId) {
             const finalJobId = queueFile.jobId || jobId
@@ -654,16 +667,35 @@ export default function OcrWorkPage() {
               await fetch(`${API_BASE}/status/${finalJobId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                  status: 'failed', 
-                  error_message: errMsg 
-                })
+                body: JSON.stringify({
+                  status: 'failed',
+                  error_message: errMsg,
+                }),
               })
             } catch (e) {
               console.error('Failed to notify backend of job failure', e)
             }
           }
+          return { ok: false as const }
         }
+      }
+
+      const pendingQueue = [...files]
+      const results: Array<{ ok: true; queuedJob: (typeof queuedJobs)[number] } | { ok: false }> = []
+
+      const workers = Array.from({ length: Math.min(UPLOAD_CONCURRENCY, pendingQueue.length) }, async () => {
+        while (pendingQueue.length > 0) {
+          const next = pendingQueue.shift()
+          if (!next) return
+          const r = await processOne(next)
+          results.push(r)
+        }
+      })
+
+      await Promise.all(workers)
+
+      for (const r of results) {
+        if (r.ok) queuedJobs.push(r.queuedJob)
       }
     }
 
@@ -1332,6 +1364,7 @@ export default function OcrWorkPage() {
                                   const tracked = trackedJobs.find(tj => tj.jobId === file.jobId)
                                   const effectiveStatus = file.status
                                   const errorMessage = tracked?.message || file.error
+                                  const tikaHint = tracked?.tikaUserMessage || file.tikaUserMessage
                                   const statusMuted =
                                     effectiveStatus === 'completed'
                                       ? 'text-emerald-600 dark:text-emerald-400'
@@ -1385,6 +1418,14 @@ export default function OcrWorkPage() {
                                               <p className="text-[10px] font-medium leading-snug text-text-secondary-light dark:text-text-secondary-dark">
                                                 {file.trackedOnly ? '진행' : formatBytes(file.fileSize)} · {file.sourceType === 'folder' ? '폴더' : '파일'}
                                               </p>
+                                              {tikaHint ? (
+                                                <p
+                                                  className="text-[10px] font-medium leading-snug text-amber-800/95 dark:text-amber-200/90"
+                                                  title="Tika 텍스트 추적 (검색 레이어 보조)"
+                                                >
+                                                  Tika: {tikaHint}
+                                                </p>
+                                              ) : null}
                                               {effectiveStatus === 'failed' && (
                                                 <div className="mt-0.5 flex min-w-0 items-start gap-0.5">
                                                   <span className="material-symbols-outlined shrink-0 !text-[11px] text-red-500">error_outline</span>
@@ -1413,6 +1454,8 @@ export default function OcrWorkPage() {
                                                         progress: 0,
                                                         error: undefined,
                                                         failedStage: undefined,
+                                                        tikaUserMessage: undefined,
+                                                        tikaTrackStatus: undefined,
                                                       })
                                                     } catch (error) {
                                                       updateFile(file.id, {

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Create searchable PDFs with invisible text layers
 """
 import logging
@@ -380,7 +380,7 @@ class SearchablePDFGenerator:
                 if width <= 1:
                     continue
 
-            korean_chars = sum(1 for ch in text if '\uac00' <= ch <= '\ud7a3')
+            korean_chars = sum(1 for ch in text if '가' <= ch <= '힣')
             has_korean = korean_chars > 0
             font_name = self.korean_font if (has_korean and self.korean_font != "Helvetica") else "Helvetica"
             is_vertical = _is_vertical_text(text, width, height, block, korean_chars)
