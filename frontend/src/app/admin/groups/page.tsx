@@ -574,7 +574,7 @@ export default function GroupManagementPage() {
       <Sidebar />
       <div className="ml-64 mt-14 flex flex-col gap-6 p-8">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary-light dark:text-text-primary-dark">그룹관리</h1>
+          <h1 className="text-2xl font-bold text-primary">그룹관리</h1>
           <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
             트리에서 그룹을 선택하면 개인정보 항목 체크 상태를 바로 확인하고 수정할 수 있습니다.
           </p>

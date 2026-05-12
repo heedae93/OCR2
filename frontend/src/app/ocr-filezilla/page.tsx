@@ -336,7 +336,7 @@ export default function OcrFilezillaPage() {
         <header className="px-8 py-6 border-b border-border-light dark:border-border-dark bg-surface-light/50 dark:bg-surface-dark/50 backdrop-blur-md">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-text-primary-light dark:text-text-primary-dark">OCR 작업하기 (파일질라)</h1>
+              <h1 className="text-2xl font-bold text-primary">OCR 작업하기 (파일질라)</h1>
               <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mt-1">로컬 폴더를 직접 연결하여 끊김 없이 OCR 작업을 진행하세요.</p>
             </div>
             {!dirHandle ? (

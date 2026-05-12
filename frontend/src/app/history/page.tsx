@@ -208,7 +208,7 @@ export default function HistoryPage() {
       <main className="ml-64 mt-14 p-6 lg:p-10">
         <div className="w-full max-w-6xl mx-auto flex flex-col gap-6">
           <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-text-primary-light dark:text-text-primary-dark">이력관리</h1>
+            <h1 className="text-3xl font-bold text-primary">이력관리</h1>
             {tab === 'versions' && (
               <button onClick={openCreateModal}
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 text-sm font-medium">
@@ -236,7 +236,7 @@ export default function HistoryPage() {
           {/* 검색 */}
           <input type="text" placeholder="파일명 검색..." value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-2 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-lg text-sm text-text-primary-light dark:text-text-primary-dark" />
+            className="w-full px-4 py-2 bg-[#E8EDF4] border border-border-light rounded-lg text-sm text-text-primary-light" />
 
           {/* 콘텐츠 */}
           <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">

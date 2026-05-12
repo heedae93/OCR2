@@ -140,7 +140,7 @@ export default function StatisticsPage() {
       <Sidebar />
       <main className="flex-1 ml-64 mt-14 p-6 lg:p-10">
         <div className="w-full max-w-6xl mx-auto flex flex-col gap-8">
-          <h1 className="text-3xl font-bold text-text-primary-light dark:text-text-primary-dark">통계</h1>
+          <h1 className="text-3xl font-bold text-primary">통계</h1>
 
           {/* Summary Cards */}
           {loading ? (
@@ -164,7 +164,7 @@ export default function StatisticsPage() {
 
                 {/* OCR 정확도 분포 */}
                 <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-6 flex flex-col gap-4">
-                  <h2 className="text-base font-semibold text-text-primary-light dark:text-text-primary-dark">OCR 정확도 분포</h2>
+                  <h2 className="text-base font-semibold text-primary">OCR 정확도 분포</h2>
                   {accuracy && accuracy.total > 0 ? (
                     <div className="flex flex-col gap-3">
                       {[
@@ -191,7 +191,7 @@ export default function StatisticsPage() {
 
                 {/* 파일 유형별 현황 */}
                 <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-6 flex flex-col gap-4">
-                  <h2 className="text-base font-semibold text-text-primary-light dark:text-text-primary-dark">파일 유형별 현황</h2>
+                  <h2 className="text-base font-semibold text-primary">파일 유형별 현황</h2>
                   {fileTypes && fileTypes.total > 0 ? (
                     <div className="flex flex-col gap-3">
                       {Object.entries(fileTypes.counts).map(([ft, cnt]) => {
@@ -219,7 +219,7 @@ export default function StatisticsPage() {
 
                 {/* 처리 시간 분포 */}
                 <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-6 flex flex-col gap-4">
-                  <h2 className="text-base font-semibold text-text-primary-light dark:text-text-primary-dark">처리 시간 분포</h2>
+                  <h2 className="text-base font-semibold text-primary">처리 시간 분포</h2>
                   {procTime && procTime.total > 0 ? (
                     <div className="flex flex-col gap-3">
                       {[
@@ -248,7 +248,7 @@ export default function StatisticsPage() {
               {/* 월별 누적 처리량 */}
               <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-lg font-semibold text-text-primary-light dark:text-text-primary-dark">월별 누적 처리량</h2>
+                  <h2 className="text-lg font-semibold text-primary">월별 누적 처리량</h2>
                   <div className="flex gap-4">
                     <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-primary/60" /><span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">월 처리량</span></div>
                     <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-primary" /><span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">누적</span></div>
@@ -318,7 +318,7 @@ export default function StatisticsPage() {
               {/* 세션별 작업 현황 */}
               <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
                 <div className="px-6 py-4 border-b border-border-light dark:border-border-dark flex items-center justify-between gap-4">
-                  <h2 className="text-lg font-semibold text-text-primary-light dark:text-text-primary-dark">
+                  <h2 className="text-lg font-semibold text-primary">
                     세션별 작업 현황
                     <span className="ml-2 text-sm font-normal text-text-secondary-light dark:text-text-secondary-dark">
                       ({sessions.length}개)
@@ -407,7 +407,7 @@ export default function StatisticsPage() {
               {/* Row: Trend chart */}
               <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-lg font-semibold text-text-primary-light dark:text-text-primary-dark">처리량 추이</h2>
+                  <h2 className="text-lg font-semibold text-primary">처리량 추이</h2>
                   <div className="flex gap-1 bg-background-light dark:bg-background-dark rounded-lg p-1">
                     {(['daily', 'weekly', 'monthly'] as Period[]).map(p => (
                       <button key={p} onClick={() => setPeriod(p)}

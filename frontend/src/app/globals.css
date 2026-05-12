@@ -19,21 +19,21 @@ body {
 
 body {
   font-family: 'Inter', 'Noto Sans KR', sans-serif;
-  background: linear-gradient(135deg, #F0F4F8 0%, #E8EEF4 100%);
+  background: linear-gradient(135deg, #E8EDF4 0%, #DDE4EE 100%);
 }
 
 .dark body {
-  background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+  background: linear-gradient(135deg, #E8EDF4 0%, #DDE4EE 100%);
 }
 
 /* Light mode accent backgrounds */
 .bg-accent-light {
-  background: linear-gradient(135deg, rgba(74, 144, 226, 0.05) 0%, rgba(107, 163, 232, 0.08) 100%);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.05) 0%, rgba(107, 163, 232, 0.08) 100%);
 }
 
 /* Dark mode accent backgrounds */
 .dark .bg-accent-light {
-  background: linear-gradient(135deg, rgba(74, 144, 226, 0.1) 0%, rgba(107, 163, 232, 0.05) 100%);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(107, 163, 232, 0.05) 100%);
 }
 
 .material-symbols-outlined {
@@ -64,13 +64,13 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(74, 144, 226, 0.3);
+  background: rgba(37, 99, 235, 0.3);
   border-radius: 4px;
   transition: background 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(74, 144, 226, 0.5);
+  background: rgba(37, 99, 235, 0.5);
 }
 
 /* Dark mode scrollbars */
@@ -101,7 +101,7 @@ body {
 /* Firefox scrollbar styling */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(74, 144, 226, 0.3) transparent;
+  scrollbar-color: rgba(37, 99, 235, 0.3) transparent;
 }
 
 .dark * {

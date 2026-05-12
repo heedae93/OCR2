@@ -99,7 +99,7 @@ export default function MyPage() {
     <div className="bg-background-light dark:bg-background-dark min-h-screen">
       <Sidebar />
       <div className="flex-1 ml-64 mt-14 p-8 max-w-2xl">
-        <h1 className="text-2xl font-bold text-text-primary-light dark:text-text-primary-dark mb-8">마이페이지</h1>
+        <h1 className="text-2xl font-bold text-primary mb-8">마이페이지</h1>
 
         {/* 프로필 카드 */}
         <div className="bg-surface-light dark:bg-surface-dark rounded-2xl border border-border-light dark:border-border-dark p-6 mb-6 flex items-center gap-4">

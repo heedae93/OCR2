@@ -262,14 +262,14 @@ export default function Dashboard() {
       {/* 검색 */}
       <section className="rounded-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
+          <h3 className="text-sm font-bold text-primary">
             문서 및 메타데이터 통합 검색
           </h3>
         </div>
         <div className="relative">
           <input
             ref={searchInputRef}
-            className="h-12 w-full rounded-xl border border-border-light dark:border-cyan-400/40 bg-background-light dark:bg-slate-800/80 px-4 pr-28 text-sm text-text-primary-light dark:text-white shadow-sm dark:shadow-[0_0_0_1px_rgba(34,211,238,0.1)] outline-none placeholder:text-gray-400 dark:placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/20 dark:focus:ring-0 dark:focus:border-cyan-400/80 dark:focus:shadow-[0_0_12px_rgba(34,211,238,0.15)] transition-shadow"
+            className="h-12 w-full rounded-xl border border-border-light bg-[#E8EDF4] px-4 pr-28 text-sm text-text-primary-light shadow-sm outline-none placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
             placeholder="문서명, 메타데이터 키워드로 검색..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
@@ -289,7 +289,7 @@ export default function Dashboard() {
 
       {/* 통계 카드 */}
       <section>
-        <h3 className="mb-2 text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
+        <h3 className="mb-2 text-sm font-bold text-primary">
           전체 통계
         </h3>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -359,7 +359,7 @@ export default function Dashboard() {
       {/* 문서유형별 + 통계/처리시간 */}
       <div className="grid gap-4 xl:grid-cols-[1fr_1.25fr]">
         <section className="rounded-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark p-4">
-          <h3 className="mb-3 text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
+          <h3 className="mb-3 text-sm font-bold text-primary">
             문서유형별 통계
           </h3>
           <div className="flex items-center justify-center gap-8">
@@ -393,10 +393,10 @@ export default function Dashboard() {
 
         <section className="rounded-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark">
           <div className="flex items-center gap-2 border-b border-border-light dark:border-border-dark px-5 py-4">
-            <span className="material-symbols-outlined text-lg text-text-primary-light dark:text-text-primary-dark">
+            <span className="material-symbols-outlined text-lg text-primary">
               bar_chart
             </span>
-            <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
+            <h3 className="text-sm font-bold text-primary">
               통계
             </h3>
           </div>
@@ -509,10 +509,10 @@ export default function Dashboard() {
       <div className="grid gap-4 xl:grid-cols-2">
         <section className="rounded-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark">
           <div className="flex items-center gap-2 border-b border-border-light dark:border-border-dark px-5 py-4">
-            <span className="material-symbols-outlined text-lg text-text-primary-light dark:text-text-primary-dark">
+            <span className="material-symbols-outlined text-lg text-primary">
               people
             </span>
-            <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
+            <h3 className="text-sm font-bold text-primary">
               작업자별 처리량
             </h3>
           </div>
@@ -566,10 +566,10 @@ export default function Dashboard() {
 
         <section className="rounded-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark">
           <div className="flex items-center gap-2 border-b border-border-light dark:border-border-dark px-5 py-4">
-            <span className="material-symbols-outlined text-lg text-text-primary-light dark:text-text-primary-dark">
+            <span className="material-symbols-outlined text-lg text-primary">
               today
             </span>
-            <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
+            <h3 className="text-sm font-bold text-primary">
               오늘 처리 현황
             </h3>
             <span className="ml-auto text-[11px] text-text-secondary-light dark:text-text-secondary-dark">

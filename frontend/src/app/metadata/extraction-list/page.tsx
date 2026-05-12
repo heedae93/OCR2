@@ -335,9 +335,9 @@ export default function ExtractionListPage() {
   }
 
   return (
-    <div className="flex h-screen bg-bg-light dark:bg-bg-dark">
+    <div className="flex bg-background-light">
       <Sidebar />
-      <main className="flex-1 ml-64 flex flex-col h-screen overflow-hidden">
+      <main className="flex-1 ml-64 mt-14 flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
         
         {/* Header */}
         <div className="px-8 py-6 border-b border-border-light dark:border-border-dark bg-surface-light/30 dark:bg-surface-dark/30 backdrop-blur-md flex-shrink-0">
@@ -377,7 +377,7 @@ export default function ExtractionListPage() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="파일명으로 검색..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark outline-none focus:border-primary/50 text-sm font-medium transition-all"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#E8EDF4] border border-border-light outline-none focus:border-primary/50 text-sm font-medium transition-all"
               />
             </div>
             <button

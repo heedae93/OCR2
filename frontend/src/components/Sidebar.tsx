@@ -133,7 +133,7 @@ const fetchTodayCount = async (userId: string) => {
 
   return (
     <>
-    <aside className="fixed left-0 top-0 z-[300] flex h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-border-light bg-surface-light pointer-events-auto dark:border-border-dark dark:bg-surface-dark">
+    <aside className="fixed left-0 top-0 z-[300] flex h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-[#334155] bg-[#1E293B] pointer-events-auto">
       <div className="flex min-h-full flex-col gap-2 p-4">
         <Link
           href="/"
@@ -149,7 +149,7 @@ const fetchTodayCount = async (userId: string) => {
           />
         </Link>
 
-        <div className="mx-2 h-px bg-gradient-to-r from-transparent via-border-light to-transparent dark:via-border-dark" />
+        <div className="mx-2 h-px bg-gradient-to-r from-transparent via-[#475569] to-transparent" />
 
         <nav className="flex flex-grow flex-col gap-1">
           {navItems.map((item) => {
@@ -164,8 +164,8 @@ const fetchTodayCount = async (userId: string) => {
                     onClick={() => toggleMenu(item.label)}
                     className={`relative flex shrink-0 items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 transition-all duration-200 group ${
                       active
-                        ? "bg-primary/10 text-primary dark:bg-primary/15"
-                        : "text-text-secondary-light hover:bg-black/5 hover:text-text-primary-light dark:text-text-secondary-dark dark:hover:bg-white/5 dark:hover:text-text-primary-dark"
+                        ? "bg-primary/15 text-primary"
+                        : "text-[#94A3B8] hover:bg-white/5 hover:text-[#F1F5F9]"
                     }`}
                   >
                     <span
@@ -191,8 +191,8 @@ const fetchTodayCount = async (userId: string) => {
                     href={item.href}
                     className={`group relative flex shrink-0 items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 transition-all duration-200 ${
                       active
-                        ? "bg-primary/10 text-primary dark:bg-primary/15"
-                        : "text-text-secondary-light hover:bg-black/5 hover:text-text-primary-light dark:text-text-secondary-dark dark:hover:bg-white/5 dark:hover:text-text-primary-dark"
+                        ? "bg-primary/15 text-primary"
+                        : "text-[#94A3B8] hover:bg-white/5 hover:text-[#F1F5F9]"
                     }`}
                   >
                     <span
@@ -219,7 +219,7 @@ const fetchTodayCount = async (userId: string) => {
                 )}
 
                 {hasChildren && isExpanded && (
-                  <div className="animate-in slide-in-from-top-1 ml-3 flex flex-col gap-0.5 border-l border-border-light pl-3 duration-200 fade-in dark:border-border-dark">
+                  <div className="animate-in slide-in-from-top-1 ml-3 flex flex-col gap-0.5 border-l border-[#475569] pl-3 duration-200 fade-in">
                     {item.children!.map((child) => {
                       const childActive = isActive(child.href);
                       return (
@@ -229,7 +229,7 @@ const fetchTodayCount = async (userId: string) => {
                           className={`group relative flex items-center gap-3 rounded-lg px-3 py-2 transition-all duration-200 ${
                             childActive
                               ? "text-primary"
-                              : "text-text-secondary-light hover:text-text-primary-light dark:text-text-secondary-dark dark:hover:text-text-primary-dark"
+                              : "text-[#94A3B8] hover:text-[#F1F5F9]"
                           }`}
                         >
                           <span
@@ -256,7 +256,7 @@ const fetchTodayCount = async (userId: string) => {
           })}
         </nav>
 
-        <div className="mx-2 h-px bg-gradient-to-r from-transparent via-border-light to-transparent dark:via-border-dark" />
+        <div className="mx-2 h-px bg-gradient-to-r from-transparent via-[#475569] to-transparent" />
 
         <nav className="flex flex-col gap-1">
           {bottomItems.map((item) => {
@@ -267,8 +267,8 @@ const fetchTodayCount = async (userId: string) => {
                 href={item.href}
                 className={`group relative flex shrink-0 items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 transition-all duration-200 ${
                   active
-                    ? "bg-primary/10 text-primary dark:bg-primary/15"
-                    : "text-text-secondary-light hover:bg-black/5 hover:text-text-primary-light dark:text-text-secondary-dark dark:hover:bg-white/5 dark:hover:text-text-primary-dark"
+                    ? "bg-primary/15 text-primary"
+                    : "text-[#94A3B8] hover:bg-white/5 hover:text-[#F1F5F9]"
                 }`}
               >
                 {active && (
@@ -299,10 +299,10 @@ const fetchTodayCount = async (userId: string) => {
             </span>
           </div>
           <div className="flex items-baseline gap-1">
-            <span className="text-2xl font-bold text-text-primary-light dark:text-text-primary-dark">
+            <span className="text-2xl font-bold text-[#F1F5F9]">
               {todayCount}
             </span>
-            <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+            <span className="text-xs text-[#94A3B8]">
               파일
             </span>
           </div>

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { API_BASE_URL } from '@/lib/api'
 import {
-  Database, CheckCircle2, AlertCircle, RefreshCw, Save, Plus, Trash2, Tag, X, FileText
+  CheckCircle2, AlertCircle, RefreshCw, Save, Plus, Trash2, Tag, X, FileText
 } from 'lucide-react'
 
 const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타', '미분류']
@@ -138,7 +138,7 @@ export default function MetadataV3Page() {
     } catch (e) {}
   }
 
-  const deleteCustomField = async (id: number, fieldKey: string) => {
+  const deleteCustomField = async (id: number, _fieldKey: string) => {
     try {
       await fetch(`${API_BASE_URL}/api/metadata-v3/custom-fields/${id}?user_id=${userId}`, { method: 'DELETE' })
       loadData()
@@ -192,22 +192,22 @@ export default function MetadataV3Page() {
   ]
 
   return (
-    <div className="flex h-screen bg-bg-light dark:bg-bg-dark">
+    <div className="flex bg-background-light">
       <Sidebar />
-      <main className="flex-1 ml-64 flex flex-col h-screen overflow-hidden">
-        
-        <div className="px-6 py-6 border-b border-border-light dark:border-border-dark flex-shrink-0">
-          <h1 className="text-xl font-bold text-text-primary-light dark:text-text-primary-dark tracking-tight">문서 유형별 추출 메타데이터 관리</h1>
-          <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mt-1">
+      <main className="flex-1 ml-64 mt-14 flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
+
+        <div className="px-6 py-6 border-b border-border-light bg-surface-light flex-shrink-0">
+          <h1 className="text-xl font-bold text-primary tracking-tight">문서 유형별 추출 메타데이터 관리</h1>
+          <p className="text-sm text-text-secondary-light mt-1">
             문서 카테고리를 선택하고, 해당 문서에서 자동으로 추출할 중요 데이터 필드를 설정합니다.
           </p>
         </div>
 
         <div className="flex flex-1 overflow-hidden">
           {/* 분류 리스트 */}
-          <div className="w-64 flex-shrink-0 border-r border-border-light dark:border-border-dark flex flex-col bg-surface-light/50 dark:bg-surface-dark/50">
-            <div className="px-4 py-3 border-b border-border-light dark:border-border-dark flex justify-between items-center bg-black/5 dark:bg-white/5">
-              <span className="text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark tracking-wider">
+          <div className="w-64 flex-shrink-0 border-r border-border-light flex flex-col bg-surface-light">
+            <div className="px-4 py-3 border-b border-border-light flex justify-between items-center bg-background-light">
+              <span className="text-xs font-bold text-text-secondary-light tracking-wider">
                 문서 카테고리
               </span>
             </div>
@@ -221,16 +221,16 @@ export default function MetadataV3Page() {
                 return (
                   <div key={docType} className={`group flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-all ${
                     isSelected
-                      ? 'bg-primary/20 text-primary font-bold shadow-sm'
-                      : 'hover:bg-primary/10 text-text-primary-light dark:text-text-primary-dark font-medium'
+                      ? 'bg-primary/10 text-primary font-bold shadow-sm'
+                      : 'hover:bg-primary/5 text-text-primary-light font-medium'
                   }`} onClick={() => setSelectedDocType(docType)}>
                     <div className="flex items-center gap-2">
-                       <Tag size={14} className={isSelected ? 'text-primary' : 'text-text-secondary-light dark:text-text-secondary-dark'}/>
+                       <Tag size={14} className={isSelected ? 'text-primary' : 'text-text-secondary-light'}/>
                        <span className="text-sm">{docType}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       {count > 0 && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300 font-bold tracking-tighter">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold tracking-tighter">
                           {count}
                         </span>
                       )}
@@ -249,13 +249,13 @@ export default function MetadataV3Page() {
             <div className="p-3 border-t border-border-light dark:border-border-dark">
               {isAddingCat ? (
                 <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
-                  <input autoFocus value={newCatName} onChange={e => setNewCatName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addCategory()} 
-                    placeholder="카테고리명" className="flex-1 px-2 py-1.5 text-xs font-bold rounded-lg bg-surface-light dark:bg-surface-dark border outline-none border-primary/50 text-text-primary-light dark:text-text-primary-dark" />
+                  <input autoFocus value={newCatName} onChange={e => setNewCatName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addCategory()}
+                    placeholder="카테고리명" className="flex-1 px-2 py-1.5 text-xs font-bold rounded-lg bg-background-light border outline-none border-primary/50 text-text-primary-light" />
                   <button onClick={addCategory} className="px-2 py-1.5 bg-primary text-white rounded-lg text-xs font-bold shadow hover:scale-105 active:scale-95 transition-transform">추가</button>
                   <button onClick={() => setIsAddingCat(false)} className="text-text-secondary-light hover:text-text-primary-light px-1"><AlertCircle size={14} className="hidden" /> 취소</button>
                 </div>
               ) : (
-                <button onClick={() => setIsAddingCat(true)} className="w-full flex justify-center items-center gap-2 py-2 text-sm text-text-secondary-light dark:text-text-secondary-dark hover:text-primary font-bold transition-colors border border-dashed border-border-light dark:border-border-dark hover:border-primary/50 hover:bg-primary/5 rounded-xl">
+                <button onClick={() => setIsAddingCat(true)} className="w-full flex justify-center items-center gap-2 py-2 text-sm text-text-secondary-light hover:text-primary font-bold transition-colors border border-dashed border-border-light hover:border-primary/50 hover:bg-primary/5 rounded-xl">
                   <Plus size={16} /> 새 카테고리
                 </button>
               )}
@@ -263,14 +263,14 @@ export default function MetadataV3Page() {
           </div>
 
           {/* 메타데이터 추출 설정 영역 */}
-          <div className="flex-1 flex flex-col bg-bg-light dark:bg-bg-dark">
-            <div className="px-10 py-6 border-b border-border-light dark:border-border-dark flex items-center justify-between">
+          <div className="flex-1 flex flex-col bg-background-light">
+            <div className="px-10 py-6 border-b border-border-light bg-surface-light flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-bold flex items-center gap-3 text-text-primary-light dark:text-text-primary-dark tracking-tight">
+                <h2 className="text-2xl font-bold flex items-center gap-3 text-text-primary-light tracking-tight">
                    <FileText size={24} className="text-primary" /> {selectedDocType}
-                   {currentPiiTypes.length > 0 && <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400">설정 {currentPiiTypes.length}건</span>}
+                   {currentPiiTypes.length > 0 && <span className="text-xs font-bold px-2 py-1 rounded-full bg-primary/10 text-primary">설정 {currentPiiTypes.length}건</span>}
                 </h2>
-                <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mt-2 font-medium">이 카테고리로 분류된 문서를 분석할 때, 활성화된 데이터 항목을 자동으로 추출하여 색인화합니다.</p>
+                <p className="text-sm text-text-secondary-light mt-2 font-medium">이 카테고리로 분류된 문서를 분석할 때, 활성화된 데이터 항목을 자동으로 추출하여 색인화합니다.</p>
               </div>
               <button onClick={saveRules} disabled={saving || loading} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 shadow-md transition-all active:scale-95 disabled:opacity-50">
                 {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
@@ -286,7 +286,7 @@ export default function MetadataV3Page() {
               ) : (
                 <div>
                   <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-base font-bold text-text-secondary-light dark:text-text-secondary-dark tracking-widest uppercase">
+                    <h3 className="text-base font-bold text-text-secondary-light tracking-widest uppercase">
                       추출 필드 설정
                     </h3>
                     <button onClick={() => setIsAddingField(true)} className="flex items-center gap-1.5 text-sm font-bold text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400 hover:bg-sky-100 dark:hover:bg-sky-900/50 px-4 py-2 rounded-full transition-colors shadow-sm">
@@ -299,7 +299,7 @@ export default function MetadataV3Page() {
                       const enabled = currentPiiTypes.includes(item.key)
                       
                       return (
-                        <div key={item.key} className={`group relative flex flex-col text-left p-5 rounded-3xl border-2 transition-all duration-200 ease-out ${enabled ? (item.isCustom ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/20 shadow-md transform scale-[1.01]' : 'border-primary bg-primary/5 dark:bg-primary/10 shadow-md transform scale-[1.01]') : 'border-border-light dark:border-border-dark hover:border-text-secondary-light/40 bg-surface-light dark:bg-surface-dark opacity-80 hover:opacity-100 hover:shadow-sm'}`}>
+                        <div key={item.key} className={`group relative flex flex-col text-left p-5 rounded-2xl border-2 transition-all duration-200 ease-out ${enabled ? (item.isCustom ? 'border-sky-400 bg-sky-50 shadow-md' : 'border-primary bg-primary/5 shadow-md') : 'border-border-light hover:border-primary/30 bg-surface-light opacity-80 hover:opacity-100 hover:shadow-sm'}`}>
                           
                           {/* 삭제 버튼 - 커스텀 필드일때만 등장 */}
                           {item.isCustom && item.id && (
@@ -311,9 +311,9 @@ export default function MetadataV3Page() {
                           <div className="flex items-start justify-between w-full mb-3 cursor-pointer" onClick={() => togglePii(item.key)}>
                             <div className="flex flex-col gap-2 max-w-[70%]">
                               <span className={`text-xs px-3 py-1.5 rounded-full font-bold self-start ${enabled && item.isCustom ? 'bg-sky-500 text-white' : item.color}`}>{item.label}</span>
-                              {item.pattern && <span className="text-[10px] font-mono tracking-tighter text-text-secondary-light dark:text-text-secondary-dark break-all leading-tight bg-black/5 dark:bg-white/10 px-2 py-1 rounded">{item.pattern}</span>}
+                              {item.pattern && <span className="text-[10px] font-mono tracking-tighter text-text-secondary-light break-all leading-tight bg-black/5 px-2 py-1 rounded">{item.pattern}</span>}
                             </div>
-                            <div className={`w-12 h-6 rounded-full flex items-center transition-colors px-1 shrink-0 ${enabled ? (item.isCustom ? 'bg-sky-500' : 'bg-primary') : 'bg-gray-300 dark:bg-gray-700'}`}>
+                            <div className={`w-12 h-6 rounded-full flex items-center transition-colors px-1 shrink-0 ${enabled ? (item.isCustom ? 'bg-sky-500' : 'bg-primary') : 'bg-gray-300'}`}>
                               <div className={`w-4 h-4 rounded-full bg-white shadow-sm transform transition-transform ${enabled ? 'translate-x-[22px]' : 'translate-x-0'}`} />
                             </div>
                           </div>

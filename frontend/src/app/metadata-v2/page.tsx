@@ -511,10 +511,10 @@ export default function MetadataV2Page() {
   // ─────────────────────────────────────────────
 
   return (
-    <div className="flex h-screen bg-background-light dark:bg-background-dark">
+    <div className="flex bg-background-light">
       <Sidebar />
 
-      <main className="flex-1 ml-64 flex flex-col min-w-0 overflow-hidden">
+      <main className="flex-1 ml-64 mt-14 flex flex-col min-w-0 h-[calc(100vh-3.5rem)] overflow-hidden">
         {/* 헤더 */}
         <div className="px-6 py-4 border-b border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark">
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">메타데이터 관리</h1>

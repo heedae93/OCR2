@@ -495,7 +495,7 @@ function JobsPageInner() {
         <div className="w-full max-w-7xl mx-auto">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-8">
             <div>
-              <h1 className="text-3xl font-bold text-text-primary-light dark:text-text-primary-dark">
+              <h1 className="text-3xl font-bold text-primary">
                 작업 내역
               </h1>
               <p className="mt-2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
@@ -540,7 +540,7 @@ function JobsPageInner() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleSearch();
                   }}
-                  className="h-12 w-full rounded-xl border border-border-light dark:border-cyan-400/40 bg-background-light dark:bg-slate-800/80 px-4 pr-28 text-sm text-text-primary-light dark:text-white shadow-sm dark:shadow-[0_0_0_1px_rgba(34,211,238,0.1)] outline-none placeholder:text-gray-400 dark:placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/20 dark:focus:ring-0 dark:focus:border-cyan-400/80 dark:focus:shadow-[0_0_12px_rgba(34,211,238,0.15)] transition-shadow"
+                  className="h-12 w-full rounded-xl border border-border-light bg-[#E8EDF4] px-4 pr-28 text-sm text-text-primary-light shadow-sm outline-none placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 />
                 <button
                   onClick={handleSearch}

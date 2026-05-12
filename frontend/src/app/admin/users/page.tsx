@@ -160,7 +160,7 @@ export default function UsersPage() {
       <div className="ml-64 mt-14 flex flex-col gap-6 p-8">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-text-primary-light dark:text-text-primary-dark">사용자 관리</h1>
+            <h1 className="text-2xl font-bold text-primary">사용자 관리</h1>
             <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
               사용자를 등록하고 그룹 권한을 배정합니다.
             </p>

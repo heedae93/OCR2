@@ -10,25 +10,25 @@ module.exports = {
     extend: {
       colors: {
         // Primary brand color
-        'primary': '#4A90E2',
-        'primary-light': '#6BA3E8',
-        'primary-dark': '#3A7BC8',
+        'primary': '#2563EB',
+        'primary-light': '#3B82F6',
+        'primary-dark': '#1D4ED8',
 
-        // Light mode - softer with blue tints
-        'background-light': '#F0F4F8',
-        'surface-light': '#FFFFFF',
-        'surface-alt-light': '#F7FAFC',
-        'border-light': '#E2E8F0',
+        // Light mode - one tone darker (muted)
+        'background-light': '#E8EDF4',
+        'surface-light': '#F2F5FA',
+        'surface-alt-light': '#EBF0F7',
+        'border-light': '#CBD5E1',
         'text-primary-light': '#1A202C',
         'text-secondary-light': '#64748B',
 
-        // Dark mode - softer dark blue-gray
-        'background-dark': '#0F172A',
-        'surface-dark': '#1E293B',
-        'surface-alt-dark': '#334155',
-        'border-dark': '#475569',
-        'text-primary-dark': '#F1F5F9',
-        'text-secondary-dark': '#94A3B8',
+        // Dark mode - mapped to muted light (toggle has no visual effect on content)
+        'background-dark': '#E8EDF4',
+        'surface-dark': '#F2F5FA',
+        'surface-alt-dark': '#EBF0F7',
+        'border-dark': '#CBD5E1',
+        'text-primary-dark': '#1A202C',
+        'text-secondary-dark': '#64748B',
 
         // Accent colors
         'accent-blue': '#3B82F6',
@@ -49,8 +49,8 @@ module.exports = {
       boxShadow: {
         'soft': '0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 10px 20px -2px rgba(0, 0, 0, 0.04)',
         'soft-lg': '0 10px 40px -10px rgba(0, 0, 0, 0.1), 0 20px 25px -5px rgba(0, 0, 0, 0.05)',
-        'glow': '0 0 20px rgba(74, 144, 226, 0.3)',
-        'glow-lg': '0 0 40px rgba(74, 144, 226, 0.4)',
+        'glow': '0 0 20px rgba(37, 99, 235, 0.3)',
+        'glow-lg': '0 0 40px rgba(37, 99, 235, 0.4)',
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
