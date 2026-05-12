@@ -11,12 +11,21 @@ export interface Job {
   raw_file_url?: string
 }
 
+export interface OCRWord {
+  text: string
+  bbox: number[]
+  confidence?: number
+}
+
 export interface OCRLine {
   text: string
   bbox?: number[]
   confidence?: number
   char_confidences?: number[]
   column?: string
+  layout_type?: string
+  reading_order?: number
+  words?: OCRWord[]
 }
 
 export interface OCRPage {

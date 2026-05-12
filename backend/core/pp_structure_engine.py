@@ -45,34 +45,87 @@ def _iou(box1: List[float], box2: List[float]) -> float:
     return inter / union if union > 0 else 0.0
 
 
+def _merge_tile_texts(left: str, right: str, min_overlap_chars: int = 3) -> str:
+    """Merge OCR texts from two overlapping tiles (left is earlier in x than right).
+
+    Finds the longest suffix of `left` matching a prefix of `right` and removes
+    the duplicate. Falls back to space-concatenation when no overlap is found.
+    """
+    if not left:
+        return right
+    if not right:
+        return left
+    ls = left.strip()
+    rs = right.strip()
+    if not ls:
+        return right
+    if not rs:
+        return left
+    max_check = min(len(ls), len(rs))
+    for n in range(max_check, min_overlap_chars - 1, -1):
+        if ls[-n:] == rs[:n]:
+            tail = rs[n:]
+            return (ls + tail) if tail else ls
+    return ls + " " + rs
+
+
 def _nms_text_blocks(
     blocks: List[Dict], iou_threshold: float = 0.3
 ) -> List[Dict]:
     """
-    Non-Maximum Suppression for OCR text bounding boxes.
+    타일 병합용 NMS: 겹치는 박스를 버리지 않고 union bbox + 텍스트 병합.
 
-    When two detected blocks overlap more than `iou_threshold`, the one with
-    the lower confidence score is discarded.  Blocks with equal scores keep
-    the first one encountered (sorted by descending score).
+    타일 경계에서 같은 텍스트 라인이 두 타일에 걸쳐 감지될 때:
+    - bbox: 모든 겹치는 박스의 합집합(union)
+    - text: 좌→우 순서로 suffix-prefix 매칭 후 연결 (잘린 앞뒤 복원)
     """
     if len(blocks) <= 1:
         return blocks
 
-    # Sort descending by confidence so the best detections are kept first.
     sorted_blocks = sorted(blocks, key=lambda b: b.get("score", 0.0), reverse=True)
-
     kept: List[Dict] = []
     suppressed = [False] * len(sorted_blocks)
 
     for i, blk in enumerate(sorted_blocks):
         if suppressed[i]:
             continue
-        kept.append(blk)
+
+        # 겹치는 모든 블록을 하나의 그룹으로 수집
+        group: List[Dict] = [blk]
         for j in range(i + 1, len(sorted_blocks)):
             if suppressed[j]:
                 continue
-            if _iou(blk["bbox"], sorted_blocks[j]["bbox"]) > iou_threshold:
+            other = sorted_blocks[j]
+            if _iou(blk["bbox"], other["bbox"]) > iou_threshold:
+                group.append(other)
                 suppressed[j] = True
+
+        if len(group) == 1:
+            kept.append(blk)
+            continue
+
+        # x1 기준 좌→우 정렬
+        group.sort(key=lambda b: b["bbox"][0])
+
+        # union bbox
+        merged_bbox = [
+            min(b["bbox"][0] for b in group),
+            min(b["bbox"][1] for b in group),
+            max(b["bbox"][2] for b in group),
+            max(b["bbox"][3] for b in group),
+        ]
+
+        # 텍스트: 좌→우 순서로 suffix-prefix 병합 (타일 경계 잘림 복원)
+        merged_text = group[0]["text"]
+        for k in range(1, len(group)):
+            merged_text = _merge_tile_texts(merged_text, group[k]["text"])
+
+        best_score = max(b.get("score", 0.0) for b in group)
+        merged = dict(blk)
+        merged["bbox"] = merged_bbox
+        merged["text"] = merged_text
+        merged["score"] = best_score
+        kept.append(merged)
 
     return kept
 

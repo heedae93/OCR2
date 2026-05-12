@@ -134,29 +134,24 @@ const fetchTodayCount = async (userId: string) => {
   return (
     <>
     <aside className="fixed left-0 top-0 z-[300] flex h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-border-light bg-surface-light pointer-events-auto dark:border-border-dark dark:bg-surface-dark">
-      <div className="flex min-h-full flex-col gap-4 p-4">
+      <div className="flex min-h-full flex-col gap-2 p-4">
         <Link
           href="/"
-          className="group flex items-center gap-3 rounded-xl px-2 py-3 transition-all duration-200 hover:bg-black/5 dark:hover:bg-white/5"
+          className="group block overflow-hidden transition-all duration-200 hover:opacity-80"
+          style={{ height: '75px' }}
         >
-          <div className="relative h-12 w-16 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-primary/10 to-primary/5">
-            <Image
-              src="/futurenuri.png"
-              alt="FutureNuri"
-              fill
-              className="object-contain object-[center_72%] scale-[4.2]"
-            />
-          </div>
-          <div className="min-w-0 flex flex-col">
-            <h1 className="whitespace-nowrap text-base font-bold leading-tight tracking-tight text-text-primary-light dark:text-text-primary-dark">
-              AI Doc Intelligence
-            </h1>
-          </div>
+          <Image
+            src="/aidoc.png"
+            alt="AiDoc"
+            width={462}
+            height={240}
+            className="w-full h-full object-cover object-center"
+          />
         </Link>
 
         <div className="mx-2 h-px bg-gradient-to-r from-transparent via-border-light to-transparent dark:via-border-dark" />
 
-        <nav className="mt-2 flex flex-grow flex-col gap-1">
+        <nav className="flex flex-grow flex-col gap-1">
           {navItems.map((item) => {
             const hasChildren = Boolean(item.children?.length);
             const active = isActive(item.href);

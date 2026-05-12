@@ -5,8 +5,15 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 
 
+class OCRWord(BaseModel):
+    """Original OCR line preserved as a word-level unit inside a sentence block."""
+    text: str
+    bbox: List[float]  # [x1, y1, x2, y2]
+    confidence: Optional[float] = None
+
+
 class OCRLine(BaseModel):
-    """Single OCR text line"""
+    """Single OCR text line (or sentence group when words is populated)."""
     text: str
     bbox: Optional[List[float]] = None  # [x1, y1, x2, y2]
     confidence: Optional[float] = None
@@ -14,6 +21,7 @@ class OCRLine(BaseModel):
     column: Optional[str] = None  # "left", "right", or None
     layout_type: Optional[str] = None  # "title", "text", "list", "table", etc.
     reading_order: Optional[int] = None
+    words: Optional[List[OCRWord]] = None  # 문장 그룹 내 원본 라인들
 
 
 class OCRPage(BaseModel):
