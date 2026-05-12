@@ -739,7 +739,7 @@ function JobsPageInner() {
                             key={session.session_id}
                             id={`session-${session.session_id}`}
                             // className={`cursor-pointer transition-colors focus:outline-none focus:bg-primary/10 ${isFocused ? "bg-primary/10" : ""} ${isOsMatch ? "ring-1 ring-inset ring-cyan-300 dark:ring-cyan-400/40 bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/20 dark:hover:bg-cyan-900/40" : "hover:bg-primary/5 dark:hover:bg-primary/10"}`}
-                            className={`transition-colors ${isOsMatch ? "bg-cyan-50 dark:bg-cyan-900/20 border-l-4 border-l-cyan-400" : "border-l-4 border-transparent"}`}
+                            className={`transition-colors ${isOsMatch ? "bg-cyan-50 dark:bg-cyan-900/20 border-l-4 border-l-cyan-400" : "hover:bg-primary/5 dark:hover:bg-primary/10"}`}
                           >
                             <td className="px-3 py-4 text-center">
                               <input

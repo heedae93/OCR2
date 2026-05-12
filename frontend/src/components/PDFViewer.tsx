@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { OCRResult } from "@/types";
 
 interface SentenceGroup {
@@ -29,6 +29,7 @@ interface PDFViewerProps {
   onPageChange: (page: number) => void;
   zoom?: number;
   fitToWidth?: boolean;
+  fitToPage?: boolean;
   onZoomChange?: (zoom: number) => void;
   ocrResults?: OCRResult | null;
   showTextLayer?: boolean;
@@ -38,6 +39,7 @@ interface PDFViewerProps {
   maskingData?: MaskedBox[];
   highlightedLineIndex?: number | null;
   children?: React.ReactNode;
+  pageNavigation?: React.ReactNode;
   onPageDimensionsChange?: (width: number, height: number) => void;
 }
 
@@ -102,7 +104,9 @@ export default function PDFViewer({
   onPageChange,
   zoom = 100,
   fitToWidth = false,
+  fitToPage = false,
   onZoomChange,
+  pageNavigation,
   ocrResults,
   showTextLayer = false,
   showOCRComparison = false,
@@ -124,7 +128,9 @@ export default function PDFViewer({
   const [pageHeight, setPageHeight] = useState(0);
   const [pageLoading, setPageLoading] = useState(false);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
   const [nativePageWidth, setNativePageWidth] = useState(0);
+  const [nativePageHeight, setNativePageHeight] = useState(0);
 
   // Page cache for faster navigation
   const pageCacheRef = useRef<Map<number, any>>(new Map());
@@ -132,21 +138,30 @@ export default function PDFViewer({
   // 마스킹 박스별 샘플링된 배경색 { boxIndex: "rgb(...)" }
   const [maskBgColors, setMaskBgColors] = useState<Record<number, string>>({});
 
-  // Calculate effective zoom when fitToWidth is enabled
-  const effectiveZoom =
-    fitToWidth && containerWidth > 0 && nativePageWidth > 0
-      ? Math.round(((containerWidth - 64) / nativePageWidth) * 100) // 64px for padding
-      : zoom;
+  // Calculate effective zoom
+  const effectiveZoom = (() => {
+    const pad = 64; // p-8 = 32px × 2
+    if (fitToPage && containerWidth > 0 && containerHeight > 0 && nativePageWidth > 0 && nativePageHeight > 0) {
+      const zoomW = Math.round(((containerWidth - pad) / nativePageWidth) * 100);
+      const zoomH = Math.round(((containerHeight - pad) / nativePageHeight) * 100);
+      return Math.min(zoomW, zoomH);
+    }
+    if (fitToWidth && containerWidth > 0 && nativePageWidth > 0) {
+      return Math.round(((containerWidth - pad) / nativePageWidth) * 100);
+    }
+    return zoom;
+  })();
 
   const scale = effectiveZoom / 100;
 
-  // Measure container width
-  useEffect(() => {
+  // Measure container dimensions (useLayoutEffect: runs before paint so first render already has correct size)
+  useLayoutEffect(() => {
     if (!containerRef.current) return;
 
     const measureContainer = () => {
       if (containerRef.current) {
         setContainerWidth(containerRef.current.clientWidth);
+        setContainerHeight(containerRef.current.clientHeight);
       }
     };
 
@@ -265,13 +280,27 @@ export default function PDFViewer({
 
         if (cancelled) return;
 
-        // Get native dimensions (scale = 1.0) for fit-to-width calculation
+        // Get native dimensions (scale = 1.0) for fit-to-width/page calculation
         const nativeViewport = page.getViewport({ scale: 1, dontFlip: false });
-        if (nativePageWidth !== nativeViewport.width) {
-          setNativePageWidth(nativeViewport.width);
+        const newNativeWidth = nativeViewport.width;
+        const newNativeHeight = nativeViewport.height;
+
+        // Calculate effective scale using fresh native dimensions (avoids stale-closure lag)
+        let resolvedScale = scale;
+        if (containerWidth > 0 && containerHeight > 0 && newNativeWidth > 0 && newNativeHeight > 0) {
+          const pad = 64; // p-8 = 32px × 2
+          const zW = (containerWidth - pad) / newNativeWidth;
+          const zH = (containerHeight - pad) / newNativeHeight;
+          resolvedScale = Math.min(zW, zH);
+        } else if (containerWidth > 0 && newNativeWidth > 0) {
+          const pad = 64;
+          resolvedScale = (containerWidth - pad) / newNativeWidth;
         }
 
-        const viewport = page.getViewport({ scale, dontFlip: false });
+        if (nativePageWidth !== newNativeWidth) setNativePageWidth(newNativeWidth);
+        if (nativePageHeight !== newNativeHeight) setNativePageHeight(newNativeHeight);
+
+        const viewport = page.getViewport({ scale: resolvedScale, dontFlip: false });
 
         // Cancel any ongoing render task before starting a new one
         if (renderTask) {
@@ -793,6 +822,13 @@ export default function PDFViewer({
         {/* Custom overlay content (e.g., TextEditor) */}
         {children}
       </div>
+
+      {/* 캔버스 바로 아래 페이지 네비게이션 */}
+      {pageNavigation && (
+        <div className="mt-3">
+          {pageNavigation}
+        </div>
+      )}
     </div>
   );
 }

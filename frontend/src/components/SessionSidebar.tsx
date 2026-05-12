@@ -32,6 +32,8 @@ interface Session {
 interface SessionSidebarProps {
   onDocumentSelect?: (jobId: string) => void
   currentJobId?: string
+  filterToCurrentSession?: boolean  // true이면 currentJobId가 속한 세션만 표시
+  embedded?: boolean  // true이면 고정 너비/border 없이 부모 컨테이너에 맞춤
 }
 
 interface QueueItem {
@@ -43,7 +45,7 @@ interface QueueItem {
 
 type FilterType = 'all' | 'completed' | 'pending'
 
-export default function SessionSidebar({ onDocumentSelect, currentJobId }: SessionSidebarProps) {
+export default function SessionSidebar({ onDocumentSelect, currentJobId, filterToCurrentSession = false, embedded = false }: SessionSidebarProps) {
   const [sessions, setSessions] = useState<Session[]>([])
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(() => {
     if (typeof window !== 'undefined') {
@@ -1107,123 +1109,37 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId }: Sessi
 
   if (loading) {
     return (
-      <div className="w-72 border-r border-gray-200 dark:border-gray-700 p-4 flex items-center justify-center">
+      <div className={`${embedded ? 'flex-1' : 'w-72 border-r border-gray-200 dark:border-gray-700'} p-4 flex items-center justify-center`}>
         <Loader2 className="w-5 h-5 animate-spin text-gray-500" />
       </div>
     )
   }
 
   return (
-    <div className="w-72 border-r border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark flex flex-col h-full">
+    <div className={`${embedded ? 'flex flex-col h-full w-full' : 'w-72 border-r border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark flex flex-col h-full'}`}>
       {/* Header */}
       <div className="p-3 border-b border-border-light dark:border-border-dark">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
-            <FolderOpen className="w-4 h-4" />
-            세션 관리
-          </h2>
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={() => setShowQueue(!showQueue)}
-              className={`p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
-                processingQueue.length > 0 ? 'text-primary' : 'text-gray-500'
-              }`}
-              title="작업 큐"
-            >
-              <ListTodo className="w-4 h-4" />
-              {processingQueue.length > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-white text-xs rounded-full flex items-center justify-center">
-                  {processingQueue.length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => fetchSessions(true)}
-              disabled={isRefreshing}
-              className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 disabled:opacity-50"
-              title="새로고침"
-            >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              onClick={() => setShowNewSessionModal(true)}
-              className="p-1.5 rounded bg-primary hover:bg-primary/90 text-white"
-              title="새 세션"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
+          <div className="flex flex-col gap-0.5 min-w-0">
+            {filterToCurrentSession ? (() => {
+              const activeSession = sessions.find(s => s.documents.some(d => d.job_id === currentJobId))
+              return (
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                  <FolderOpen className="w-4 h-4 flex-shrink-0 text-primary" />
+                  <span className="truncate text-primary">
+                    {activeSession ? activeSession.session_name : '세션 관리'}
+                  </span>
+                </h2>
+              )
+            })() : (
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                <FolderOpen className="w-4 h-4 flex-shrink-0" />
+                세션 관리
+              </h2>
+            )}
           </div>
-        </div>
-
-        {/* Filter Tabs */}
-        <div className="flex gap-0.5 bg-gray-100 dark:bg-gray-800 rounded p-0.5">
-          {(['all', 'pending', 'completed'] as FilterType[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
-                filter === f
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
-            >
-              {f === 'all' ? '전체' : f === 'pending' ? '대기' : '완료'}
-            </button>
-          ))}
         </div>
       </div>
-
-      {/* Batch Action Bar - Shows when items are selected */}
-      {selectedCount > 0 && (
-        <div className="p-2 border-b border-border-light dark:border-border-dark bg-primary/5 dark:bg-primary/10">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-primary">
-              {selectedCount}개 선택됨
-            </span>
-            <button
-              onClick={() => setSelectedDocs(new Set())}
-              className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-            >
-              선택 해제
-            </button>
-          </div>
-          <div className="flex gap-1">
-            {selectedQueuedCount > 0 && (
-              <button
-                onClick={startBatchOCR}
-                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded"
-              >
-                <PlayCircle className="w-3 h-3" />
-                OCR ({selectedQueuedCount})
-              </button>
-            )}
-            {selectedCompletedCount > 0 && (
-              <button
-                onClick={openExportModal}
-                disabled={exportProgress.exporting}
-                className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-white text-xs font-medium rounded ${
-                  exportProgress.exporting
-                    ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-primary hover:bg-primary/90'
-                }`}
-              >
-                {exportProgress.exporting ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Download className="w-3 h-3" />
-                )}
-                {exportProgress.exporting ? '내보내는 중...' : '내보내기'}
-              </button>
-            )}
-            <button
-              onClick={batchDeleteDocuments}
-              className="flex items-center justify-center gap-1 px-2 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded"
-            >
-              <Trash2 className="w-3 h-3" />
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Processing Queue */}
       {showQueue && processingQueue.length > 0 && (
@@ -1332,15 +1248,88 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId }: Sessi
 
       {/* Sessions List */}
       <div className="flex-1 overflow-y-auto">
-        {[...sessions].sort((a, b) => {
-          const aActive = !!currentJobId && a.documents.some(d => d.job_id === currentJobId)
-          const bActive = !!currentJobId && b.documents.some(d => d.job_id === currentJobId)
-          return aActive === bActive ? 0 : aActive ? -1 : 1
-        }).map((session) => {
+        {[...sessions]
+          .filter(session =>
+            !filterToCurrentSession ||
+            !currentJobId ||
+            session.documents.some(d => d.job_id === currentJobId)
+          )
+          .sort((a, b) => {
+            const aActive = !!currentJobId && a.documents.some(d => d.job_id === currentJobId)
+            const bActive = !!currentJobId && b.documents.some(d => d.job_id === currentJobId)
+            return aActive === bActive ? 0 : aActive ? -1 : 1
+          }).map((session) => {
           const filteredDocs = getFilteredDocuments(session.documents)
           const allSelected = filteredDocs.length > 0 && filteredDocs.every(doc => selectedDocs.has(doc.job_id))
           const someSelected = filteredDocs.some(doc => selectedDocs.has(doc.job_id))
           const isActiveSession = !!currentJobId && session.documents.some(d => d.job_id === currentJobId)
+
+          // filterToCurrentSession 모드: 세션 헤더 없이 파일만 표시
+          if (filterToCurrentSession) {
+            return (
+              <div key={session.session_id}>
+                {/* Upload Progress Indicator */}
+                {uploadProgress[session.session_id] && (
+                  <div className="px-2 py-1.5 bg-blue-50 dark:bg-blue-900/30 border-b border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center gap-2 text-xs">
+                      <Loader2 className="w-3 h-3 animate-spin text-blue-500 flex-shrink-0" />
+                      <span className="text-blue-700 dark:text-blue-300 font-medium">
+                        업로드 중 {uploadProgress[session.session_id].current}/{uploadProgress[session.session_id].total}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <div className="flex-1 h-1.5 bg-blue-200 dark:bg-blue-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                          style={{ width: `${(uploadProgress[session.session_id].current / uploadProgress[session.session_id].total) * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-blue-600 dark:text-blue-400">
+                        {Math.round((uploadProgress[session.session_id].current / uploadProgress[session.session_id].total) * 100)}%
+                      </span>
+                    </div>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 truncate mt-0.5">
+                      {uploadProgress[session.session_id].filename}
+                    </p>
+                  </div>
+                )}
+                {/* Documents only */}
+                <div>
+                  {filteredDocs.length === 0 ? (
+                    <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                      {session.documents.length === 0 ? '문서 없음' : '필터된 문서 없음'}
+                    </div>
+                  ) : (
+                    filteredDocs.map((doc) => (
+                      <div
+                        key={doc.job_id}
+                        className={`flex items-center px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer group transition-colors ${
+                          currentJobId === doc.job_id
+                            ? 'bg-primary/10 dark:bg-primary/20 border-l-2 border-primary'
+                            : 'border-l-2 border-transparent'
+                        } ${navigatingJobId === doc.job_id ? 'animate-pulse' : ''}`}
+                        onClick={() => handleDocumentSelect(doc.job_id)}
+                      >
+                        {getStatusIcon(doc.status)}
+                        <span className={`text-xs truncate ml-1.5 flex-1 min-w-0 ${
+                          currentJobId === doc.job_id
+                            ? 'text-primary font-medium'
+                            : 'text-gray-700 dark:text-gray-300'
+                        }`}>
+                          {doc.original_filename}
+                        </span>
+                        {doc.status === 'processing' && (
+                          <span className="text-xs text-blue-500 ml-1 flex-shrink-0">
+                            {doc.progress_percent.toFixed(0)}%
+                          </span>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )
+          }
 
           return (
             <div key={session.session_id} className="border-b border-border-light dark:border-border-dark">

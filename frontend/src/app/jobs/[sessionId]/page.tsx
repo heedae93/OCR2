@@ -383,7 +383,7 @@ export default function SessionDetailPage() {
                     return (
                       <tr
                         key={job.job_id}
-                        className={`transition-colors ${isMatch ? "bg-cyan-50 dark:bg-cyan-900/20 border-l-4 border-l-cyan-400" : "hover:bg-primary/5 dark:hover:bg-primary/10 border-l-4 border-transparent"}`}
+                        className={`transition-colors ${isMatch ? "bg-cyan-50 dark:bg-cyan-900/20 border-l-4 border-l-cyan-400" : "hover:bg-primary/5 dark:hover:bg-primary/10"}`}
                       >
                         <td className="px-6 py-5">
                           <div className="flex flex-col">

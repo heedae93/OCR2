@@ -119,6 +119,7 @@ export default function EditorPage() {
   const [pageWidth, setPageWidth] = useState(0);
   const [pageHeight, setPageHeight] = useState(0);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<'files' | 'pages'>('files');
   const [showSmartTools, setShowSmartTools] = useState(false);
   const [editorUser, setEditorUser] = useState<{ name: string; username: string } | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -499,13 +500,13 @@ export default function EditorPage() {
   };
 
   const handleZoomIn = () => {
-    setFitToWidth(false); // Disable fit-to-width when manually zooming
-    setZoom((prev) => Math.min(200, prev + 25));
+    setFitToWidth(false);
+    setZoom((prev) => Math.min(200, prev + 5));
   };
 
   const handleZoomOut = () => {
-    setFitToWidth(false); // Disable fit-to-width when manually zooming
-    setZoom((prev) => Math.max(25, prev - 25));
+    setFitToWidth(false);
+    setZoom((prev) => Math.max(10, prev - 5));
   };
 
   const handleFitToWidth = () => {
@@ -811,7 +812,7 @@ export default function EditorPage() {
       <div className="flex h-screen w-full flex-col bg-background-light dark:bg-background-dark">
         {/* Header */}
         <header className="flex h-16 w-full flex-shrink-0 items-center justify-between border-b border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark px-4 sm:px-6">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => router.push("/")}
               className="flex items-center gap-2 text-primary hover:opacity-80 transition-opacity"
@@ -823,61 +824,8 @@ export default function EditorPage() {
                 AI Doc Intelligence
               </h1>
             </button>
-            <div className="hidden md:flex items-center gap-2 max-w-xs">
-              <span className="material-symbols-outlined text-text-secondary-light dark:text-text-secondary-dark flex-shrink-0">
-                description
-              </span>
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark truncate leading-tight" title={job?.filename || jobId}>
-                  {job?.filename || `${jobId.substring(0, 12)}...`}
-                </span>
-                {hasOCRResults && (
-                  <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark leading-tight">
-                    {currentPage} / {totalPdfPages || ocrResults?.page_count || "?"} 페이지
-                  </span>
-                )}
-              </div>
-            </div>
           </div>
           <div className="flex flex-1 items-center justify-end gap-3 sm:gap-4">
-            <div className="hidden lg:flex items-center gap-2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-              {saveStatus === "saved" && (
-                <>
-                  <span className="material-symbols-outlined text-base text-green-500">
-                    cloud_done
-                  </span>
-                  <span className="text-green-600 dark:text-green-400">
-                    저장됨
-                  </span>
-                </>
-              )}
-              {saveStatus === "saving" && (
-                <>
-                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                  <span className="text-primary">저장 중...</span>
-                </>
-              )}
-              {saveStatus === "unsaved" && (
-                <>
-                  <span className="material-symbols-outlined text-base text-orange-500">
-                    edit
-                  </span>
-                  <span className="text-orange-600 dark:text-orange-400">
-                    편집 중
-                  </span>
-                </>
-              )}
-              {saveStatus === "error" && (
-                <>
-                  <span className="material-symbols-outlined text-base text-red-500">
-                    error
-                  </span>
-                  <span className="text-red-600 dark:text-red-400">
-                    저장 실패
-                  </span>
-                </>
-              )}
-            </div>
             {/* <div className="flex items-center gap-1 sm:gap-2">
               <button className="group flex h-9 w-9 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-transparent text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 relative">
                 <span className="material-symbols-outlined text-xl">undo</span>
@@ -984,366 +932,366 @@ export default function EditorPage() {
         {/* Main Content */}
         <main className="flex flex-1 w-full overflow-hidden">
           <div className="flex w-full h-full">
-            {/* Session Sidebar - Left */}
-            <SessionSidebar
-              currentJobId={jobId}
-              onDocumentSelect={(newJobId) =>
-                router.push(`/editor/${newJobId}`)
-              }
-            />
-
-            {/* Page Thumbnails Sidebar */}
-            <aside
-              className={`flex h-full flex-shrink-0 flex-col justify-between border-r border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark overflow-y-auto transition-all duration-300 ${previewCollapsed ? "w-10 p-0" : "w-64 p-4"}`}
-            >
+            {/* Unified Left Sidebar */}
+            <aside className={`relative flex h-full flex-shrink-0 flex-col border-r border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark transition-all duration-300 ${previewCollapsed ? "w-14" : "w-72"}`}>
               {previewCollapsed ? (
-                <div className="flex flex-col items-center pt-3 gap-2">
+                /* 접힌 상태: 탭 아이콘 */
+                <div className="flex flex-col items-center h-full">
+                  {/* 탭바와 높이 맞춤 헤더 */}
+                  <div className="w-full flex items-center justify-center py-[9px] px-1.5 border-b border-border-light dark:border-border-dark flex-shrink-0">
+                    <button
+                      onClick={() => setPreviewCollapsed(false)}
+                      className="p-1.5 flex items-center justify-center rounded-xl text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                      title="사이드바 펼치기"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">keyboard_double_arrow_right</span>
+                    </button>
+                  </div>
+                  <div className="flex flex-col items-center pt-2 gap-1">
                   <button
-                    onClick={() => setPreviewCollapsed(false)}
-                    className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-text-secondary-light dark:text-text-secondary-dark"
-                    title="미리보기 펼치기"
+                    onClick={() => { setSidebarTab('files'); setPreviewCollapsed(false); }}
+                    className={`w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
+                      sidebarTab === 'files'
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10'
+                    }`}
+                    title="작업 내역"
                   >
-                    <span className="material-symbols-outlined text-xl">
-                      chevron_right
-                    </span>
+                    <span className="material-symbols-outlined text-[20px]">description</span>
                   </button>
-                  <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark [writing-mode:vertical-rl] mt-2 select-none">
-                    미리보기
-                  </span>
+                  <button
+                    onClick={() => { setSidebarTab('pages'); setPreviewCollapsed(false); }}
+                    className={`w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
+                      sidebarTab === 'pages'
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10'
+                    }`}
+                    title="미리 보기"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">auto_awesome_mosaic</span>
+                  </button>
+                  </div>
                 </div>
               ) : (
-                <>
-                  <div className="flex flex-col gap-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h2 className="text-base font-medium text-text-primary-light dark:text-text-primary-dark">
-                          페이지 미리보기
-                        </h2>
-                        <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                          드래그하여 페이지 순서 변경
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => setPreviewCollapsed(true)}
-                        className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-text-secondary-light dark:text-text-secondary-dark flex-shrink-0"
-                        title="미리보기 접기"
-                      >
-                        <span className="material-symbols-outlined text-xl">
-                          chevron_left
-                        </span>
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {(() => {
-                        // Determine page list to show
-                        const pageList = ocrResults?.pages
-                          ? ocrResults.pages.map((p) => p.page_number)
-                          : totalPdfPages > 0
-                            ? Array.from(
-                                { length: totalPdfPages },
-                                (_, i) => i + 1,
-                              )
-                            : [1];
+                <div className="flex flex-col h-full min-h-0">
+                  {/* Tab bar */}
+                  <div className="flex items-center gap-1 p-1.5 border-b border-border-light dark:border-border-dark flex-shrink-0">
+                    <button
+                      onClick={() => setSidebarTab('files')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors ${
+                        sidebarTab === 'files'
+                          ? 'bg-primary/15 text-primary'
+                          : 'text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[15px]">description</span>
+                      작업 내역
+                    </button>
+                    <button
+                      onClick={() => setSidebarTab('pages')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors ${
+                        sidebarTab === 'pages'
+                          ? 'bg-primary/15 text-primary'
+                          : 'text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[15px]">auto_awesome_mosaic</span>
+                      미리 보기
+                    </button>
+                    <button
+                      onClick={() => setPreviewCollapsed(true)}
+                      className="p-1.5 rounded-lg text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex-shrink-0"
+                      title="사이드바 접기"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">keyboard_double_arrow_left</span>
+                    </button>
+                  </div>
 
-                        return pageList.map((pageNum) => (
-                          <div
-                            key={pageNum}
-                            ref={(el) => registerThumbnailRef(pageNum, el)}
-                            data-page={pageNum}
-                            onClick={() => setCurrentPage(pageNum)}
-                            className="group relative flex flex-col gap-2 cursor-pointer"
-                          >
-                            <div
-                              className={`w-full rounded-lg bg-gray-200 dark:bg-gray-700 aspect-[3/4] flex items-center justify-center overflow-hidden transition-all ${
-                                currentPage === pageNum
-                                  ? "ring-2 ring-primary shadow-lg"
-                                  : "hover:ring-1 hover:ring-primary/50"
-                              }`}
-                            >
-                              {pageThumbnails[pageNum] ? (
-                                <img
-                                  src={pageThumbnails[pageNum]}
-                                  alt={`Page ${pageNum}`}
-                                  className="w-full h-full object-contain"
-                                  loading="lazy"
-                                />
-                              ) : (
-                                <div className="flex flex-col items-center gap-1">
-                                  <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-                                  <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                                    {pageNum}
-                                  </span>
+                  {/* Tab content */}
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    {/* 작업 내역 tab */}
+                    <div className={`h-full ${sidebarTab === 'files' ? 'flex flex-col' : 'hidden'}`}>
+                      <div className="flex-1 min-h-0 overflow-hidden">
+                        <SessionSidebar
+                          currentJobId={jobId}
+                          filterToCurrentSession={true}
+                          embedded={true}
+                          onDocumentSelect={(newJobId) => router.push(`/editor/${newJobId}`)}
+                        />
+                      </div>
+                      {/* 작업 내역 페이지 이동 버튼 */}
+                      <div className="flex-shrink-0 p-3 border-t border-border-light dark:border-border-dark">
+                        <button
+                          onClick={() => router.push("/jobs")}
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+                          작업 내역 페이지로 이동
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 페이지 미리보기 tab */}
+                    <div className={`h-full ${sidebarTab === 'pages' ? 'flex flex-col overflow-y-auto' : 'hidden'}`}>
+                      <div className="flex-1 p-4 flex flex-col gap-4">
+                        <div className="grid grid-cols-2 gap-3">
+                          {(() => {
+                            const pageList = ocrResults?.pages
+                              ? ocrResults.pages.map((p) => p.page_number)
+                              : totalPdfPages > 0
+                                ? Array.from({ length: totalPdfPages }, (_, i) => i + 1)
+                                : [1];
+
+                            return pageList.map((pageNum) => (
+                              <div
+                                key={pageNum}
+                                ref={(el) => registerThumbnailRef(pageNum, el)}
+                                data-page={pageNum}
+                                onClick={() => setCurrentPage(pageNum)}
+                                className="group relative flex flex-col gap-2 cursor-pointer"
+                              >
+                                <div className={`w-full rounded-lg bg-gray-200 dark:bg-gray-700 aspect-[3/4] flex items-center justify-center overflow-hidden transition-all ${
+                                  currentPage === pageNum
+                                    ? "ring-2 ring-primary shadow-lg"
+                                    : "hover:ring-1 hover:ring-primary/50"
+                                }`}>
+                                  {pageThumbnails[pageNum] ? (
+                                    <img
+                                      src={pageThumbnails[pageNum]}
+                                      alt={`Page ${pageNum}`}
+                                      className="w-full h-full object-contain"
+                                      loading="lazy"
+                                    />
+                                  ) : (
+                                    <div className="flex flex-col items-center gap-1">
+                                      <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                                      <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{pageNum}</span>
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                            <p
-                              className={`text-sm font-medium text-center ${
-                                currentPage === pageNum
-                                  ? "text-primary"
-                                  : "text-text-primary-light dark:text-text-primary-dark"
-                              }`}
-                            >
-                              {pageNum}
-                            </p>
-                            {ocrResults?.pages && (
-                              <div className="absolute top-1 right-1 hidden group-hover:flex gap-1">
-                                <button className="flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70">
-                                  <span className="material-symbols-outlined text-sm">
-                                    rotate_90_degrees_ccw
-                                  </span>
-                                </button>
-                                <button className="flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white hover:bg-red-500">
-                                  <span className="material-symbols-outlined text-sm">
-                                    delete
-                                  </span>
-                                </button>
+                                <p className={`text-sm font-medium text-center ${
+                                  currentPage === pageNum ? "text-primary" : "text-text-primary-light dark:text-text-primary-dark"
+                                }`}>
+                                  {pageNum}
+                                </p>
+                                {ocrResults?.pages && (
+                                  <div className="absolute top-1 right-1 hidden group-hover:flex gap-1">
+                                    <button className="flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70">
+                                      <span className="material-symbols-outlined text-sm">rotate_90_degrees_ccw</span>
+                                    </button>
+                                    <button className="flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white hover:bg-red-500">
+                                      <span className="material-symbols-outlined text-sm">delete</span>
+                                    </button>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        ));
-                      })()}
+                            ));
+                          })()}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <button className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg bg-primary/20 text-sm font-bold text-primary hover:bg-primary/30">
+                            <span className="material-symbols-outlined">add</span>
+                            <span className="truncate">페이지 추가</span>
+                          </button>
+                          <button className="flex h-10 w-full items-center justify-center gap-2 rounded-lg text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10">
+                            <span className="material-symbols-outlined">map</span>
+                            <span>페이지 맵</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <button className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg bg-primary/20 text-sm font-bold text-primary hover:bg-primary/30">
-                      <span className="material-symbols-outlined">add</span>
-                      <span className="truncate">페이지 추가</span>
-                    </button>
-                    <button className="flex h-10 w-full items-center justify-center gap-2 rounded-lg text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10">
-                      <span className="material-symbols-outlined">map</span>
-                      <span>페이지 맵</span>
-                    </button>
-                  </div>
-                </>
+                </div>
               )}
             </aside>
 
             {/* Center - PDF Viewer */}
             <section className="flex flex-1 flex-col bg-background-light dark:bg-background-dark overflow-hidden">
-              <div className="flex flex-shrink-0 items-center justify-between border-b border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark px-4 py-1.5">
-                <div className="flex items-center gap-1 min-w-[180px]">
+              {/* ── 툴바 ── */}
+              <div className="flex flex-shrink-0 items-center justify-end border-b border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark px-3 py-1.5">
+
+                {/* 줌 컨트롤 */}
+                <div className="flex items-center">
                   <button
-                    onClick={handleFitToWidth}
-                    className={`p-2 rounded-lg transition-colors ${
-                      fitToWidth
-                        ? "bg-primary/10 text-primary"
-                        : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
-                    }`}
-                    title="너비에 맞춤"
+                    onClick={handleZoomOut}
+                    className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                    title="축소"
                   >
-                    <span className="material-symbols-outlined">fit_width</span>
+                    <span className="material-symbols-outlined text-[18px]">zoom_out</span>
                   </button>
-                  <button
-                    onClick={handleZoomIn}
-                    className="p-2 rounded-lg text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
-                  >
-                    <span className="material-symbols-outlined">zoom_in</span>
-                  </button>
-                  <span className="text-sm font-medium w-16 text-center text-text-primary-light dark:text-text-primary-dark">
+                  <span className="min-w-[3rem] text-center text-xs font-medium text-text-primary-light dark:text-text-primary-dark select-none tabular-nums">
                     {zoom}%
                   </span>
                   <button
-                    onClick={handleZoomOut}
-                    className="p-2 rounded-lg text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
+                    onClick={handleZoomIn}
+                    className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                    title="확대"
                   >
-                    <span className="material-symbols-outlined">zoom_out</span>
+                    <span className="material-symbols-outlined text-[18px]">zoom_in</span>
                   </button>
                 </div>
-                <div className="flex items-center gap-1 min-w-[120px] justify-center">
-                  <button
-                    onClick={() => {
-                      const newPage = Math.max(1, currentPage - 1);
-                      console.log(
-                        `[Editor] Page navigation: ${currentPage} → ${newPage} (previous)`,
-                      );
-                      setCurrentPage(newPage);
-                    }}
-                    className="p-2 rounded-lg text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
-                  >
-                    <span className="material-symbols-outlined">
-                      keyboard_arrow_up
-                    </span>
-                  </button>
-                  <div className="flex items-center">
-                    <input
-                      className="w-8 h-7 text-center border-0 bg-transparent text-sm text-text-primary-light dark:text-text-primary-dark"
-                      type="text"
-                      value={currentPage}
-                      readOnly
-                    />
-                    <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                      / {ocrResults?.page_count || totalPdfPages || 1}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const maxPage =
-                        ocrResults?.page_count || totalPdfPages || 1;
-                      const newPage = Math.min(maxPage, currentPage + 1);
-                      console.log(
-                        `[Editor] Page navigation: ${currentPage} → ${newPage} (next, max=${maxPage})`,
-                      );
-                      setCurrentPage(newPage);
-                    }}
-                    className="p-2 rounded-lg text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
-                  >
-                    <span className="material-symbols-outlined">
-                      keyboard_arrow_down
-                    </span>
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 min-w-[300px] justify-end">
-                  {/* <button
-                    onClick={() => setShowSmartTools(!showSmartTools)}
-                    className={`flex items-center gap-2 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 whitespace-nowrap ${
-                      showSmartTools
-                        ? "bg-primary/10 text-primary"
-                        : "text-text-secondary-light dark:text-text-secondary-dark"
-                    }`}
-                    title="Smart Tools"
-                  >
-                    <span className="material-symbols-outlined">build</span>
-                    <span className="text-sm hidden lg:inline">
-                      Smart Tools
-                    </span>
-                  </button> */}
+
+                {/* 우측 — 기능 버튼들 */}
+                <div className="flex items-center gap-0.5">
+                  <div className="w-px h-4 bg-border-light dark:bg-border-dark mx-1" />
+
                   <button
                     onClick={() => setShowOCRComparison(!showOCRComparison)}
-                    className={`flex items-center gap-2 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 whitespace-nowrap ${
-                      showOCRComparison
-                        ? "bg-primary/10 text-primary"
-                        : "text-text-secondary-light dark:text-text-secondary-dark"
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
+                      showOCRComparison ? "bg-primary/10 text-primary" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
                     }`}
                     title="OCR 비교"
                   >
-                    <span className="material-symbols-outlined">
-                      compare_arrows
-                    </span>
-                    <span className="text-sm hidden lg:inline">OCR 비교</span>
+                    <span className="material-symbols-outlined text-[20px]">compare_arrows</span>
+                    <span className="hidden lg:inline whitespace-nowrap">OCR 비교</span>
                   </button>
+
                   <button
                     onClick={() => setShowTextLayer(!showTextLayer)}
-                    className={`flex items-center gap-2 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 whitespace-nowrap ${
-                      showTextLayer
-                        ? "bg-primary/10 text-primary"
-                        : "text-text-secondary-light dark:text-text-secondary-dark"
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
+                      showTextLayer ? "bg-primary/10 text-primary" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
                     }`}
                     title="텍스트 레이어"
                   >
-                    <span className="material-symbols-outlined">
-                      visibility
-                    </span>
-                    <span className="text-sm hidden lg:inline">
-                      텍스트 레이어
-                    </span>
+                    <span className="material-symbols-outlined text-[20px]">visibility</span>
+                    <span className="hidden lg:inline whitespace-nowrap">텍스트 레이어</span>
                   </button>
+
                   {hasOCRResults && (
                     <button
                       onClick={reprocessCurrentPage}
                       disabled={isReprocessingPage}
-                      className="flex items-center gap-2 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 whitespace-nowrap text-text-secondary-light dark:text-text-secondary-dark disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-40"
                       title={`현재 페이지(${currentPage}) OCR 재처리`}
                     >
                       {isReprocessingPage ? (
                         <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                       ) : (
-                        <span className="material-symbols-outlined">refresh</span>
+                        <span className="material-symbols-outlined text-[20px]">refresh</span>
                       )}
-                      <span className="text-sm hidden lg:inline">
+                      <span className="hidden lg:inline whitespace-nowrap">
                         {isReprocessingPage ? "재처리 중..." : "페이지 재처리"}
                       </span>
                     </button>
                   )}
+
                   <button
                     onClick={() => setShowMasking(!showMasking)}
-                    className={`flex items-center gap-2 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 whitespace-nowrap ${
-                      showMasking
-                        ? "bg-primary/10 text-primary"
-                        : "text-text-secondary-light dark:text-text-secondary-dark"
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
+                      showMasking ? "bg-primary/10 text-primary" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
                     }`}
                     title="개인정보 마스킹"
                   >
-                    <span className="material-symbols-outlined">gpp_maybe</span>
-                    <span className="text-sm hidden lg:inline">
-                      개인정보 마스킹
-                    </span>
+                    <span className="material-symbols-outlined text-[20px]">gpp_maybe</span>
+                    <span className="hidden lg:inline whitespace-nowrap">개인정보 마스킹</span>
                   </button>
+
                   <button
                     onClick={() => setShowAccuracy(!showAccuracy)}
-                    className={`flex items-center gap-2 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 whitespace-nowrap ${
-                      showAccuracy
-                        ? "bg-primary/10 text-primary"
-                        : "text-text-secondary-light dark:text-text-secondary-dark"
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
+                      showAccuracy ? "bg-primary/10 text-primary" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
                     }`}
                     title="정확도 시각화"
                   >
-                    <span className="material-symbols-outlined">verified</span>
-                    <span className="text-sm hidden lg:inline">
-                      정확도 시각화
-                    </span>
+                    <span className="material-symbols-outlined text-[20px]">verified</span>
+                    <span className="hidden lg:inline whitespace-nowrap">정확도 시각화</span>
                   </button>
                 </div>
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <PDFViewer
-                  pdfUrl={pdfUrl}
-                  currentPage={currentPage}
-                  onPageChange={setCurrentPage}
-                  zoom={zoom}
-                  fitToWidth={fitToWidth}
-                  onZoomChange={setZoom}
-                  ocrResults={ocrResults}
-                  showTextLayer={showTextLayer}
-                  showOCRComparison={showOCRComparison}
-                  showAccuracy={showAccuracy}
-                  showMasking={showMasking}
-                  maskingData={maskingData}
-                  highlightedLineIndex={selectedLineIndex}
-                  onPageDimensionsChange={(width, height) => {
-                    setPageWidth(width);
-                    setPageHeight(height);
-                  }}
-                >
-                  <TextEditor
-                    isActive={activeTool === "text"}
-                    onTextAdd={handleTextAdd}
-                    pageWidth={pageWidth}
-                    pageHeight={pageHeight}
-                    elements={textElements}
-                    onElementUpdate={handleElementUpdate}
-                    onElementDelete={handleElementDelete}
-                  />
-                </PDFViewer>
-              </div>
-            </section>
-
-            {/* Masking Results Panel */}
-            {showMasking && (
-              <aside
-                className="h-full flex-shrink-0 flex-col border-l border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark p-4 flex relative"
-                style={{ width: maskingPanelWidth }}
-              >
-                <div
-                  className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/50 active:bg-primary z-10 transition-colors"
-                  onMouseDown={handleMaskingResizeStart}
-                />
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark flex items-center gap-2">
-                    <span className="material-symbols-outlined text-base">
-                      shield_person
-                    </span>
-                    개인정보 마스킹 결과
-                  </span>
-                  <button
-                    onClick={() => setShowMasking(false)}
-                    className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-text-secondary-light dark:text-text-secondary-dark"
+              </div>{/* 툴바 끝 */}
+              {/* 툴바 아래: PDF 뷰어 + 마스킹 패널 나란히 */}
+              <div className="flex flex-1 overflow-hidden">
+                <div className="flex-1 overflow-hidden">
+                  <PDFViewer
+                    pdfUrl={pdfUrl}
+                    currentPage={currentPage}
+                    onPageChange={setCurrentPage}
+                    zoom={zoom}
+                    fitToWidth={fitToWidth}
+                    fitToPage={fitToWidth}
+                    onZoomChange={setZoom}
+                    pageNavigation={
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                          className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-30"
+                          disabled={currentPage <= 1}
+                          title="이전 페이지"
+                        >
+                          <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+                        </button>
+                        <div className="flex items-center gap-1 rounded-md border border-border-light dark:border-border-dark px-2.5 py-1">
+                          <input
+                            className="w-6 text-center border-0 bg-transparent text-xs font-medium text-text-primary-light dark:text-text-primary-dark outline-none"
+                            type="text"
+                            value={currentPage}
+                            readOnly
+                          />
+                          <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">/</span>
+                          <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                            {ocrResults?.page_count || totalPdfPages || 1}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setCurrentPage(Math.min(ocrResults?.page_count || totalPdfPages || 1, currentPage + 1))}
+                          className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-30"
+                          disabled={currentPage >= (ocrResults?.page_count || totalPdfPages || 1)}
+                          title="다음 페이지"
+                        >
+                          <span className="material-symbols-outlined text-[20px]">chevron_right</span>
+                        </button>
+                      </div>
+                    }
+                    ocrResults={ocrResults}
+                    showTextLayer={showTextLayer}
+                    showOCRComparison={showOCRComparison}
+                    showAccuracy={showAccuracy}
+                    showMasking={showMasking}
+                    maskingData={maskingData}
+                    highlightedLineIndex={selectedLineIndex}
+                    onPageDimensionsChange={(width, height) => {
+                      setPageWidth(width);
+                      setPageHeight(height);
+                    }}
                   >
-                    <span className="material-symbols-outlined text-xl">
-                      close
-                    </span>
-                  </button>
+                    <TextEditor
+                      isActive={activeTool === "text"}
+                      onTextAdd={handleTextAdd}
+                      pageWidth={pageWidth}
+                      pageHeight={pageHeight}
+                      elements={textElements}
+                      onElementUpdate={handleElementUpdate}
+                      onElementDelete={handleElementDelete}
+                    />
+                  </PDFViewer>
                 </div>
-                <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
+
+                {/* Masking Results Panel — PDF 캔버스 오른쪽 */}
+                {showMasking && (
+                  <aside
+                    className="h-full flex-shrink-0 flex-col border-l border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark p-4 flex relative"
+                    style={{ width: maskingPanelWidth }}
+                  >
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/50 active:bg-primary z-10 transition-colors"
+                      onMouseDown={handleMaskingResizeStart}
+                    />
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark flex items-center gap-2">
+                        <span className="material-symbols-outlined text-base">
+                          shield_person
+                        </span>
+                        개인정보 마스킹 결과
+                      </span>
+                      <button
+                        onClick={() => setShowMasking(false)}
+                        className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-text-secondary-light dark:text-text-secondary-dark"
+                      >
+                        <span className="material-symbols-outlined text-xl">
+                          close
+                        </span>
+                      </button>
+                    </div>
+                    <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
                   {maskingData.length > 0 ? (
                     <>
                       <div className="flex flex-col items-center justify-center p-3 rounded-lg bg-primary/10 border border-primary/20 mb-3">
@@ -1418,9 +1366,11 @@ export default function EditorPage() {
                       </p>
                     </div>
                   )}
-                </div>
-              </aside>
-            )}
+                    </div>
+                  </aside>
+                )}
+              </div>{/* 툴바 아래 flex 행 끝 */}
+            </section>
 
             {/* Smart Tools Floating Panel */}
             {showSmartTools && (

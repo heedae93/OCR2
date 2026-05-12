@@ -214,7 +214,8 @@ def get_layout_detector_for_gpu(gpu_id: int):
         if gpu_id not in layout_detector_pool:
             logger.info(f"Initializing LayoutDetector for GPU {gpu_id}")
             # Layout detector will use the same GPU as OCR
-            device = f"cuda:{gpu_id}" if Config.OCR_USE_GPU else "cpu"
+            # PaddleX device format: "gpu:0" (not "cuda:0")
+            device = f"gpu:{gpu_id}" if Config.OCR_USE_GPU else "cpu"
             detector = LayoutDetector(
                 model_name=Config.LAYOUT_MODEL_NAME,
                 device=device

@@ -167,19 +167,51 @@ def process_tika_task(self, job_id: str):
                 return
 
             pdf_path: Path | None = None
+            raw_path: Path | None = None
+            image_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".gif", ".webp"}
+
+            if db_job.raw_file_path:
+                raw_path = Path(db_job.raw_file_path)
+
             if db_job.pdf_file_path:
                 p = Path(db_job.pdf_file_path)
                 if p.is_file() and p.suffix.lower() == ".pdf":
                     pdf_path = p
-            if pdf_path is None and db_job.raw_file_path:
-                p = Path(db_job.raw_file_path)
-                if p.is_file() and p.suffix.lower() == ".pdf":
-                    pdf_path = p
+            if pdf_path is None and raw_path and raw_path.is_file() and raw_path.suffix.lower() == ".pdf":
+                pdf_path = raw_path
+
+            # 이미지 파일 입력인 경우 — PDF가 없으므로 no_text_layer 기록만 남김
+            is_image_input = (
+                raw_path is not None
+                and raw_path.suffix.lower() in image_extensions
+            )
         finally:
             db.close()
 
         if not pdf_path:
-            logger.info("[Worker] TikaTrack skipped (no pdf source): %s", job_id)
+            if is_image_input:
+                # 이미지 원본은 텍스트 레이어가 없으므로 DB에 기록 후 종료
+                from utils.tika_track import persist_tika_track_to_db
+                dummy_result = {
+                    "job_id": job_id,
+                    "pdf_path": str(raw_path) if raw_path else None,
+                    "tika_java_server_url": "",
+                    "pages": [
+                        {
+                            "page_number": 1,
+                            "has_text_layer": False,
+                            "tika_text": None,
+                            "skipped_reason": "no_text_layer",
+                        }
+                    ],
+                    "combined_text": "",
+                    "skipped": True,
+                    "skip_reason": "image_input_no_text_layer",
+                }
+                cnt = persist_tika_track_to_db(job_id, dummy_result)
+                logger.info("[Worker] TikaTrack recorded image-input (no text layer): job=%s rows=%s", job_id, cnt)
+            else:
+                logger.info("[Worker] TikaTrack skipped (no pdf source): %s", job_id)
             return
 
         tika_result = run_tika_track_for_pdf(job_id, pdf_path)

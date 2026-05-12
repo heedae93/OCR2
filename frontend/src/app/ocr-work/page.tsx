@@ -938,6 +938,7 @@ export default function OcrWorkPage() {
                 )}
               </div>
 
+              <div className="flex min-h-0 flex-1 flex-col gap-3">
               <div className="flex min-h-[7rem] flex-1 flex-col rounded-xl border border-border-light bg-surface-light p-3 dark:border-border-dark dark:bg-surface-dark xl:min-h-0 xl:p-3">
                 <div
                   {...getRootProps()}
@@ -1018,6 +1019,7 @@ export default function OcrWorkPage() {
                   </>
                 )}
               </button>
+              </div>{/* 업로드+버튼 래퍼 끝 */}
 
             </aside>
 
