@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import Sidebar from "@/components/Sidebar";
@@ -324,6 +324,45 @@ function JobsPageInner() {
     }
   };
 
+  const handleBulkReprocessSessions = async () => {
+    for (const sessionId of selectedSessionIds) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`);
+        if (!res.ok) continue;
+        const data = await res.json();
+        const jobs: JobListItem[] = (data.documents ?? []).filter((j: any) =>
+          ["completed", "failed"].includes(j.status),
+        );
+        for (const job of jobs) {
+          await fetch(`${API_BASE_URL}/api/process/${job.job_id}`, { method: "POST" });
+        }
+      } catch {}
+    }
+    await loadData();
+    setSelectedSessionIds(new Set());
+  };
+
+  const handleBulkDownloadSessions = async () => {
+    for (const sessionId of selectedSessionIds) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`);
+        if (!res.ok) continue;
+        const data = await res.json();
+        const jobs = (data.documents ?? []).filter(
+          (j: any) => j.status === "completed" && j.pdf_url,
+        );
+        for (const job of jobs) {
+          const a = document.createElement("a");
+          a.href = `${API_BASE_URL}${job.pdf_url}`;
+          a.download = job.original_filename ?? "download.pdf";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+      } catch {}
+    }
+  };
+
   const openSession = (sessionId: string) => {
     let url = `/jobs/${encodeURIComponent(sessionId)}`;
 
@@ -463,43 +502,6 @@ function JobsPageInner() {
                 작업을 선택하면 해당 작업의 파일 목록을 확인할 수 있습니다.
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => loadData()}
-                className="inline-flex items-center gap-2 rounded-lg border border-border-light dark:border-border-dark px-4 py-2 text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 transition-colors"
-              >
-                <span className="material-symbols-outlined text-base">
-                  refresh
-                </span>
-                새로고침
-              </button>
-              <button
-                onClick={() =>
-                  handleDeleteSessions(Array.from(selectedSessionIds))
-                }
-                disabled={selectedSessionIds.size === 0 || deletingSessions}
-                className="inline-flex items-center gap-2 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <span className="material-symbols-outlined text-base">
-                  delete
-                </span>
-                {deletingSessions
-                  ? "삭제 중..."
-                  : `선택 항목 삭제 (${selectedSessionIds.size})`}
-              </button>
-              {totals.failed > 0 && (
-                <button
-                  onClick={handleDeleteAllFailed}
-                  disabled={deletingFailed}
-                  className="inline-flex items-center gap-2 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <span className="material-symbols-outlined text-base">
-                    delete_sweep
-                  </span>
-                  {deletingFailed ? "삭제 중..." : "실패 작업 전체 삭제"}
-                </button>
-              )}
-            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
@@ -551,44 +553,6 @@ function JobsPageInner() {
                 </button>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={statusFilter}
-                  onChange={(event) =>
-                    setStatusFilter(event.target.value as StatusFilter)
-                  }
-                  className="h-12 px-3 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-xl text-text-secondary-light dark:text-text-secondary-dark outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                >
-                  <option value="all">모든 상태</option>
-                  <option value="active">진행/대기</option>
-                  <option value="completed">완료</option>
-                  <option value="failed">실패 포함</option>
-                  <option value="empty">빈 세션</option>
-                </select>
-
-                <select
-                  value={sortBy}
-                  onChange={(event) => setSortBy(event.target.value as SortBy)}
-                  className="h-12 px-3 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-xl text-text-secondary-light dark:text-text-secondary-dark outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                >
-                  <option value="latest">최근 작업순</option>
-                  <option value="oldest">오래된순</option>
-                  <option value="name">이름순</option>
-                  <option value="progress">완료율순</option>
-                </select>
-
-                <select
-                  value={pageSize}
-                  onChange={(event) => setPageSize(Number(event.target.value))}
-                  className="h-12 px-3 text-sm bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-xl text-text-secondary-light dark:text-text-secondary-dark outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                >
-                  {PAGE_SIZE_OPTIONS.map((size) => (
-                    <option key={size} value={size}>
-                      {size}개씩
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
           </div>
 
@@ -634,19 +598,84 @@ function JobsPageInner() {
             </div>
           )}
 
-          <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
             <p className="text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark">
               총{" "}
               <span className="text-primary font-bold">
                 {filteredSessions.length}
               </span>
               개 작업
+              {focusSessionName && (
+                <span className="ml-2 text-xs font-medium text-primary">· 선택: {focusSessionName}</span>
+              )}
             </p>
-            {focusSessionName && (
-              <p className="text-xs font-medium text-primary">
-                선택 작업: {focusSessionName}
-              </p>
-            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+                className="h-8 px-2 text-xs bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark outline-none focus:border-primary transition-shadow"
+              >
+                <option value="all">모든 상태</option>
+                <option value="active">진행/대기</option>
+                <option value="completed">완료</option>
+                <option value="failed">실패 포함</option>
+                <option value="empty">빈 세션</option>
+              </select>
+              <select
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value as SortBy)}
+                className="h-8 px-2 text-xs bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark outline-none focus:border-primary transition-shadow"
+              >
+                <option value="latest">최근 작업순</option>
+                <option value="oldest">오래된순</option>
+                <option value="name">이름순</option>
+                <option value="progress">완료율순</option>
+              </select>
+              <select
+                value={pageSize}
+                onChange={(event) => setPageSize(Number(event.target.value))}
+                className="h-8 px-2 text-xs bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-lg text-text-secondary-light dark:text-text-secondary-dark outline-none focus:border-primary transition-shadow"
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>{size}개씩</option>
+                ))}
+              </select>
+              <div className="w-px h-4 bg-border-light dark:bg-border-dark" />
+              <button
+                onClick={handleBulkDownloadSessions}
+                disabled={selectedSessionIds.size === 0}
+                className="inline-flex items-center gap-1 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-3 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">download</span>
+                선택 다운로드
+              </button>
+              <button
+                onClick={handleBulkReprocessSessions}
+                disabled={selectedSessionIds.size === 0}
+                className="inline-flex items-center gap-1 h-8 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 px-3 text-xs font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">refresh</span>
+                선택 재실행
+              </button>
+              <button
+                onClick={() => handleDeleteSessions(Array.from(selectedSessionIds))}
+                disabled={selectedSessionIds.size === 0 || deletingSessions}
+                className="inline-flex items-center gap-1 h-8 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">delete</span>
+                {deletingSessions ? "삭제 중..." : `선택 삭제 (${selectedSessionIds.size})`}
+              </button>
+              {totals.failed > 0 && (
+                <button
+                  onClick={handleDeleteAllFailed}
+                  disabled={deletingFailed}
+                  className="inline-flex items-center gap-1 h-8 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <span className="material-symbols-outlined text-sm">delete_sweep</span>
+                  {deletingFailed ? "삭제 중..." : "실패 작업 전체 삭제"}
+                </button>
+              )}
+            </div>
           </div>
 
           {loading ? (
@@ -675,12 +704,11 @@ function JobsPageInner() {
                   <table className="w-full min-w-[1080px] table-fixed">
                     <colgroup>
                       <col style={{ width: "4%" }} />
-                      <col style={{ width: "27%" }} />
-                      <col style={{ width: "10%" }} />
+                      <col style={{ width: "30%" }} />
                       <col style={{ width: "11%" }} />
-                      <col style={{ width: "16%" }} />
-                      <col style={{ width: "20%" }} />
-                      <col style={{ width: "12%" }} />
+                      <col style={{ width: "13%" }} />
+                      <col style={{ width: "18%" }} />
+                      <col style={{ width: "24%" }} />
                     </colgroup>
                     <thead className="bg-background-light dark:bg-background-dark border-b border-border-light dark:border-border-dark">
                       <tr>
@@ -710,7 +738,7 @@ function JobsPageInner() {
                         <th className="px-3 py-3 text-center text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
                           상태
                         </th>
-                        <th className="px-3 py-3 text-right text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
+                        <th className="px-3 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
                           문서
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
@@ -718,9 +746,6 @@ function JobsPageInner() {
                         </th>
                         <th className="px-4 py-3 text-center text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider whitespace-nowrap">
                           마지막 작업
-                        </th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider whitespace-nowrap">
-                          작업
                         </th>
                       </tr>
                     </thead>
@@ -739,7 +764,8 @@ function JobsPageInner() {
                             key={session.session_id}
                             id={`session-${session.session_id}`}
                             // className={`cursor-pointer transition-colors focus:outline-none focus:bg-primary/10 ${isFocused ? "bg-primary/10" : ""} ${isOsMatch ? "ring-1 ring-inset ring-cyan-300 dark:ring-cyan-400/40 bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/20 dark:hover:bg-cyan-900/40" : "hover:bg-primary/5 dark:hover:bg-primary/10"}`}
-                            className={`transition-colors ${isOsMatch ? "bg-cyan-50 dark:bg-cyan-900/20 border-l-4 border-l-cyan-400" : "hover:bg-primary/5 dark:hover:bg-primary/10"}`}
+                            className={`transition-colors cursor-pointer ${isOsMatch ? "bg-cyan-50 dark:bg-cyan-900/20 border-l-4 border-l-cyan-400" : "hover:bg-primary/5 dark:hover:bg-primary/10"}`}
+                            onClick={() => openSession(session.session_id)}
                           >
                             <td className="px-3 py-4 text-center">
                               <input
@@ -804,7 +830,7 @@ function JobsPageInner() {
                                 </p>
                               )}
                             </td>
-                            <td className="px-3 py-4 text-right text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                            <td className="px-3 py-4 text-left text-sm text-text-secondary-light dark:text-text-secondary-dark">
                               <div className="font-semibold text-text-primary-light dark:text-text-primary-dark">
                                 {session.total}개
                               </div>
@@ -845,67 +871,6 @@ function JobsPageInner() {
                                     session.created_at,
                                 )}
                               </span>
-                            </td>
-                            <td className="px-4 py-4">
-                              <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
-                                <label
-                                  onClick={(event) => event.stopPropagation()}
-                                  className={`inline-flex items-center justify-center rounded-lg border border-border-light dark:border-border-dark p-2 text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 transition-colors ${uploadingSession === session.session_id ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                                  title="이 세션에 파일 추가"
-                                >
-                                  <span className="material-symbols-outlined text-lg leading-none">
-                                    upload_file
-                                  </span>
-                                  <input
-                                    type="file"
-                                    multiple
-                                    accept=".pdf,.png,.jpg,.jpeg"
-                                    className="hidden"
-                                    disabled={
-                                      uploadingSession === session.session_id
-                                    }
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      (event.target as HTMLInputElement).value =
-                                        "";
-                                    }}
-                                    onChange={(event) => {
-                                      event.stopPropagation();
-                                      handleUpload(
-                                        session.session_id,
-                                        event.target.files,
-                                      );
-                                    }}
-                                  />
-                                </label>
-                                <button
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    openSession(session.session_id);
-                                  }}
-                                  className="inline-flex items-center justify-center rounded-lg bg-primary/10 p-2 text-primary hover:bg-primary hover:text-white transition-colors"
-                                  title="세션 상세 보기"
-                                >
-                                  <span className="material-symbols-outlined text-lg leading-none">
-                                    chevron_right
-                                  </span>
-                                </button>
-                                <button
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    void handleDeleteSessions([
-                                      session.session_id,
-                                    ]);
-                                  }}
-                                  disabled={deletingSessions}
-                                  className="inline-flex items-center justify-center rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50 transition-colors"
-                                  title="세션 개별 삭제"
-                                >
-                                  <span className="material-symbols-outlined text-lg leading-none">
-                                    delete
-                                  </span>
-                                </button>
-                              </div>
                             </td>
                           </tr>
                         );

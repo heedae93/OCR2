@@ -7,7 +7,10 @@ import { API_BASE_URL } from '@/lib/api'
 interface ExportModalProps {
   isOpen: boolean
   onClose: () => void
+  /** 에디터 URL 기준 현재 작업 (클라이언트 OCR PDF/JSON 내보내기에 사용) */
   jobId: string
+  /** 사이드바에서 고른 작업 목록이 있으면 이들 전부를 아래 형식으로 내보냄 (파일별로 다른 형식은 지정 불가) */
+  jobIds?: string[]
   onExport: (format: 'pdf' | 'json' | 'both') => Promise<void>
   isExporting?: boolean
 }
@@ -64,7 +67,96 @@ const exportOptions: {
   },
 ]
 
-export default function ExportModal({ isOpen, onClose, jobId, onExport, isExporting = false }: ExportModalProps) {
+/** 동일 형식 세트를 한 job에 적용 (복수 선택 시 순차 처리) */
+async function exportOneJob(
+  jid: string,
+  formats: ExportFormat[],
+  asZip: boolean,
+  userId: string,
+  onExportSinglePdfJson: (format: 'pdf' | 'json') => Promise<void>,
+  useClientPdfJson: boolean
+): Promise<void> {
+  if (formats.length === 0) return
+
+  if (formats.length === 1 && formats[0] === 'pdf') {
+    if (useClientPdfJson) {
+      await onExportSinglePdfJson('pdf')
+      return
+    }
+    const res = await fetch(`${API_BASE_URL}/api/sessions/job/${jid}`)
+    if (res.ok) {
+      const data = await res.json()
+      if (data.pdf_url) {
+        const link = document.createElement('a')
+        link.href = `${API_BASE_URL}${data.pdf_url}`
+        link.download = ''
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      }
+    }
+    return
+  }
+
+  if (formats.length === 1 && formats[0] === 'json') {
+    if (useClientPdfJson) {
+      await onExportSinglePdfJson('json')
+      return
+    }
+    const link = document.createElement('a')
+    link.href = `${API_BASE_URL}/api/export/${jid}/json?user_id=${userId}`
+    link.download = ''
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    return
+  }
+
+  if (formats.length === 1) {
+    const format = formats[0]
+    const endpoints: Record<string, string> = {
+      txt: `/api/export/${jid}/txt?user_id=${userId}`,
+      xml: `/api/export/${jid}/xml?user_id=${userId}`,
+      excel: `/api/export/${jid}/excel?user_id=${userId}`,
+    }
+    const link = document.createElement('a')
+    link.href = `${API_BASE_URL}${endpoints[format]}`
+    link.download = ''
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    return
+  }
+
+  const url = `${API_BASE_URL}/api/export/${jid}/multi?user_id=${userId}`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ formats, as_zip: asZip }),
+  })
+  if (!response.ok) throw new Error('Export failed')
+  const blob = await response.blob()
+  const downloadUrl = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = downloadUrl
+  link.download = asZip ? `${jid}_export.zip` : ''
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(downloadUrl)
+}
+
+export default function ExportModal({
+  isOpen,
+  onClose,
+  jobId,
+  jobIds,
+  onExport,
+  isExporting = false,
+}: ExportModalProps) {
+  const targetJobIds = jobIds && jobIds.length > 0 ? jobIds : [jobId]
+  const isMultiTarget = targetJobIds.length > 1
+  const headerJobId = targetJobIds[0] ?? jobId
   const [selectedFormats, setSelectedFormats] = useState<Set<ExportFormat>>(new Set(['pdf']))
   const [asZip, setAsZip] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -80,21 +172,26 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
     }
   }, [isOpen])
 
-  if (!isVisible && !isOpen) return null
+  useEffect(() => {
+    if (!isOpen) return
+    setSelectedFormats(new Set(['pdf']))
+    setAsZip(true)
+    setError(null)
+  }, [isOpen, jobId, jobIds?.join('\u0001')])
 
   const toggleFormat = (format: ExportFormat) => {
-    setSelectedFormats(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(format)) {
-        if (newSet.size > 1) {
-          newSet.delete(format)
-        }
+    setSelectedFormats((prev) => {
+      const next = new Set(prev)
+      if (next.has(format)) {
+        if (next.size > 1) next.delete(format)
       } else {
-        newSet.add(format)
+        next.add(format)
       }
-      return newSet
+      return next
     })
   }
+
+  const needsPackaging = selectedFormats.size > 1
 
   const handleExport = async () => {
     if (selectedFormats.size === 0) return
@@ -104,53 +201,20 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
       setDownloading(true)
 
       const formats = Array.from(selectedFormats)
-
-      if (formats.length === 1 && formats[0] === 'pdf') {
-        // Use existing PDF export
-        await onExport('pdf')
-      } else if (formats.length === 1 && formats[0] === 'json') {
-        // Use existing JSON export
-        await onExport('json')
-      } else if (formats.length === 1) {
-        // Single format - direct download
-        const format = formats[0]
-        const userId = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}').user_id || '' } catch { return '' } })()
-        const endpoints: Record<string, string> = {
-          txt: `/api/export/${jobId}/txt?user_id=${userId}`,
-          xml: `/api/export/${jobId}/xml?user_id=${userId}`,
-          excel: `/api/export/${jobId}/excel?user_id=${userId}`,
+      const userId = (() => {
+        try {
+          return JSON.parse(localStorage.getItem('user') || '{}').user_id || ''
+        } catch {
+          return ''
         }
-        const url = `${API_BASE_URL}${endpoints[format]}`
-        const link = document.createElement('a')
-        link.href = url
-        link.download = ''
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-      } else {
-        // Multiple formats - use ZIP export
-        const userId = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}').user_id || '' } catch { return '' } })()
-        const url = `${API_BASE_URL}/api/export/${jobId}/multi?user_id=${userId}`
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ formats, as_zip: asZip })
-        })
+      })()
 
-        if (!response.ok) {
-          throw new Error('Export failed')
+      for (const jid of targetJobIds) {
+        const useClient = jid === jobId
+        await exportOneJob(jid, formats, asZip, userId, onExport, useClient)
+        if (targetJobIds.length > 1) {
+          await new Promise((r) => setTimeout(r, 150))
         }
-
-        // Download the result
-        const blob = await response.blob()
-        const downloadUrl = window.URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.href = downloadUrl
-        link.download = asZip ? `${jobId}_export.zip` : ''
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        window.URL.revokeObjectURL(downloadUrl)
       }
 
       onClose()
@@ -162,7 +226,7 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
     }
   }
 
-  const needsPackaging = selectedFormats.size > 1
+  if (!isVisible && !isOpen) return null
 
   return (
     <div
@@ -176,7 +240,6 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
           isOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
         }`}
       >
-        {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-border-light dark:border-border-dark">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -184,14 +247,21 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-                문서 내보내기
+                {isMultiTarget ? `${targetJobIds.length}개 파일 내보내기` : '문서 내보내기'}
               </h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                작업 ID: <span className="font-mono">{jobId.substring(0, 12)}...</span>
+                {isMultiTarget
+                  ? '아래에서 고른 형식을 선택된 모든 파일에 동일하게 적용합니다.'
+                  : (
+                      <>
+                        작업 ID: <span className="font-mono">{headerJobId.substring(0, 12)}...</span>
+                      </>
+                    )}
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             disabled={downloading || isExporting}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -200,20 +270,19 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
           </button>
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-y-auto p-5">
-          {/* Format Selection */}
           <div className="mb-5">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
               <Files className="w-4 h-4 text-primary" />
               내보내기 형식 선택 (복수 선택 가능)
             </h3>
             <div className="grid grid-cols-2 gap-3">
-              {exportOptions.map(option => {
+              {exportOptions.map((option) => {
                 const isSelected = selectedFormats.has(option.value)
                 return (
                   <button
                     key={option.value}
+                    type="button"
                     onClick={() => toggleFormat(option.value)}
                     disabled={downloading || isExporting}
                     className={`relative flex flex-col items-center p-4 rounded-xl border-2 transition-all duration-200 group ${
@@ -224,18 +293,30 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
                   >
                     {isSelected && (
                       <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                        <svg className="w-3 h-3 text-white" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg
+                          className="w-3 h-3 text-white"
+                          fill="none"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
                           <path d="M5 13l4 4L19 7"></path>
                         </svg>
                       </div>
                     )}
 
-                    <div className={`w-12 h-12 rounded-xl ${option.bgColor} flex items-center justify-center mb-2 transition-transform duration-200 group-hover:scale-110`}>
+                    <div
+                      className={`w-12 h-12 rounded-xl ${option.bgColor} flex items-center justify-center mb-2 transition-transform duration-200 group-hover:scale-110`}
+                    >
                       <span className={option.color}>{option.icon}</span>
                     </div>
-                    <p className={`font-semibold text-sm ${
-                      isSelected ? 'text-primary' : 'text-gray-900 dark:text-white'
-                    }`}>
+                    <p
+                      className={`font-semibold text-sm ${
+                        isSelected ? 'text-primary' : 'text-gray-900 dark:text-white'
+                      }`}
+                    >
                       {option.title}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400 text-center mt-1">
@@ -247,7 +328,6 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
             </div>
           </div>
 
-          {/* Packaging Option */}
           {needsPackaging && (
             <div className="mb-5">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
@@ -256,6 +336,7 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
               </h3>
               <div className="flex gap-3">
                 <button
+                  type="button"
                   onClick={() => setAsZip(true)}
                   disabled={downloading || isExporting}
                   className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all ${
@@ -273,6 +354,7 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
                   </div>
                 </button>
                 <button
+                  type="button"
                   onClick={() => setAsZip(false)}
                   disabled={downloading || isExporting}
                   className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all ${
@@ -283,7 +365,9 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
                 >
                   <Files className={`w-5 h-5 ${!asZip ? 'text-primary' : 'text-gray-500'}`} />
                   <div className="text-left">
-                    <p className={`font-medium text-sm ${!asZip ? 'text-primary' : 'text-gray-900 dark:text-white'}`}>
+                    <p
+                      className={`font-medium text-sm ${!asZip ? 'text-primary' : 'text-gray-900 dark:text-white'}`}
+                    >
                       개별 파일
                     </p>
                     <p className="text-xs text-gray-500">각각 다운로드</p>
@@ -293,14 +377,15 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
             </div>
           )}
 
-          {/* Summary */}
           <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
             <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">내보내기 요약</h4>
             <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-              <li>• 형식: {Array.from(selectedFormats).map(f => f.toUpperCase()).join(', ')}</li>
-              {needsPackaging && (
-                <li>• 패키징: {asZip ? 'ZIP 압축 파일' : '개별 파일 다운로드'}</li>
-              )}
+              <li>
+                • 대상:{' '}
+                {isMultiTarget ? `선택된 파일 ${targetJobIds.length}개 (동일 형식)` : '현재 문서 1개'}
+              </li>
+              <li>• 형식: {Array.from(selectedFormats).map((f) => f.toUpperCase()).join(', ')}</li>
+              {needsPackaging && <li>• 패키징: {asZip ? 'ZIP 압축 파일 (파일당)' : '개별 파일 다운로드 (파일당)'}</li>}
             </ul>
           </div>
 
@@ -312,9 +397,9 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-end gap-3 p-5 border-t border-border-light dark:border-border-dark bg-gray-50 dark:bg-gray-800/50">
           <button
+            type="button"
             onClick={onClose}
             disabled={downloading || isExporting}
             className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -322,11 +407,12 @@ export default function ExportModal({ isOpen, onClose, jobId, onExport, isExport
             취소
           </button>
           <button
+            type="button"
             onClick={handleExport}
             disabled={downloading || isExporting || selectedFormats.size === 0}
             className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-primary hover:bg-primary/90 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {(downloading || isExporting) ? (
+            {downloading || isExporting ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
                 내보내는 중...

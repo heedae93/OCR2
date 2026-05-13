@@ -28,6 +28,9 @@ export interface TrackedJob {
   progressPercent: number
   subStage?: string
   message?: string
+  /** Tika 텍스트 추적 안내 (OCR 상태 메시지와 별개) */
+  tikaUserMessage?: string
+  tikaTrackStatus?: string
   createdAt: string
   queuedAt?: string
   completedAt?: string

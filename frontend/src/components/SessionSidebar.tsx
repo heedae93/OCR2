@@ -34,6 +34,7 @@ interface SessionSidebarProps {
   currentJobId?: string
   filterToCurrentSession?: boolean  // true이면 currentJobId가 속한 세션만 표시
   embedded?: boolean  // true이면 고정 너비/border 없이 부모 컨테이너에 맞춤
+  onOpenExportModal?: (jobIds: string[]) => void
 }
 
 interface QueueItem {
@@ -45,7 +46,7 @@ interface QueueItem {
 
 type FilterType = 'all' | 'completed' | 'pending'
 
-export default function SessionSidebar({ onDocumentSelect, currentJobId, filterToCurrentSession = false, embedded = false }: SessionSidebarProps) {
+export default function SessionSidebar({ onDocumentSelect, currentJobId, filterToCurrentSession = false, embedded = false, onOpenExportModal }: SessionSidebarProps) {
   const [sessions, setSessions] = useState<Session[]>([])
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(() => {
     if (typeof window !== 'undefined') {
@@ -68,6 +69,8 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
   const [showNewSessionModal, setShowNewSessionModal] = useState(false)
   const [newSessionName, setNewSessionName] = useState('')
   const [uploadingSessions, setUploadingSessions] = useState<Set<string>>(new Set())
+  const [addFileModal, setAddFileModal] = useState<{ sessionId: string } | null>(null)
+  const [sidebarSelectedJobs, setSidebarSelectedJobs] = useState<Set<string>>(new Set())
   const [uploadProgress, setUploadProgress] = useState<{[sessionId: string]: {current: number, total: number, filename: string}}>({})
   const [filter, setFilter] = useState<FilterType>('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -1073,6 +1076,9 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
         })
       }
 
+      // 업로드 즉시 OCR 처리 시작
+      await fetch(`${API_BASE}/process/${jobId}`, { method: 'POST' })
+
       setExpandedSessions(prev => new Set(prev).add(sessionId))
       await fetchSessions()
     } catch (error) {
@@ -1118,18 +1124,31 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
   return (
     <div className={`${embedded ? 'flex flex-col h-full w-full' : 'w-72 border-r border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark flex flex-col h-full'}`}>
       {/* Header */}
-      <div className="p-3 border-b border-border-light dark:border-border-dark">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex flex-col gap-0.5 min-w-0">
+      <div className="px-3 py-3 border-b border-border-light dark:border-border-dark bg-gray-100 dark:bg-gray-700/70">
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
             {filterToCurrentSession ? (() => {
               const activeSession = sessions.find(s => s.documents.some(d => d.job_id === currentJobId))
               return (
-                <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
-                  <FolderOpen className="w-4 h-4 flex-shrink-0 text-primary" />
-                  <span className="truncate text-primary">
-                    {activeSession ? activeSession.session_name : '세션 관리'}
-                  </span>
-                </h2>
+                <div className="flex items-center justify-between w-full gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center">
+                      <FolderOpen className="w-3.5 h-3.5 text-primary" />
+                    </div>
+                    <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark truncate">
+                      {activeSession ? activeSession.session_name : '세션 관리'}
+                    </span>
+                  </div>
+                  {activeSession && (
+                    <button
+                      onClick={() => setAddFileModal({ sessionId: activeSession.session_id })}
+                      disabled={uploadingSessions.has(activeSession.session_id)}
+                      className="flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-medium bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800 hover:bg-sky-200 dark:hover:bg-sky-800/50 hover:text-sky-700 dark:hover:text-sky-300 active:bg-sky-300 dark:active:bg-sky-700/50 disabled:opacity-50 transition-colors whitespace-nowrap"
+                    >
+                      파일 추가
+                    </button>
+                  )}
+                </div>
               )
             })() : (
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
@@ -1293,33 +1312,126 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
                     </p>
                   </div>
                 )}
+                {/* 파일 목록 헤더 + 액션바 */}
+                <div className="px-3 pt-3 pb-1.5">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={filteredDocs.length > 0 && filteredDocs.every(d => sidebarSelectedJobs.has(d.job_id))}
+                        onChange={(e) => {
+                          if (e.target.checked) setSidebarSelectedJobs(new Set(filteredDocs.map(d => d.job_id)))
+                          else setSidebarSelectedJobs(new Set())
+                        }}
+                        className="h-3.5 w-3.5 accent-primary cursor-pointer"
+                      />
+                      <span className="text-[11px] text-gray-500 dark:text-gray-400">전체 선택</span>
+                    </label>
+                    {sidebarSelectedJobs.size > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-semibold text-primary">{sidebarSelectedJobs.size}개 선택됨</span>
+                        <button
+                          onClick={() => setSidebarSelectedJobs(new Set())}
+                          className="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                        >
+                          해제
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-1 mb-1">
+                    <button
+                      disabled={sidebarSelectedJobs.size === 0}
+                      onClick={() => {
+                        if (sidebarSelectedJobs.size === 0) return
+                        const selectedIds = Array.from(sidebarSelectedJobs)
+                        if (onOpenExportModal) {
+                          onOpenExportModal(selectedIds)
+                          return
+                        }
+                        const selectedDocs = session.documents.filter(d => sidebarSelectedJobs.has(d.job_id))
+                        const downloadable = selectedDocs.filter(d => d.status === 'completed' && d.pdf_url)
+                        downloadable.forEach(d => {
+                          const a = document.createElement('a')
+                          a.href = `${API_BASE}${d.pdf_url}`
+                          a.download = d.original_filename.replace(/\.[^.]+$/, '') + '_ocr.pdf'
+                          a.click()
+                        })
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Download className="w-3 h-3" />
+                      내보내기
+                    </button>
+                    <button
+                      disabled={sidebarSelectedJobs.size === 0}
+                      onClick={async () => {
+                        for (const jobId of sidebarSelectedJobs) {
+                          await fetch(`${API_BASE}/process/${jobId}`, { method: 'POST' })
+                        }
+                        fetchSessions()
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-700 text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/50 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      재처리
+                    </button>
+                    <button
+                      disabled={sidebarSelectedJobs.size === 0}
+                      onClick={async () => {
+                        if (!confirm(`선택한 ${sidebarSelectedJobs.size}개 파일을 삭제할까요?`)) return
+                        for (const jobId of sidebarSelectedJobs) {
+                          await fetch(`${API_BASE}/jobs/${jobId}`, { method: 'DELETE' })
+                        }
+                        setSidebarSelectedJobs(new Set())
+                        fetchSessions()
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      삭제
+                    </button>
+                  </div>
+                </div>
                 {/* Documents only */}
-                <div>
+                <div className="py-1">
                   {filteredDocs.length === 0 ? (
-                    <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                    <div className="px-4 py-3 text-xs text-gray-400 text-center">
                       {session.documents.length === 0 ? '문서 없음' : '필터된 문서 없음'}
                     </div>
                   ) : (
                     filteredDocs.map((doc) => (
                       <div
                         key={doc.job_id}
-                        className={`flex items-center px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer group transition-colors ${
+                        className={`flex items-center pl-2 pr-2 py-2 cursor-pointer transition-colors ${
                           currentJobId === doc.job_id
                             ? 'bg-primary/10 dark:bg-primary/20 border-l-2 border-primary'
-                            : 'border-l-2 border-transparent'
+                            : 'hover:bg-gray-50 dark:hover:bg-gray-700/40 border-l-2 border-transparent'
                         } ${navigatingJobId === doc.job_id ? 'animate-pulse' : ''}`}
                         onClick={() => handleDocumentSelect(doc.job_id)}
                       >
+                        <input
+                          type="checkbox"
+                          checked={sidebarSelectedJobs.has(doc.job_id)}
+                          onChange={(e) => {
+                            e.stopPropagation()
+                            setSidebarSelectedJobs(prev => {
+                              const next = new Set(prev)
+                              e.target.checked ? next.add(doc.job_id) : next.delete(doc.job_id)
+                              return next
+                            })
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="mr-2 h-3.5 w-3.5 flex-shrink-0 accent-primary cursor-pointer rounded"
+                        />
                         {getStatusIcon(doc.status)}
-                        <span className={`text-xs truncate ml-1.5 flex-1 min-w-0 ${
-                          currentJobId === doc.job_id
-                            ? 'text-primary font-medium'
-                            : 'text-gray-700 dark:text-gray-300'
+                        <span className={`text-sm truncate ml-1.5 flex-1 min-w-0 ${
+                          currentJobId === doc.job_id ? 'text-primary font-medium' : 'text-gray-700 dark:text-gray-300'
                         }`}>
                           {doc.original_filename}
                         </span>
                         {doc.status === 'processing' && (
-                          <span className="text-xs text-blue-500 ml-1 flex-shrink-0">
+                          <span className="text-[10px] text-blue-500 ml-1 flex-shrink-0 tabular-nums">
                             {doc.progress_percent.toFixed(0)}%
                           </span>
                         )}
@@ -1580,6 +1692,56 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
                   파일 {exportProgress.currentFile} / {exportProgress.totalFiles}
                 </p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 파일 추가 확인 모달 */}
+      {addFileModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark shadow-2xl overflow-hidden">
+            {/* 모달 헤더 */}
+            <div className="px-5 pt-5 pb-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center flex-shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sky-500"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">파일 추가 안내</h3>
+                  <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark mt-0.5">OCR 작업이 자동으로 시작됩니다</p>
+                </div>
+              </div>
+              <div className="rounded-xl bg-sky-50 dark:bg-sky-900/20 border border-sky-100 dark:border-sky-800/40 px-4 py-3 text-xs text-sky-700 dark:text-sky-300 leading-relaxed">
+                파일을 추가하면 <span className="font-semibold">즉시 OCR 처리가 시작</span>됩니다.<br/>
+                진행 상황은 작업 내역에서 확인하실 수 있습니다.
+              </div>
+            </div>
+            {/* 지원 형식 */}
+            <div className="px-5 pb-4 flex items-center gap-1.5">
+              {['PDF', 'PNG', 'JPG', 'JPEG'].map(ext => (
+                <span key={ext} className="px-2 py-0.5 rounded-md bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark text-[10px] font-bold text-text-secondary-light dark:text-text-secondary-dark">{ext}</span>
+              ))}
+              <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark ml-1">지원</span>
+            </div>
+            {/* 버튼 */}
+            <div className="px-5 pb-5 flex gap-2">
+              <button
+                onClick={() => setAddFileModal(null)}
+                className="flex-1 py-2.5 rounded-xl border border-border-light dark:border-border-dark text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark hover:border-primary/30 hover:text-primary transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => {
+                  const { sessionId } = addFileModal
+                  setAddFileModal(null)
+                  handleFileSelect(sessionId)
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-xs font-bold text-white transition-colors"
+              >
+                파일 선택하기
+              </button>
             </div>
           </div>
         </div>

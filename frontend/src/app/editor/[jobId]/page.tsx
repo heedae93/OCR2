@@ -65,6 +65,7 @@ export default function EditorPage() {
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [exportSidebarJobIds, setExportSidebarJobIds] = useState<string[]>([]);
   const [activeTool, setActiveTool] = useState<ToolType>(null);
   const [zoom, setZoom] = useState(50);
   const [fitToWidth, setFitToWidth] = useState(true); // Default: fit to width enabled
@@ -841,53 +842,6 @@ export default function EditorPage() {
               </button>
             </div> */}
             <div className="h-6 w-px bg-border-light dark:bg-border-dark"></div>
-            <div className="flex items-center gap-1 sm:gap-2">
-              <button
-                onClick={async () => {
-                  if (!confirm('OCR을 다시 처리하시겠습니까?\n기존 결과가 초기화됩니다.')) return
-                  try {
-                    await processJob(jobId)
-                    setIsProcessingOCR(true)
-                    setShowProgressOverlay(true)
-                    setOcrProgress(0)
-                    setOcrCurrentPage(0)
-                    setOcrStage('OCR 재처리 시작...')
-                  } catch (e) {
-                    alert('재처리 요청에 실패했습니다.')
-                  }
-                }}
-                disabled={isProcessingOCR}
-                className="flex h-9 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg bg-transparent px-3 text-sm font-medium text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="OCR 재처리"
-              >
-                <span className="material-symbols-outlined text-xl">refresh</span>
-                <span className="hidden sm:inline">재처리</span>
-              </button>
-              <button
-                onClick={() => setShowDataViewer(true)}
-                disabled={!ocrResults}
-                className="flex h-9 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg bg-transparent px-3 text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span className="material-symbols-outlined text-xl">
-                  data_object
-                </span>
-                <span className="hidden sm:inline">데이터</span>
-              </button>
-              {/* <button className="flex h-9 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg bg-transparent px-3 text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10">
-                <span className="material-symbols-outlined text-xl">share</span>
-                <span className="hidden sm:inline">공유</span>
-              </button> */}
-              <button
-                onClick={() => setShowExportModal(true)}
-                className="flex h-9 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg bg-primary px-3 text-sm font-bold text-white hover:bg-primary/90"
-              >
-                <span className="material-symbols-outlined text-xl">
-                  file_download
-                </span>
-                <span className="hidden sm:inline">내보내기</span>
-              </button>
-            </div>
-            <div className="h-6 w-px bg-border-light dark:bg-border-dark"></div>
             <ThemeToggle />
             <div className="relative">
               <button
@@ -1017,6 +971,10 @@ export default function EditorPage() {
                           filterToCurrentSession={true}
                           embedded={true}
                           onDocumentSelect={(newJobId) => router.push(`/editor/${newJobId}`)}
+                          onOpenExportModal={(ids) => {
+                            setExportSidebarJobIds(ids);
+                            setShowExportModal(true);
+                          }}
                         />
                       </div>
                       {/* 작업 내역 페이지 이동 버튼 */}
@@ -1170,7 +1128,7 @@ export default function EditorPage() {
                         <span className="material-symbols-outlined text-[20px]">refresh</span>
                       )}
                       <span className="hidden lg:inline whitespace-nowrap">
-                        {isReprocessingPage ? "재처리 중..." : "페이지 재처리"}
+                        {isReprocessingPage ? "재처리 중..." : "현재 페이지 재처리"}
                       </span>
                     </button>
                   )}
@@ -1195,6 +1153,15 @@ export default function EditorPage() {
                   >
                     <span className="material-symbols-outlined text-[20px]">verified</span>
                     <span className="hidden lg:inline whitespace-nowrap">정확도 시각화</span>
+                  </button>
+                  <button
+                    onClick={() => setShowDataViewer(true)}
+                    disabled={!ocrResults}
+                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="현재 파일 데이터"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">data_object</span>
+                    <span className="hidden lg:inline whitespace-nowrap">현재 파일 데이터</span>
                   </button>
                 </div>
               </div>{/* 툴바 끝 */}
@@ -1668,8 +1635,12 @@ export default function EditorPage() {
       {/* Export Modal */}
       <ExportModal
         isOpen={showExportModal}
-        onClose={() => setShowExportModal(false)}
+        onClose={() => {
+          setShowExportModal(false);
+          setExportSidebarJobIds([]);
+        }}
         jobId={jobId}
+        jobIds={exportSidebarJobIds.length > 0 ? exportSidebarJobIds : undefined}
         onExport={handleExportDocument}
         isExporting={isExporting}
       />

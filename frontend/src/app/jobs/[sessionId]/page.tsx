@@ -51,8 +51,49 @@ export default function SessionDetailPage() {
     new Set(),
   );
   const [reprocessTarget, setReprocessTarget] = useState<Job | null>(null);
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
 
   const sessionRef = useRef<SessionDetail | null>(null);
+
+  const toggleJobSelected = (jobId: string, checked: boolean) => {
+    setSelectedJobIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(jobId);
+      else next.delete(jobId);
+      return next;
+    });
+  };
+
+  const toggleAllSelected = (checked: boolean) => {
+    if (checked) setSelectedJobIds(new Set(filteredJobs.map((j) => j.job_id)));
+    else setSelectedJobIds(new Set());
+  };
+
+  const handleBulkDownload = () => {
+    const jobs = filteredJobs.filter(
+      (j) => selectedJobIds.has(j.job_id) && j.status === "completed" && j.pdf_url,
+    );
+    jobs.forEach((j) => {
+      const a = document.createElement("a");
+      a.href = `${API_BASE_URL}${j.pdf_url}`;
+      a.download = j.original_filename;
+      a.click();
+    });
+  };
+
+  const handleBulkReprocess = async () => {
+    for (const jobId of selectedJobIds) {
+      await handleReprocess(jobId);
+    }
+    setSelectedJobIds(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    for (const jobId of selectedJobIds) {
+      await handleDeleteJob(jobId);
+    }
+    setSelectedJobIds(new Set());
+  };
 
   useEffect(() => {
     loadSession();
@@ -348,11 +389,51 @@ export default function SessionDetailPage() {
             </div>
           </div>
 
+          {/* 일괄 액션바 */}
+          <div className="mb-3 flex items-center justify-end gap-2">
+            {selectedJobIds.size > 0 && (
+              <span className="text-xs font-semibold text-primary">{selectedJobIds.size}개 선택됨</span>
+            )}
+            <button
+              onClick={handleBulkDownload}
+              disabled={selectedJobIds.size === 0}
+              className="inline-flex items-center gap-1 h-8 rounded-lg bg-blue-500/10 px-3 text-xs font-bold text-blue-600 hover:bg-blue-500 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">download</span>
+              선택 다운로드
+            </button>
+            <button
+              onClick={handleBulkReprocess}
+              disabled={selectedJobIds.size === 0}
+              className="inline-flex items-center gap-1 h-8 rounded-lg bg-orange-500/10 px-3 text-xs font-bold text-orange-600 hover:bg-orange-500 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">refresh</span>
+              선택 재실행
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              disabled={selectedJobIds.size === 0}
+              className="inline-flex items-center gap-1 h-8 rounded-lg bg-red-500/10 px-3 text-xs font-bold text-red-600 hover:bg-red-500 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">delete</span>
+              선택 삭제
+            </button>
+          </div>
+
           {/* Jobs Table */}
           <div className="overflow-hidden rounded-2xl border border-border-light bg-surface-light shadow-sm dark:border-border-dark dark:bg-surface-dark">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-border-light bg-background-light/90 dark:border-border-dark dark:bg-background-dark/70">
+                  <th className="px-4 py-4 text-center">
+                    <input
+                      type="checkbox"
+                      checked={filteredJobs.length > 0 && filteredJobs.every((j) => selectedJobIds.has(j.job_id))}
+                      onChange={(e) => toggleAllSelected(e.target.checked)}
+                      className="h-4 w-4 accent-primary cursor-pointer"
+                      aria-label="전체 선택"
+                    />
+                  </th>
                   <th className="px-6 py-4 text-xs font-bold text-text-secondary-light uppercase tracking-wider">
                     파일명
                   </th>
@@ -361,9 +442,6 @@ export default function SessionDetailPage() {
                   </th>
                   <th className="px-6 py-4 text-xs font-bold text-text-secondary-light uppercase tracking-wider text-center whitespace-nowrap">
                     페이지
-                  </th>
-                  <th className="px-6 py-4 text-xs font-bold text-text-secondary-light uppercase tracking-wider text-right whitespace-nowrap">
-                    관리
                   </th>
                 </tr>
               </thead>
@@ -385,6 +463,15 @@ export default function SessionDetailPage() {
                         key={job.job_id}
                         className={`transition-colors ${isMatch ? "bg-cyan-50 dark:bg-cyan-900/20 border-l-4 border-l-cyan-400" : "hover:bg-primary/5 dark:hover:bg-primary/10"}`}
                       >
+                        <td className="px-4 py-5 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedJobIds.has(job.job_id)}
+                            onChange={(e) => toggleJobSelected(job.job_id, e.target.checked)}
+                            className="h-4 w-4 accent-primary cursor-pointer"
+                            aria-label={`${job.original_filename} 선택`}
+                          />
+                        </td>
                         <td className="px-6 py-5">
                           <div className="flex flex-col">
                             <div className="flex items-center gap-2">
@@ -415,45 +502,27 @@ export default function SessionDetailPage() {
                         </td>
                         <td className="min-w-[320px] px-6 py-5">
                           <div className="flex flex-col items-center gap-2">
-                            {(() => {
-                              const isReprocessing = reprocessingJobs.has(
-                                job.job_id,
-                              );
-                              const displayStatus = isReprocessing
-                                ? "queued"
-                                : job.status === "uploaded"
-                                  ? "queued"
-                                  : job.status;
-                              const showPipeline =
-                                isReprocessing ||
-                                !["completed", "failed"].includes(job.status);
-                              const displayProgress = isReprocessing
-                                ? 0
-                                : Number(job.progress_percent || 0);
-
+                            {job.status === "uploaded" ? (
+                              <button
+                                onClick={() => handleStartOCR(job.job_id)}
+                                className="inline-flex shrink-0 items-center rounded-lg bg-green-500/10 px-3 py-1.5 text-xs font-black text-green-600 transition-all hover:bg-green-500 hover:text-white whitespace-nowrap"
+                              >
+                                OCR 시작
+                              </button>
+                            ) : (() => {
+                              const isReprocessing = reprocessingJobs.has(job.job_id);
+                              const displayStatus = isReprocessing ? "queued" : job.status;
+                              const showPipeline = isReprocessing || !["completed", "failed"].includes(job.status);
+                              const displayProgress = isReprocessing ? 0 : Number(job.progress_percent || 0);
                               return (
                                 <>
-                                  <span
-                                    className={`rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-tighter ${getStatusBadge(job.status)}`}
-                                  >
-                                    {job.status === "completed"
-                                      ? "완료"
-                                      : job.status === "failed"
-                                        ? "실패"
-                                        : job.status === "processing"
-                                          ? "처리중"
-                                          : "대기중"}
+                                  <span className={`rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-tighter ${getStatusBadge(job.status)}`}>
+                                    {job.status === "completed" ? "완료" : job.status === "failed" ? "실패" : job.status === "processing" ? "처리중" : "대기중"}
                                   </span>
                                   {showPipeline && (
                                     <div className="w-full min-w-[280px] rounded-xl border border-border-light bg-background-light/70 p-2.5 dark:border-border-dark dark:bg-background-dark/70">
-                                      <p className="mb-1.5 text-[11px] font-bold text-text-secondary-light dark:text-text-secondary-dark">
-                                        진행 상태
-                                      </p>
-                                      <PipelineProgress
-                                        status={displayStatus}
-                                        progress={displayProgress}
-                                        subStage={job.sub_stage}
-                                      />
+                                      <p className="mb-1.5 text-[11px] font-bold text-text-secondary-light dark:text-text-secondary-dark">진행 상태</p>
+                                      <PipelineProgress status={displayStatus} progress={displayProgress} subStage={job.sub_stage} />
                                     </div>
                                   )}
                                 </>
@@ -463,55 +532,6 @@ export default function SessionDetailPage() {
                         </td>
                         <td className="px-6 py-5 text-center font-bold text-sm whitespace-nowrap">
                           {job.total_pages > 0 ? `${job.total_pages}p` : "-"}
-                        </td>
-                        <td className="px-6 py-5 whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-                            {job.status === "uploaded" ? (
-                              <button
-                                onClick={() => handleStartOCR(job.job_id)}
-                                className="inline-flex shrink-0 items-center rounded-lg bg-green-500/10 px-3 py-1.5 text-xs font-black text-green-600 transition-all hover:bg-green-500 hover:text-white whitespace-nowrap"
-                              >
-                                OCR 시작
-                              </button>
-                            ) : (
-                              <>
-                                {job.status === "completed" && job.pdf_url && (
-                                  <a
-                                    href={`${API_BASE_URL}${job.pdf_url}`}
-                                    download
-                                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-500/10 px-2.5 py-1.5 text-xs font-bold text-blue-600 transition-all hover:bg-blue-500 hover:text-white whitespace-nowrap"
-                                  >
-                                    <span className="material-symbols-outlined text-lg">
-                                      download
-                                    </span>
-                                    다운로드
-                                  </a>
-                                )}
-                                {(job.status === "completed" ||
-                                  job.status === "failed") && (
-                                  <button
-                                    onClick={() => requestReprocess(job)}
-                                    disabled={reprocessingJobs.has(job.job_id)}
-                                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-orange-500/10 px-2.5 py-1.5 text-xs font-bold text-orange-600 transition-all hover:bg-orange-500 hover:text-white disabled:opacity-50 whitespace-nowrap"
-                                  >
-                                    <span className="material-symbols-outlined text-lg">
-                                      refresh
-                                    </span>
-                                    재실행
-                                  </button>
-                                )}
-                              </>
-                            )}
-                            <button
-                              onClick={() => handleDeleteJob(job.job_id)}
-                              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-red-500/10 px-2.5 py-1.5 text-xs font-bold text-red-600 transition-all hover:bg-red-500 hover:text-white whitespace-nowrap"
-                            >
-                              <span className="material-symbols-outlined text-lg">
-                                delete
-                              </span>
-                              삭제
-                            </button>
-                          </div>
                         </td>
                       </tr>
                     );
