@@ -5,11 +5,12 @@ import json
 import logging
 import io
 import os as _os
-import tempfile as _tempfile
+
 from pathlib import Path
 from typing import Optional, Dict
 
-import fitz 
+import re as _re
+import fitz
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session as DBSession
@@ -21,6 +22,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/masking", tags=["Masking"])
 
 _KOREAN_FONT_PATH = str(Path(__file__).parent.parent / "assets" / "fonts" / "NanumGothic.ttf")
+
+# 한글 폰트 탐색: 번들 폰트 → 시스템 폰트 순으로 시도
+_KOREAN_FONT_CANDIDATES = [
+    _KOREAN_FONT_PATH,
+    r"C:\Windows\Fonts\malgun.ttf",   # Malgun Gothic (Windows 기본)
+    r"C:\Windows\Fonts\malgunbd.ttf",
+    r"C:\Windows\Fonts\gulim.ttc",
+    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",   # Linux
+]
+_RESOLVED_FONT_PATH: str | None = next(
+    (p for p in _KOREAN_FONT_CANDIDATES if _os.path.exists(p)), None
+)
+
+def _sanitize_for_pdf(text: str) -> str:
+    """한글 폰트 없을 때 CJK 문자를 * 로 치환해 .notdef 렌더링 방지."""
+    return _re.sub(r'[가-힣ᄀ-ᇿ㄰-㆏]', '*', text)
 
 def _load_ocr(job_id: str) -> Optional[Dict]:
     """OCR 결과 JSON 로드"""
@@ -60,117 +77,82 @@ def _extract_span_font(doc, page, rect: fitz.Rect):
     except: pass
     return None, None, None
 
-def _sample_background_color(pdf_page, rect: fitz.Rect) -> tuple:
-    """rect 주변 픽셀을 샘플링해 배경색을 추정한다."""
-    pad = 5
-    pr = pdf_page.rect
-    zones = [
-        fitz.Rect(rect.x0, max(pr.y0, rect.y0 - pad), rect.x1, rect.y0),
-        fitz.Rect(rect.x0, rect.y1, rect.x1, min(pr.y1, rect.y1 + pad)),
-    ]
-    pixels = []
-    for zone in zones:
-        if zone.is_empty or zone.width < 1 or zone.height < 1: continue
-        try:
-            pix = pdf_page.get_pixmap(clip=zone, matrix=fitz.Matrix(1, 1))
-            data = pix.samples
-            for i in range(0, len(data) - 2, pix.n):
-                pixels.append((data[i], data[i + 1], data[i + 2]))
-        except: pass
-    if not pixels: return (1.0, 1.0, 1.0)
-    pixels.sort(key=lambda p: p[0] + p[1] + p[2], reverse=True)
-    top_n = max(1, len(pixels) // 10)
-    top = pixels[:top_n]
-    return (sum(p[0] for p in top)/top_n/255, sum(p[1] for p in top)/top_n/255, sum(p[2] for p in top)/top_n/255)
 
 def _apply_masking(pdf_path: Path, boxes: list, ocr_data: dict) -> bytes:
-    """물리적 삭제 + 자연스러운 덧씌우기"""
+    """이미지 기반 PDF 위에 직접 불투명 사각형을 그려 마스킹 처리"""
+    doc = fitz.open(str(pdf_path))
     try:
-        import numpy as np
-        from PIL import Image
-    except ImportError:
-        np = None
-
-    try:
-        doc = fitz.open(str(pdf_path))
-        ocr_pages = {p.get("page_number") or p.get("page"): p for p in ocr_data.get("pages", [])}
+        ocr_pages = {p.get("page_number") or p.get("page"): p for p in (ocr_data or {}).get("pages", [])}
 
         for page_index in range(len(doc)):
             page_num = page_index + 1
             page_boxes = [b for b in boxes if str(b.get("page")) == str(page_num)]
-            if not page_boxes: continue
+            if not page_boxes:
+                continue
 
             pdf_page = doc[page_index]
+
             ocr_p = ocr_pages.get(page_num, {})
             scale_x = pdf_page.rect.width / (ocr_p.get("width") or pdf_page.rect.width)
             scale_y = pdf_page.rect.height / (ocr_p.get("height") or pdf_page.rect.height)
 
-            pending = []
             for item in page_boxes:
                 bbox = item.get("bbox")
-                if not bbox: continue
+                if not bbox:
+                    continue
                 x1, y1, x2, y2 = bbox
-                rect = fitz.Rect(x1*scale_x, y1*scale_y, x2*scale_x, y2*scale_y)
                 
-                # bg_color = _sample_background_color(pdf_page, rect)
-                bg_color = (1.0, 0.0, 0.0) # 임시로 빨간색 적용
-                f_bytes, f_size, f_color = _extract_span_font(doc, pdf_page, rect)
-                
-                pdf_page.add_redact_annot(rect, fill=bg_color)
-                pending.append({
-                    "rect": rect,
-                    "text": item.get("masked_value", ""),
-                    "bg_color": bg_color,
-                    "font_bytes": f_bytes,
-                    "font_size": f_size,
-                    "font_color": f_color
-                })
+                # 웹 PDF 뷰어와 동일한 시각적 효과(여백)를 주기 위해 
+                # 좌우로 4pt, 상하로 2pt씩 마스킹 박스 영역을 확장합니다.
+                rect = fitz.Rect(
+                    x1 * scale_x - 4, 
+                    y1 * scale_y - 2, 
+                    x2 * scale_x + 4, 
+                    y2 * scale_y + 2
+                )
 
-            pdf_page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+                # draw_rect(overlay=True) 는 이미지 배경을 포함한 모든 내용 위에 직접 그림
+                pdf_page.draw_rect(rect, color=(1.0, 0.0, 0.0), fill=(1.0, 0.0, 0.0), overlay=True)
 
-            for p in pending:
-                if not p["text"]: continue
-                # 질감 추가 (노이즈)
-                if np:
+                masked_text = item.get("masked_value", "")
+                if masked_text:
+                    # 박스 크기(높이/너비)에 구애받지 않고 무조건 텍스트를 렌더링하도록 insert_text 사용
+                    f_size = max(6.0, rect.height * 0.65)
+                    # 박스가 확장된 만큼 텍스트 시작 위치도 조금 더 안쪽으로 이동
+                    start_point = fitz.Point(rect.x0 + 4, rect.y1 - (rect.height * 0.2))
                     try:
-                        w, h = int(p["rect"].width * 2), int(p["rect"].height * 2)
-                        noise = np.random.randint(-2, 3, (h, w, 3), dtype='int16')
-                        base = np.array([p["bg_color"][0]*255, p["bg_color"][1]*255, p["bg_color"][2]*255])
-                        arr = np.clip(base + noise, 0, 255).astype('uint8')
-                        img = Image.fromarray(arr)
-                        img_buf = io.BytesIO()
-                        img.save(img_buf, format='PNG')
-                        pdf_page.insert_image(p["rect"], stream=img_buf.getvalue(), overlay=True)
-                    except: pass
+                        if _RESOLVED_FONT_PATH:
+                            pdf_page.insert_text(
+                                point=start_point,
+                                text=masked_text,
+                                fontsize=f_size,
+                                fontname="kor",
+                                fontfile=_RESOLVED_FONT_PATH,
+                                color=(1.0, 1.0, 1.0),
+                                overlay=True
+                            )
+                        else:
+                            # 한글 폰트 없음 → CJK 문자를 * 로 치환 후 Latin 폰트로 렌더
+                            pdf_page.insert_text(
+                                point=start_point,
+                                text=_sanitize_for_pdf(masked_text),
+                                fontsize=f_size,
+                                color=(1.0, 1.0, 1.0),
+                                overlay=True
+                            )
+                    except Exception as e:
+                        logger.warning(f"마스킹 텍스트 삽입 실패: {e}")
+                        pass
 
-                # 텍스트 복원
-                f_size = p["font_size"] if p["font_size"] and p["font_size"] > 0 else max(7.0, p["rect"].height * 0.65)
-                f_color = p["font_color"] if p["font_color"] else (0.2, 0.2, 0.2)
-                try:
-                    kwargs = {"rect": p["rect"], "text": p["text"], "fontsize": f_size, "color": f_color, "align": fitz.TEXT_ALIGN_LEFT}
-                    if p["font_bytes"]:
-                        with _tempfile.NamedTemporaryFile(suffix=".ttf", delete=False) as tmp:
-                            tmp.write(p["font_bytes"])
-                            tmp_name = tmp.name
-                        pdf_page.insert_textbox(**kwargs, fontfile=tmp_name, fontname="orig")
-                        try: _os.unlink(tmp_name)
-                        except: pass
-                    elif _os.path.exists(_KOREAN_FONT_PATH):
-                        pdf_page.insert_textbox(**kwargs, fontfile=_KOREAN_FONT_PATH, fontname="kor")
-                    else:
-                        pdf_page.insert_textbox(**kwargs)
-                except: pass
-
-        pdf_bytes = doc.tobytes(garbage=3, deflate=True)
-        doc.close()
-        return pdf_bytes
+        return doc.tobytes(garbage=3, deflate=True)
     except Exception as e:
-        logger.error(f"Masking failed: {e}")
-        with open(pdf_path, "rb") as f: return f.read()
+        logger.error(f"Masking failed: {e}", exc_info=True)
+        raise
+    finally:
+        doc.close()
 
 def _ensure_masked_pdf(job_id: str, pii_data: dict) -> None:
     masked_pdf_path = Config.PROCESSED_DIR / f"{job_id}_masked.pdf"
-    if masked_pdf_path.exists(): return
     pdf_path = Config.PROCESSED_DIR / f"{job_id}.pdf"
     if not pdf_path.exists(): return
     boxes = [b for b in pii_data.get("masked_boxes", []) if b.get("bbox") and b.get("masked_value") != b.get("value")]
@@ -178,7 +160,8 @@ def _ensure_masked_pdf(job_id: str, pii_data: dict) -> None:
     try:
         pdf_bytes = _apply_masking(pdf_path, boxes, ocr_data)
         with open(masked_pdf_path, "wb") as f: f.write(pdf_bytes)
-    except: pass
+    except Exception as e:
+        logger.error(f"_ensure_masked_pdf failed for {job_id}: {e}", exc_info=True)
 
 def _enrich_boxes_with_font_info(pdf_path: Path, boxes: list, ocr_data: dict) -> None:
     if not pdf_path.exists(): return

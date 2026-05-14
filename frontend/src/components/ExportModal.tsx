@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Loader2, FileText, Code, FileJson, FileSpreadsheet, Archive, Download, Files } from 'lucide-react'
+import { X, Loader2, FileText, Code, FileJson, FileSpreadsheet, Archive, Download, Files, ShieldCheck } from 'lucide-react'
 import { API_BASE_URL } from '@/lib/api'
 
 interface ExportModalProps {
@@ -15,7 +15,7 @@ interface ExportModalProps {
   isExporting?: boolean
 }
 
-type ExportFormat = 'pdf' | 'txt' | 'xml' | 'json' | 'excel'
+type ExportFormat = 'pdf' | 'txt' | 'xml' | 'json' | 'excel' | 'masked_pdf'
 
 const exportOptions: {
   value: ExportFormat
@@ -65,6 +65,14 @@ const exportOptions: {
     color: 'text-yellow-600',
     bgColor: 'bg-yellow-500/10',
   },
+  {
+    value: 'masked_pdf',
+    title: '마스킹 PDF',
+    description: '개인정보 마스킹 처리된 PDF',
+    icon: <ShieldCheck className="w-6 h-6" />,
+    color: 'text-purple-600',
+    bgColor: 'bg-purple-500/10',
+  },
 ]
 
 /** 동일 형식 세트를 한 job에 적용 (복수 선택 시 순차 처리) */
@@ -77,6 +85,31 @@ async function exportOneJob(
   useClientPdfJson: boolean
 ): Promise<void> {
   if (formats.length === 0) return
+
+  // masked_pdf 는 별도 엔드포인트로 처리
+  if (formats.includes('masked_pdf')) {
+    const res = await fetch(`${API_BASE_URL}/api/masking/${jid}/download`)
+    if (!res.ok) {
+      if (res.status === 404) {
+        throw new Error('마스킹 PDF를 찾을 수 없습니다. 에디터에서 먼저 개인정보 감지를 실행해 주세요.')
+      }
+      throw new Error('마스킹 PDF 다운로드에 실패했습니다.')
+    }
+    const blob = await res.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${jid}_masked.pdf`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    const remaining = formats.filter((f) => f !== 'masked_pdf')
+    if (remaining.length === 0) return
+    await exportOneJob(jid, remaining, asZip, userId, onExportSinglePdfJson, useClientPdfJson)
+    return
+  }
 
   if (formats.length === 1 && formats[0] === 'pdf') {
     if (useClientPdfJson) {
@@ -384,7 +417,7 @@ export default function ExportModal({
                 • 대상:{' '}
                 {isMultiTarget ? `선택된 파일 ${targetJobIds.length}개 (동일 형식)` : '현재 문서 1개'}
               </li>
-              <li>• 형식: {Array.from(selectedFormats).map((f) => f.toUpperCase()).join(', ')}</li>
+              <li>• 형식: {Array.from(selectedFormats).map((f) => f === 'masked_pdf' ? '마스킹 PDF' : f.toUpperCase()).join(', ')}</li>
               {needsPackaging && <li>• 패키징: {asZip ? 'ZIP 압축 파일 (파일당)' : '개별 파일 다운로드 (파일당)'}</li>}
             </ul>
           </div>
