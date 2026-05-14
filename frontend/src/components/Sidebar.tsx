@@ -149,9 +149,9 @@ const fetchTodayCount = async (userId: string) => {
           />
         </Link>
 
-        <div className="mx-2 h-px bg-gradient-to-r from-transparent via-[#475569] to-transparent" />
+        <div className="mx-2 mt-3 h-px bg-gradient-to-r from-transparent via-[#475569] to-transparent" />
 
-        <nav className="flex flex-grow flex-col gap-1">
+        <nav className="flex flex-grow flex-col gap-1 mt-3">
           {navItems.map((item) => {
             const hasChildren = Boolean(item.children?.length);
             const active = isActive(item.href);
