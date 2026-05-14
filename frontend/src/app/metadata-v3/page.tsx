@@ -10,12 +10,12 @@ import {
 const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타', '미분류']
 
 const DEFAULT_METADATA_FIELDS = [
-  { key: 'title',   label: '문서 제목',   desc: '문서의 이름, 주제 또는 주요 타이틀', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
-  { key: 'date',    label: '발행 날짜',   desc: '거래일, 작성일, 유효 기간 등',    color: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
-  { key: 'amount',  label: '금액 / 수치',  desc: '합계, 공급가액, 수량 등 숫자 데이터',  color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' },
-  { key: 'vendor',  label: '업체 / 기관명', desc: '발행처, 상호, 거래처명 등',        color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' },
-  { key: 'address', label: '주소 / 위치',   desc: '도로명 주소, 지번, 장소 정보',      color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
-  { key: 'person',  label: '인명 / 담당자', desc: '작성자, 서명자, 고객 성함 등',      color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300' },
+  { key: 'title',   label: '문서 제목',   desc: '문서의 이름, 주제 또는 주요 타이틀', color: 'bg-blue-600 text-white' },
+  { key: 'date',    label: '발행 날짜',   desc: '거래일, 작성일, 유효 기간 등',    color: 'bg-green-600 text-white' },
+  { key: 'amount',  label: '금액 / 수치',  desc: '합계, 공급가액, 수량 등 숫자 데이터',  color: 'bg-purple-600 text-white' },
+  { key: 'vendor',  label: '업체 / 기관명', desc: '발행처, 상호, 거래처명 등',        color: 'bg-orange-500 text-white' },
+  { key: 'address', label: '주소 / 위치',   desc: '도로명 주소, 지번, 장소 정보',      color: 'bg-amber-500 text-white' },
+  { key: 'person',  label: '인명 / 담당자', desc: '작성자, 서명자, 고객 성함 등',      color: 'bg-teal-600 text-white' },
 ]
 
 export default function MetadataV3Page() {
@@ -192,12 +192,12 @@ export default function MetadataV3Page() {
   ]
 
   return (
-    <div className="flex bg-background-light">
+    <div className="flex bg-slate-50 dark:bg-slate-50">
       <Sidebar />
       <main className="flex-1 ml-64 mt-14 flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
 
         <div className="px-6 py-6 border-b border-border-light bg-surface-light flex-shrink-0">
-          <h1 className="text-xl font-bold text-primary tracking-tight">문서 유형별 추출 메타데이터 관리</h1>
+          <h1 className="text-xl font-bold text-text-primary-light tracking-tight">문서 유형별 추출 메타데이터 관리</h1>
           <p className="text-sm text-text-secondary-light mt-1">
             문서 카테고리를 선택하고, 해당 문서에서 자동으로 추출할 중요 데이터 필드를 설정합니다.
           </p>
@@ -286,10 +286,10 @@ export default function MetadataV3Page() {
               ) : (
                 <div>
                   <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-base font-bold text-text-secondary-light tracking-widest uppercase">
+                    <h3 className="text-base font-bold text-text-primary-light dark:text-text-primary-dark tracking-widest uppercase">
                       추출 필드 설정
                     </h3>
-                    <button onClick={() => setIsAddingField(true)} className="flex items-center gap-1.5 text-sm font-bold text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400 hover:bg-sky-100 dark:hover:bg-sky-900/50 px-4 py-2 rounded-full transition-colors shadow-sm">
+                    <button onClick={() => setIsAddingField(true)} className="flex items-center gap-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 px-4 py-2 rounded-full transition-colors shadow-sm">
                       <Plus size={16} /> 커스텀 추출 필드 추가
                     </button>
                   </div>
@@ -299,7 +299,7 @@ export default function MetadataV3Page() {
                       const enabled = currentPiiTypes.includes(item.key)
                       
                       return (
-                        <div key={item.key} className={`group relative flex flex-col text-left p-5 rounded-2xl border-2 transition-all duration-200 ease-out ${enabled ? (item.isCustom ? 'border-sky-400 bg-sky-50 shadow-md' : 'border-primary bg-primary/5 shadow-md') : 'border-border-light hover:border-primary/30 bg-surface-light opacity-80 hover:opacity-100 hover:shadow-sm'}`}>
+                        <div key={item.key} className={`group relative flex flex-col text-left p-5 rounded-2xl border-2 transition-all duration-200 ease-out bg-white ${enabled ? (item.isCustom ? 'border-sky-400 shadow-md' : 'border-primary shadow-md') : 'border-border-light hover:border-primary/30 opacity-80 hover:opacity-100 hover:shadow-sm'}`}>
                           
                           {/* 삭제 버튼 - 커스텀 필드일때만 등장 */}
                           {item.isCustom && item.id && (

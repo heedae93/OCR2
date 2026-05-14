@@ -489,18 +489,55 @@ function JobsPageInner() {
     );
 
   return (
-    <div className="bg-background-light dark:bg-background-dark min-h-screen">
+    <div className="bg-slate-50 dark:bg-slate-50 min-h-screen">
       <Sidebar />
       <main className="ml-64 mt-14 p-6 lg:p-10">
         <div className="w-full max-w-7xl mx-auto">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-8">
             <div>
-              <h1 className="text-3xl font-bold text-primary">
+              <h1 className="text-3xl font-bold text-text-primary-light">
                 작업 내역
               </h1>
               <p className="mt-2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
                 작업을 선택하면 해당 작업의 파일 목록을 확인할 수 있습니다.
               </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => loadData()}
+                className="inline-flex items-center gap-2 rounded-lg border border-border-light dark:border-border-dark px-4 py-2 text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 transition-colors"
+              >
+                <span className="material-symbols-outlined text-base">
+                  refresh
+                </span>
+                새로고침
+              </button>
+              <button
+                onClick={() =>
+                  handleDeleteSessions(Array.from(selectedSessionIds))
+                }
+                disabled={selectedSessionIds.size === 0 || deletingSessions}
+                className="inline-flex items-center gap-2 rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="material-symbols-outlined text-base">
+                  delete
+                </span>
+                {deletingSessions
+                  ? "삭제 중..."
+                  : `선택 항목 삭제 (${selectedSessionIds.size})`}
+              </button>
+              {totals.failed > 0 && (
+                <button
+                  onClick={handleDeleteAllFailed}
+                  disabled={deletingFailed}
+                  className="inline-flex items-center gap-2 rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="material-symbols-outlined text-base">
+                    delete_sweep
+                  </span>
+                  {deletingFailed ? "삭제 중..." : "실패 작업 전체 삭제"}
+                </button>
+              )}
             </div>
           </div>
 
@@ -710,14 +747,13 @@ function JobsPageInner() {
                       <col style={{ width: "18%" }} />
                       <col style={{ width: "24%" }} />
                     </colgroup>
-                    <thead className="bg-background-light dark:bg-background-dark border-b border-border-light dark:border-border-dark">
+                    <thead className="border-b border-primary/20 dark:border-primary/20 bg-primary/10 dark:bg-primary/10">
                       <tr>
                         <th className="px-3 py-3 text-center">
-                          <input
-                            type="checkbox"
-                            checked={allPageSelected}
-                            onChange={(event) => {
-                              const checked = event.target.checked;
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const checked = !allPageSelected;
                               setSelectedSessionIds((prev) => {
                                 const next = new Set(prev);
                                 paginatedSessions.forEach((session) => {
@@ -727,10 +763,11 @@ function JobsPageInner() {
                                 return next;
                               });
                             }}
-                            onClick={(event) => event.stopPropagation()}
-                            className="h-4 w-4 accent-primary cursor-pointer"
+                            className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${allPageSelected ? "border-primary bg-primary text-white" : "border-primary bg-surface-light"}`}
                             aria-label="현재 페이지 세션 전체 선택"
-                          />
+                          >
+                            {allPageSelected && <span className="material-symbols-outlined text-[14px] leading-none">check</span>}
+                          </button>
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
                           작업
@@ -768,21 +805,16 @@ function JobsPageInner() {
                             onClick={() => openSession(session.session_id)}
                           >
                             <td className="px-3 py-4 text-center">
-                              <input
-                                type="checkbox"
-                                checked={selectedSessionIds.has(
-                                  session.session_id,
-                                )}
-                                onChange={(event) =>
-                                  toggleSessionSelected(
-                                    session.session_id,
-                                    event.target.checked,
-                                  )
-                                }
-                                onClick={(event) => event.stopPropagation()}
-                                className="h-4 w-4 accent-primary cursor-pointer"
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleSessionSelected(session.session_id, !selectedSessionIds.has(session.session_id));
+                                }}
+                                className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${selectedSessionIds.has(session.session_id) ? "border-primary bg-primary text-white" : "border-primary bg-surface-light"}`}
                                 aria-label={`${session.session_name} 선택`}
-                              />
+                              >
+                                {selectedSessionIds.has(session.session_id) && <span className="material-symbols-outlined text-[14px] leading-none">check</span>}
+                              </button>
                             </td>
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3 min-w-0">
@@ -871,6 +903,67 @@ function JobsPageInner() {
                                     session.created_at,
                                 )}
                               </span>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                                <label
+                                  onClick={(event) => event.stopPropagation()}
+                                  className={`inline-flex items-center justify-center rounded-lg border border-border-light dark:border-border-dark p-2 text-text-secondary-light dark:text-text-secondary-dark hover:text-primary hover:border-primary/40 transition-colors ${uploadingSession === session.session_id ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                                  title="이 세션에 파일 추가"
+                                >
+                                  <span className="material-symbols-outlined text-lg leading-none">
+                                    upload_file
+                                  </span>
+                                  <input
+                                    type="file"
+                                    multiple
+                                    accept=".pdf,.png,.jpg,.jpeg"
+                                    className="hidden"
+                                    disabled={
+                                      uploadingSession === session.session_id
+                                    }
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      (event.target as HTMLInputElement).value =
+                                        "";
+                                    }}
+                                    onChange={(event) => {
+                                      event.stopPropagation();
+                                      handleUpload(
+                                        session.session_id,
+                                        event.target.files,
+                                      );
+                                    }}
+                                  />
+                                </label>
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openSession(session.session_id);
+                                  }}
+                                  className="inline-flex items-center justify-center rounded-lg bg-primary/10 p-2 text-primary hover:bg-primary hover:text-white transition-colors"
+                                  title="세션 상세 보기"
+                                >
+                                  <span className="material-symbols-outlined text-lg leading-none">
+                                    chevron_right
+                                  </span>
+                                </button>
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void handleDeleteSessions([
+                                      session.session_id,
+                                    ]);
+                                  }}
+                                  disabled={deletingSessions}
+                                  className="inline-flex items-center justify-center rounded-lg bg-red-500 p-2 text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+                                  title="세션 개별 삭제"
+                                >
+                                  <span className="material-symbols-outlined text-lg leading-none">
+                                    delete
+                                  </span>
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -971,38 +1064,25 @@ function getSessionStatus(session: SessionSummary) {
   const active = getActiveCount(session);
 
   if (session.total === 0) {
-    return {
-      label: "빈 세션",
-      color: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200",
-    };
+    return { label: "빈 세션", color: "bg-gray-400 text-white" };
   }
 
   if (active > 0) {
-    return {
-      label: "진행/대기",
-      color: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200",
-    };
+    return { label: "진행/대기", color: "bg-blue-500 text-white" };
   }
 
   if (session.failed > 0) {
     return {
       label: session.completed > 0 ? "부분 실패" : "실패",
-      color: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
+      color: "bg-red-500 text-white",
     };
   }
 
   if (session.completed === session.total) {
-    return {
-      label: "완료",
-      color:
-        "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
-    };
+    return { label: "완료", color: "bg-green-500 text-white" };
   }
 
-  return {
-    label: "대기 중",
-    color: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200",
-  };
+  return { label: "대기 중", color: "bg-gray-400 text-white" };
 }
 
 function getSessionTime(session: SessionSummary) {

@@ -87,11 +87,10 @@ const defaultFieldOptions: MaskingFieldOption[] = [
   { id: 'health_insurance_number', field_key: 'health_insurance_number', label: '건강보험번호', source: 'default' },
   { id: 'road_name_address', field_key: 'road_name_address', label: '도로명 주소', source: 'default' },
   { id: 'email_address', field_key: 'email_address', label: '이메일', source: 'default' },
-  { id: 'vehicle_number', field_key: 'vehicle_number', label: '자동차번호', source: 'default' },
-  { id: 'business_registration_number', field_key: 'business_registration_number', label: '사업자 등록번호', source: 'default' },
+  { id: 'vehicle_number', field_key: 'vehicle_number', label: '차량번호', source: 'default' },
+  { id: 'business_registration_number', field_key: 'business_registration_number', label: '사업자등록번호', source: 'default' },
   { id: 'ip_mac_address', field_key: 'ip_mac_address', label: 'IP/MAC 주소', source: 'default' },
 ]
-
 const emptyGroupForm: GroupFormState = {
   group_key: '',
   group_name: '',
@@ -166,9 +165,9 @@ export default function GroupManagementPage() {
         fetch(`${API_BASE_URL}/api/metadata-v3/custom-fields?user_id=${encodeURIComponent(userId)}`),
       ])
 
-      if (!usersRes.ok) throw new Error('사용자 목록을 불러오지 못했습니다.')
-      if (!groupsRes.ok) throw new Error('그룹 목록을 불러오지 못했습니다.')
-      if (!customFieldsRes.ok) throw new Error('개인정보 항목 목록을 불러오지 못했습니다.')
+      if (!usersRes.ok) throw new Error('사용자 목록을 불러오지 못했습니다')
+      if (!groupsRes.ok) throw new Error('그룹 목록을 불러오지 못했습니다')
+      if (!customFieldsRes.ok) throw new Error('커스텀 필드 목록을 불러오지 못했습니다')
 
       const [usersData, groupsData, customFieldsData] = await Promise.all([
         usersRes.json(),
@@ -264,14 +263,14 @@ export default function GroupManagementPage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.detail || '사용자 그룹 변경에 실패했습니다.')
+        throw new Error(data.detail || '그룹 변경에 실패했습니다.')
       }
 
       const updatedUser = await res.json()
       setUsers(prev => prev.map(item => (item.user_id === updatedUser.user_id ? updatedUser : item)))
       await loadGroupsOnly()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '사용자 그룹 변경 중 오류가 발생했습니다.')
+      setError(e instanceof Error ? e.message : '그룹 변경 중 오류가 발생했습니다.')
     } finally {
       setSavingUserId(null)
       setDraggingUserId(null)
@@ -461,13 +460,13 @@ export default function GroupManagementPage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.detail || '개인정보 항목 저장에 실패했습니다.')
+        throw new Error(data.detail || '커스텀 필드 저장에 실패했습니다.')
       }
 
       closeFieldModal()
       await loadAll(currentUserId)
     } catch (e: unknown) {
-      setFieldFormError(e instanceof Error ? e.message : '개인정보 항목 저장 중 오류가 발생했습니다.')
+      setFieldFormError(e instanceof Error ? e.message : '커스텀 필드 저장 중 오류가 발생했습니다.')
     } finally {
       setSavingField(false)
     }
@@ -487,7 +486,7 @@ export default function GroupManagementPage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.detail || '개인정보 항목 삭제에 실패했습니다.')
+        throw new Error(data.detail || '커스텀 필드 삭제에 실패했습니다.')
       }
 
       const removedKey = field.field_key
@@ -516,7 +515,7 @@ export default function GroupManagementPage() {
 
       await loadAll(currentUserId)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '개인정보 항목 삭제 중 오류가 발생했습니다.')
+      setError(e instanceof Error ? e.message : '커스텀 필드 삭제 중 오류가 발생했습니다.')
     } finally {
       setDeletingFieldId(null)
     }
@@ -561,7 +560,7 @@ export default function GroupManagementPage() {
     return dropNode.nodeType === 'group' && dropPosition === 0
   }
 
-  function handleSelect(keys: React.Key[], info: { node: EventDataNode<GroupTreeNode> }) {
+  function handleSelect(_keys: React.Key[], info: { node: EventDataNode<GroupTreeNode> }) {
     if (info.node.nodeType === 'group') {
       setSelectedTreeKey(String(info.node.key))
       return
@@ -570,13 +569,13 @@ export default function GroupManagementPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background-light dark:bg-background-dark">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-50">
       <Sidebar />
       <div className="ml-64 mt-14 flex flex-col gap-6 p-8">
         <div>
-          <h1 className="text-2xl font-bold text-primary">그룹관리</h1>
+          <h1 className="text-2xl font-bold text-text-primary-light">그룹관리</h1>
           <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-            트리에서 그룹을 선택하면 개인정보 항목 체크 상태를 바로 확인하고 수정할 수 있습니다.
+            사용자를 그룹에 드래그하거나 커스텀 마스킹 항목을 추가·수정할 수 있습니다.
           </p>
         </div>
 
@@ -586,27 +585,27 @@ export default function GroupManagementPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.05fr_1fr]">
-          <section className="overflow-hidden rounded-2xl border border-border-light bg-surface-light dark:border-border-dark dark:bg-surface-dark">
-            <div className="border-b border-border-light px-4 py-3 dark:border-border-dark">
+        <div className="grid min-h-[calc(100vh-230px)] grid-cols-1 items-stretch gap-6 xl:grid-cols-[1.05fr_1fr]">
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border-light bg-surface-light dark:border-border-dark dark:bg-surface-dark">
+            <div className="min-h-[96px] border-b border-border-light px-4 py-3 dark:border-border-dark">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-base font-semibold text-text-primary-light dark:text-text-primary-dark">그룹 트리</h2>
+                <h2 className="text-base font-semibold text-text-primary-light">그룹 트리</h2>
                 <button
                   onClick={openCreateGroup}
                   className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-primary/90"
                 >
-                  그룹 추가
+                  그룹 생성
                 </button>
               </div>
               <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                미배정 사용자와 그룹 사용자를 같은 트리에서 드래그로 배정하고 이동할 수 있습니다.
+                사용자를 그룹으로 드래그하여 이동하거나 그룹을 선택하여 마스킹 항목을 설정할 수 있습니다.
               </p>
             </div>
 
             {loading ? (
               <LoadingPanel />
             ) : (
-              <div className="max-h-[calc(100vh-230px)] overflow-y-auto bg-white p-3 dark:bg-slate-950">
+              <div className="min-h-0 flex-1 overflow-y-auto bg-white p-3 dark:bg-white">
                 <Tree<GroupTreeNode>
                   className="group-tree"
                   showLine
@@ -668,7 +667,6 @@ export default function GroupManagementPage() {
                       <UserNodeTitle
                         user={node.user!}
                         isSaving={savingUserId === node.user?.user_id}
-                        onUnassign={() => void assignUserToGroup(node.user!, '')}
                       />
                     )
                   }
@@ -677,34 +675,44 @@ export default function GroupManagementPage() {
             )}
           </section>
 
-          <section className="overflow-hidden rounded-2xl border border-border-light bg-surface-light dark:border-border-dark dark:bg-surface-dark">
-            <div className="border-b border-border-light px-5 py-4 dark:border-border-dark">
-              <h2 className="text-lg font-semibold text-text-primary-light dark:text-text-primary-dark">
-                {selectedTreeKey === UNASSIGNED_GROUP_KEY ? '개인정보 항목' : selectedGroupDetail?.group_name ?? '그룹 권한'}
-              </h2>
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border-light bg-surface-light dark:border-border-dark dark:bg-surface-dark">
+            <div className="min-h-[96px] border-b border-border-light px-5 py-3 dark:border-border-dark">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold text-text-primary-light">
+                  {selectedTreeKey === UNASSIGNED_GROUP_KEY ? '개인정보 항목' : selectedGroupDetail?.group_name ?? '그룹 권한'}
+                </h2>
+              </div>
               <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
                 {selectedTreeKey === UNASSIGNED_GROUP_KEY
-                  ? '기본 13개 항목과 사용자 정의 항목을 보고, 추가/수정/삭제할 수 있습니다.'
-                  : '선택한 그룹에 허용된 개인정보 항목 체크 여부를 확인하고 바로 변경할 수 있습니다.'}
+                  ? '기본 13개 항목과 커스텀 항목을 확인하고 추가/수정/삭제할 수 있습니다.'
+                  : '선택한 그룹에 마스킹할 커스텀 항목을 체크하고 변경사항을 저장할 수 있습니다.'}
               </p>
             </div>
 
             {loading ? (
               <LoadingPanel />
             ) : selectedTreeKey === UNASSIGNED_GROUP_KEY ? (
-              <div className="flex flex-col gap-4 p-4">
-                <div className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                  총 {fieldOptions.length}개 항목
+              <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">
+                    총 <span className="font-bold text-primary">{fieldOptions.length}</span>개 항목
+                  </div>
+                  <button
+                    onClick={openCreateField}
+                    className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-primary/90"
+                  >
+                    항목 추가
+                  </button>
                 </div>
 
-                <div className="max-h-[calc(100vh-360px)] space-y-2 overflow-y-auto pr-1">
+                <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto bg-white p-3 pr-2 dark:bg-white sm:grid-cols-2">
                   {fieldOptions.map(field => (
                     <div
                       key={field.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-border-light bg-background-light px-3 py-3 dark:border-border-dark dark:bg-background-dark"
+                      className="flex items-center justify-between gap-3 rounded-xl border border-border-light bg-white px-3 py-3 shadow-sm dark:border-border-light dark:bg-white"
                     >
                       <label className="flex min-w-0 items-center gap-3">
-                        <input type="checkbox" checked readOnly className="h-4 w-4 rounded text-primary" />
+                        <input type="checkbox" checked readOnly className="h-4 w-4 rounded accent-emerald-600" />
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium text-text-primary-light dark:text-text-primary-dark">
                             {field.label}
@@ -740,7 +748,7 @@ export default function GroupManagementPage() {
                           </button>
                         </div>
                       ) : (
-                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-700 dark:bg-slate-100 dark:text-slate-700">
                           기본
                         </span>
                       )}
@@ -750,7 +758,7 @@ export default function GroupManagementPage() {
 
               </div>
             ) : selectedGroupDetail ? (
-              <div className="space-y-4 p-4">
+              <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
                 <div className="rounded-xl border border-border-light bg-background-light px-4 py-3 dark:border-border-dark dark:bg-background-dark">
                   <div className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">
                     {selectedGroupDetail.group_name}
@@ -760,7 +768,20 @@ export default function GroupManagementPage() {
                   </div>
                 </div>
 
-                <div className="grid max-h-[calc(100vh-400px)] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">
+                    총 <span className="font-bold text-primary">{fieldOptions.length}</span>개 항목
+                  </div>
+                  <button
+                    onClick={() => void saveGroupFieldKeys()}
+                    disabled={savingGroupKey === selectedGroupDetail.group_key}
+                    className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed"
+                  >
+                    {savingGroupKey === selectedGroupDetail.group_key ? '저장 중...' : '저장'}
+                  </button>
+                </div>
+
+                <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
                   {fieldOptions.map(field => {
                     const checked = localFieldKeys.includes(field.field_key)
                     return (
@@ -768,7 +789,7 @@ export default function GroupManagementPage() {
                         key={field.id}
                         className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-3 text-sm transition-colors ${
                           checked
-                            ? 'border-primary bg-primary/5 text-text-primary-light dark:border-primary dark:bg-primary/10 dark:text-text-primary-dark'
+                            ? 'border-emerald-500 bg-emerald-50 text-text-primary-light dark:border-emerald-500 dark:bg-emerald-50 dark:text-text-primary-light'
                             : 'border-border-light bg-background-light text-text-primary-light hover:bg-black/5 dark:border-border-dark dark:bg-background-dark dark:text-text-primary-dark dark:hover:bg-white/5'
                         }`}
                       >
@@ -783,7 +804,7 @@ export default function GroupManagementPage() {
                             )
                           }
                           disabled={savingGroupKey === selectedGroupDetail.group_key}
-                          className="h-4 w-4 rounded border-border-light text-primary focus:ring-primary/40 dark:border-border-dark"
+                          className="h-4 w-4 rounded accent-emerald-600 focus:ring-emerald-500/40"
                         />
                         <div className="min-w-0">
                           <div className="truncate">{field.label}</div>
@@ -796,22 +817,15 @@ export default function GroupManagementPage() {
                   })}
                 </div>
 
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center justify-end gap-3">
                   <div className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
                     {localFieldKeys.length}개 항목 선택됨
                   </div>
-                  <button
-                    onClick={() => void saveGroupFieldKeys()}
-                    disabled={savingGroupKey === selectedGroupDetail.group_key}
-                    className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {savingGroupKey === selectedGroupDetail.group_key ? '저장 중...' : '저장'}
-                  </button>
                 </div>
               </div>
             ) : (
               <div className="p-6 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                그룹을 선택하면 개인정보 항목 권한이 표시됩니다.
+                그룹을 선택하면 마스킹 커스텀 항목을 설정할 수 있습니다.
               </div>
             )}
           </section>
@@ -822,8 +836,8 @@ export default function GroupManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-2xl border border-border-light bg-surface-light shadow-2xl dark:border-border-dark dark:bg-surface-dark">
             <div className="flex items-center justify-between border-b border-border-light px-6 py-4 dark:border-border-dark">
-              <h2 className="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">
-                {groupModalMode === 'create' ? '그룹 추가' : '그룹 수정'}
+              <h2 className="text-lg font-bold text-text-primary-light">
+                {groupModalMode === 'create' ? '그룹 생성' : '그룹 수정'}
               </h2>
               <button
                 onClick={closeGroupModal}
@@ -840,7 +854,7 @@ export default function GroupManagementPage() {
                   value={groupForm.group_name}
                   onChange={e => setGroupForm(prev => ({ ...prev, group_name: e.target.value }))}
                   className={inputClass}
-                  placeholder="예: 상담관리자"
+                  placeholder="예: 법무팀"
                 />
               </div>
 
@@ -861,7 +875,7 @@ export default function GroupManagementPage() {
                   value={groupForm.description}
                   onChange={e => setGroupForm(prev => ({ ...prev, description: e.target.value }))}
                   className={`${inputClass} min-h-[96px] resize-none`}
-                  placeholder="그룹 용도나 담당 조직을 입력하세요."
+                  placeholder="그룹 설명을 입력하세요"
                 />
               </div>
 
@@ -896,7 +910,7 @@ export default function GroupManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-2xl border border-border-light bg-surface-light shadow-2xl dark:border-border-dark dark:bg-surface-dark">
             <div className="flex items-center justify-between border-b border-border-light px-6 py-4 dark:border-border-dark">
-              <h2 className="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">
+              <h2 className="text-lg font-bold text-text-primary-light">
                 {fieldModalMode === 'create' ? '항목 추가' : '항목 수정'}
               </h2>
               <button
@@ -914,7 +928,7 @@ export default function GroupManagementPage() {
                   value={fieldForm.label}
                   onChange={e => setFieldForm(prev => ({ ...prev, label: e.target.value }))}
                   className={inputClass}
-                  placeholder="예: 고객번호"
+                  placeholder="예: 사번"
                 />
               </div>
 
@@ -924,7 +938,7 @@ export default function GroupManagementPage() {
                   value={fieldForm.pattern}
                   onChange={e => setFieldForm(prev => ({ ...prev, pattern: e.target.value }))}
                   className={inputClass}
-                  placeholder="선택 입력"
+                  placeholder="정규식 패턴"
                 />
               </div>
 
@@ -934,7 +948,7 @@ export default function GroupManagementPage() {
                   value={fieldForm.description}
                   onChange={e => setFieldForm(prev => ({ ...prev, description: e.target.value }))}
                   className={`${inputClass} min-h-[88px] resize-none`}
-                  placeholder="항목 설명을 입력하세요."
+                  placeholder="항목 설명을 입력하세요"
                 />
               </div>
 
@@ -969,7 +983,7 @@ export default function GroupManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-border-light bg-surface-light shadow-2xl dark:border-border-dark dark:bg-surface-dark">
             <div className="border-b border-border-light px-6 py-4 dark:border-border-dark">
-              <h2 className="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">그룹 삭제</h2>
+              <h2 className="text-lg font-bold text-text-primary-light">그룹 삭제</h2>
             </div>
 
             <div className="space-y-3 px-6 py-5">
@@ -977,7 +991,7 @@ export default function GroupManagementPage() {
                 <span className="font-semibold">{deleteTargetGroup.group_name}</span> 그룹을 삭제하시겠습니까?
               </p>
               <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                사용자가 배정된 그룹은 먼저 다른 그룹으로 옮긴 뒤 삭제할 수 있습니다.
+                소속된 사용자는 그룹 없음 상태가 되고 그룹 설정이 함께 삭제됩니다.
               </p>
             </div>
 
@@ -1056,9 +1070,9 @@ export default function GroupManagementPage() {
         }
 
         .dark .group-tree-toggle {
-          background: #0f172a;
-          border-color: #64748b;
-          color: #cbd5e1;
+          background: #ffffff;
+          border-color: #94a3b8;
+          color: #475569;
         }
 
         .group-tree-spacer {
@@ -1082,7 +1096,7 @@ export default function GroupManagementPage() {
         }
 
         .dark .group-tree-user-row::before {
-          border-top-color: #64748b;
+          border-top-color: #94a3b8;
         }
       `}</style>
     </div>
@@ -1139,7 +1153,7 @@ function GroupTitle({
       }`}
     >
       <div className="flex min-w-0 items-center gap-1.5">
-        <span className="material-symbols-outlined text-[16px] leading-none text-primary">
+        <span className="material-symbols-outlined text-[16px] leading-none text-violet-600">
           {isVirtualGroup ? 'group_off' : 'account_tree'}
         </span>
         <span className="truncate text-[13px] font-medium text-text-primary-light dark:text-text-primary-dark">{title}</span>
@@ -1154,7 +1168,7 @@ function GroupTitle({
               e.stopPropagation()
               onEdit()
             }}
-            className="rounded p-1 text-text-secondary-light transition-colors hover:bg-black/5 hover:text-primary dark:text-text-secondary-dark dark:hover:bg-white/5"
+            className="rounded p-1 text-primary transition-colors hover:bg-primary/10 dark:text-primary dark:hover:bg-primary/10"
             title="그룹 수정"
           >
             <span className="material-symbols-outlined text-[16px] leading-none">edit</span>
@@ -1165,7 +1179,7 @@ function GroupTitle({
               e.stopPropagation()
               onDelete()
             }}
-            className="rounded p-1 text-text-secondary-light transition-colors hover:bg-red-50 hover:text-red-500 dark:text-text-secondary-dark dark:hover:bg-red-500/10"
+            className="rounded p-1 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-red-500 dark:hover:bg-red-500/10"
             title={group?.is_system ? '시스템 그룹은 삭제할 수 없습니다.' : '그룹 삭제'}
           >
             <span className="material-symbols-outlined text-[16px] leading-none">delete</span>
@@ -1179,16 +1193,14 @@ function GroupTitle({
 function UserNodeTitle({
   user,
   isSaving,
-  onUnassign,
 }: {
   user: User
   isSaving: boolean
-  onUnassign: () => void
 }) {
   return (
     <div className="group-tree-user-row flex items-center justify-between gap-2 rounded-sm px-1 py-0.5 cursor-grab active:cursor-grabbing">
       <div className="flex min-w-0 items-center gap-1.5 pl-3">
-        <span className="material-symbols-outlined text-[16px] leading-none text-sky-600 dark:text-sky-400">person</span>
+        <span className="material-symbols-outlined text-[16px] leading-none text-emerald-600">person</span>
         <span className="truncate text-[13px] text-text-primary-light dark:text-text-primary-dark">
           {user.name || user.username}
         </span>
@@ -1196,18 +1208,8 @@ function UserNodeTitle({
           {user.username}
         </span>
       </div>
-      {user.permission_group && (
-        <button
-          onClick={e => {
-            e.preventDefault()
-            e.stopPropagation()
-            onUnassign()
-          }}
-          disabled={isSaving}
-          className="rounded border border-border-light px-1.5 py-0 text-[10px] font-medium text-text-primary-light transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:text-text-primary-dark dark:hover:bg-white/5"
-        >
-          {isSaving ? '...' : '해제'}
-        </button>
+      {isSaving && (
+        <span className="text-[10px] font-bold text-primary">...</span>
       )}
     </div>
   )

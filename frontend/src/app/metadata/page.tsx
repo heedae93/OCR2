@@ -95,12 +95,12 @@ export default function MetadataPage() {
   }
 
   return (
-    <div className="bg-background-light dark:bg-background-dark min-h-screen">
+    <div className="bg-slate-50 dark:bg-slate-50 min-h-screen">
       <Sidebar />
       <div className="flex flex-col gap-6 p-8 ml-64 mt-14">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-primary">메타데이터 관리</h1>
+            <h1 className="text-2xl font-bold text-text-primary-light">메타데이터 관리</h1>
             <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
               OCR 작업 완료 시 자동으로 추출할 메타데이터 항목을 선택하세요.
             </p>

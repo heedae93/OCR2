@@ -2,7 +2,7 @@ import Sidebar from '@/components/Sidebar'
 
 export default function HelpPage() {
   return (
-    <div className="bg-background-light dark:bg-background-dark min-h-screen">
+    <div className="bg-slate-50 dark:bg-slate-50 min-h-screen">
       <Sidebar />
 
       <main className="flex-1 ml-64 mt-14 p-6 lg:p-10">

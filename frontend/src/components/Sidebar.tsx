@@ -137,7 +137,7 @@ const fetchTodayCount = async (userId: string) => {
       <div className="flex min-h-full flex-col gap-2 p-4">
         <Link
           href="/"
-          className="group block overflow-hidden transition-all duration-200 hover:opacity-80"
+          className="group flex items-center transition-all duration-200 hover:opacity-80"
           style={{ height: '75px' }}
         >
           <Image
@@ -145,7 +145,7 @@ const fetchTodayCount = async (userId: string) => {
             alt="AiDoc"
             width={462}
             height={240}
-            className="w-full h-full object-cover object-center"
+            className="w-full object-contain"
           />
         </Link>
 

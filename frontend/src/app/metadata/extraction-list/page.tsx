@@ -335,7 +335,7 @@ export default function ExtractionListPage() {
   }
 
   return (
-    <div className="flex bg-background-light">
+    <div className="flex bg-slate-50 dark:bg-slate-50">
       <Sidebar />
       <main className="flex-1 ml-64 mt-14 flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
         
@@ -343,12 +343,7 @@ export default function ExtractionListPage() {
         <div className="px-8 py-6 border-b border-border-light dark:border-border-dark bg-surface-light/30 dark:bg-surface-dark/30 backdrop-blur-md flex-shrink-0">
           <div className="flex justify-between items-end">
             <div>
-              <nav className="flex items-center gap-2 text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark mb-2 uppercase tracking-widest">
-                <span>메타데이터 관리</span>
-                <ChevronRightIcon size={12} />
-                <span className="text-primary">추출 리스트</span>
-              </nav>
-              <h1 className="text-2xl font-black text-text-primary-light dark:text-text-primary-dark tracking-tight flex items-center gap-3">
+<h1 className="text-2xl font-black text-text-primary-light dark:text-text-primary-dark tracking-tight flex items-center gap-3">
                 <DatabaseIcon className="text-primary" size={28} /> 메타데이터 추출 리스트
               </h1>
               <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mt-2 font-medium">
@@ -370,7 +365,7 @@ export default function ExtractionListPage() {
 
         {/* Filters/Search */}
         <div className="px-8 py-4 border-b border-border-light dark:border-border-dark flex items-center gap-4 bg-surface-light/10 dark:bg-surface-dark/10">
-          <div className="flex-1 max-w-md flex items-center gap-2">
+          <div className="flex-1 max-w-xl flex items-center gap-2">
             <div className="relative flex-1">
               <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary-light" size={18} />
               <input 
@@ -384,7 +379,7 @@ export default function ExtractionListPage() {
               type="button"
               onClick={fetchDocs}
               disabled={loading}
-              className="px-4 py-2.5 rounded-xl border border-border-light dark:border-border-dark text-sm font-bold hover:bg-white/5 dark:hover:bg-white/5 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
               aria-label="검색"
             >
               검색
@@ -402,15 +397,15 @@ export default function ExtractionListPage() {
                 <colgroup>
                   <col className="w-[26%]" />
                   <col className="w-[10%]" />
-                  <col className="w-[35%]" />
-                  <col className="w-[23%]" />
-                  <col className="w-[6%]" />
+                  <col className="w-[32%]" />
+                  <col className="w-[21%]" />
+                  <col className="w-[11%]" />
                 </colgroup>
                 <thead>
-                  <tr className="bg-black/5 dark:bg-white/5 text-[11px] font-black uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark border-b border-border-light dark:border-border-dark">
+                  <tr className="bg-primary/10 dark:bg-primary/10 text-[11px] font-black uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark border-b border-primary/20 dark:border-primary/20">
                     <th className="px-6 py-3 text-center">문서 정보</th>
                     <th className="px-4 py-3 text-center">유형</th>
-                    <th className="px-12 py-3 text-left text-primary">추출 메타데이터</th>
+                    <th className="px-12 py-3 text-left text-emerald-600">추출 메타데이터</th>
                     <th className="px-4 py-3 text-center">AI 요약</th>
                     <th className="px-4 py-3 text-center">일시</th>
                   </tr>
@@ -460,7 +455,7 @@ export default function ExtractionListPage() {
                           </td>
                           {/* 문서 유형 */}
                           <td className="px-3 py-4 text-center align-top">
-                            <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300 text-[10px] font-black border border-blue-200 dark:border-blue-800 inline-block max-w-full whitespace-normal break-words text-center leading-tight">
+                            <span className="px-2 py-1 rounded-full bg-blue-600 text-white text-[10px] font-black inline-block max-w-full whitespace-normal break-words text-center leading-tight">
                               {doc.doc_type || '미분류'}
                             </span>
                           </td>
@@ -471,7 +466,7 @@ export default function ExtractionListPage() {
                                 <div className="flex flex-col gap-1">
                                   {visibleFields.slice(0, 5).map((f, i) => (
                                     <div key={i} className="flex items-baseline gap-0 text-[11px]">
-                                      <span className="font-black text-primary shrink-0 w-[2.1rem] text-left">{fieldLabel(f)}</span>
+                                      <span className="font-black text-emerald-600 shrink-0 w-[2.1rem] text-left">{fieldLabel(f)}</span>
                                       <span className="text-text-secondary-light shrink-0">·</span>
                                       <span className="font-medium text-text-primary-light dark:text-text-primary-dark truncate max-w-[300px]">{f.value}</span>
                                     </div>
@@ -496,10 +491,10 @@ export default function ExtractionListPage() {
                           {/* 일시 */}
                           <td className="px-4 py-4 text-center">
                             <div className="flex flex-col items-center">
-                              <span className="text-[11px] font-bold text-text-primary-light dark:text-text-primary-dark">
+                              <span className="text-[11px] font-bold text-text-primary-light dark:text-text-primary-dark whitespace-nowrap">
                                 {new Date(doc.created_at).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
                               </span>
-                              <span className="text-[10px] text-text-secondary-light">
+                              <span className="text-[10px] text-text-secondary-light whitespace-nowrap">
                                 {new Date(doc.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
                               </span>
                             </div>
@@ -516,10 +511,10 @@ export default function ExtractionListPage() {
            {!loading && total > 0 && (
              <div className="mt-10 flex flex-col items-center gap-4">
                 <div className="flex items-center gap-2">
-                   <button 
+                   <button
                      disabled={page === 1}
                      onClick={() => setPage(prev => prev - 1)}
-                     className="p-2.5 rounded-xl border border-border-light dark:border-border-dark disabled:opacity-30 hover:bg-white dark:hover:bg-white/5 transition-all active:scale-95"
+                     className="p-2.5 rounded-xl border border-border-light dark:border-border-dark disabled:opacity-30 hover:bg-white dark:hover:bg-white/5 transition-all active:scale-95 text-text-primary-light dark:text-text-primary-dark"
                    >
                      <ChevronLeftIcon size={18} />
                    </button>
@@ -541,10 +536,10 @@ export default function ExtractionListPage() {
                         )
                       })}
                    </div>
-                   <button 
+                   <button
                      disabled={page === totalPages}
                      onClick={() => setPage(prev => prev + 1)}
-                     className="p-2.5 rounded-xl border border-border-light dark:border-border-dark disabled:opacity-30 hover:bg-white dark:hover:bg-white/5 transition-all active:scale-95"
+                     className="p-2.5 rounded-xl border border-border-light dark:border-border-dark disabled:opacity-30 hover:bg-white dark:hover:bg-white/5 transition-all active:scale-95 text-text-primary-light dark:text-text-primary-dark"
                    >
                      <ChevronRightIcon size={18} />
                    </button>

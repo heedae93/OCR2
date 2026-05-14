@@ -35,6 +35,8 @@ export interface TrackedJob {
   queuedAt?: string
   completedAt?: string
   error?: string
+  tikaUserMessage?: string
+  tikaTrackStatus?: string
   userId?: string
 }
 

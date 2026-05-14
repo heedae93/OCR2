@@ -264,7 +264,7 @@ export default function SessionDetailPage() {
 
   if (loading && !session) {
     return (
-      <div className="bg-background-light dark:bg-background-dark min-h-screen flex items-center justify-center">
+      <div className="bg-slate-50 dark:bg-slate-50 min-h-screen flex items-center justify-center">
         <span className="material-symbols-outlined animate-spin text-primary text-4xl">
           progress_activity
         </span>
@@ -273,7 +273,7 @@ export default function SessionDetailPage() {
   }
 
   return (
-    <div className="bg-background-light dark:bg-background-dark min-h-screen text-text-primary-light dark:text-text-primary-dark">
+    <div className="bg-slate-50 dark:bg-slate-50 min-h-screen text-text-primary-light dark:text-text-primary-dark">
       <Sidebar />
       <main className="ml-64 mt-14 p-8 lg:p-12 transition-all duration-300">
         <div className="max-w-6xl mx-auto">

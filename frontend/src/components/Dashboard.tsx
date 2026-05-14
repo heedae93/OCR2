@@ -262,7 +262,7 @@ export default function Dashboard() {
       {/* 검색 */}
       <section className="rounded-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-sm font-bold text-primary">
+          <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
             문서 및 메타데이터 통합 검색
           </h3>
         </div>
@@ -289,7 +289,7 @@ export default function Dashboard() {
 
       {/* 통계 카드 */}
       <section>
-        <h3 className="mb-2 text-sm font-bold text-primary">
+        <h3 className="mb-2 text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
           전체 통계
         </h3>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -359,7 +359,7 @@ export default function Dashboard() {
       {/* 문서유형별 + 통계/처리시간 */}
       <div className="grid gap-4 xl:grid-cols-[1fr_1.25fr]">
         <section className="rounded-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark p-4">
-          <h3 className="mb-3 text-sm font-bold text-primary">
+          <h3 className="mb-3 text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
             문서유형별 통계
           </h3>
           <div className="flex items-center justify-center gap-8">
@@ -396,7 +396,7 @@ export default function Dashboard() {
             <span className="material-symbols-outlined text-lg text-primary">
               bar_chart
             </span>
-            <h3 className="text-sm font-bold text-primary">
+            <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
               통계
             </h3>
           </div>
@@ -512,7 +512,7 @@ export default function Dashboard() {
             <span className="material-symbols-outlined text-lg text-primary">
               people
             </span>
-            <h3 className="text-sm font-bold text-primary">
+            <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
               작업자별 처리량
             </h3>
           </div>
@@ -569,7 +569,7 @@ export default function Dashboard() {
             <span className="material-symbols-outlined text-lg text-primary">
               today
             </span>
-            <h3 className="text-sm font-bold text-primary">
+            <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
               오늘 처리 현황
             </h3>
             <span className="ml-auto text-[11px] text-text-secondary-light dark:text-text-secondary-dark">

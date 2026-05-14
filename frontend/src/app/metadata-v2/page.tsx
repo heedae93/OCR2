@@ -511,7 +511,7 @@ export default function MetadataV2Page() {
   // ─────────────────────────────────────────────
 
   return (
-    <div className="flex bg-background-light">
+    <div className="flex bg-slate-50 dark:bg-slate-50">
       <Sidebar />
 
       <main className="flex-1 ml-64 mt-14 flex flex-col min-w-0 h-[calc(100vh-3.5rem)] overflow-hidden">

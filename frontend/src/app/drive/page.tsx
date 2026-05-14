@@ -245,7 +245,7 @@ export default function DrivePage() {
   }
 
   return (
-    <div className="relative flex min-h-screen w-full bg-background-light dark:bg-background-dark">
+    <div className="relative flex min-h-screen w-full bg-slate-50 dark:bg-slate-50">
       <Sidebar />
 
       <main {...getRootProps()} className="flex-1 p-6 lg:p-10">

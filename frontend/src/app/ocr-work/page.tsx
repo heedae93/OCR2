@@ -814,7 +814,7 @@ export default function OcrWorkPage() {
   }, [totalSessionPages, sessionPage])
 
   return (
-    <div className="bg-background-light dark:bg-background-dark min-h-screen">
+    <div className="bg-slate-50 dark:bg-slate-50 min-h-screen">
       <Sidebar />
       <main className="flex-1 ml-64 mt-14 flex flex-col p-6 lg:p-10 min-w-0">
         <div className="w-full max-w-7xl mx-auto flex flex-col gap-6">
@@ -1024,9 +1024,9 @@ export default function OcrWorkPage() {
             </aside>
 
             <div className="flex min-h-[620px] flex-col xl:col-start-2 xl:h-[calc(100vh-9rem)] xl:min-h-[calc(100vh-9rem)]">
-              <section className="flex h-full min-h-[620px] flex-1 flex-col overflow-hidden rounded-xl border border-border-light bg-surface-light dark:border-slate-700 dark:bg-slate-900 xl:min-h-0">
+              <section className="flex h-full min-h-[620px] flex-1 flex-col overflow-hidden rounded-xl border border-border-light bg-surface-light dark:border-border-light dark:bg-surface-light xl:min-h-0">
                 {/* Queue Header with Bulk Controls */}
-                <div className="flex items-start justify-between gap-2 border-b border-border-light bg-gradient-to-r from-gray-50/90 to-surface-light/80 px-3 py-2.5 dark:border-border-dark dark:from-gray-900/40 dark:to-surface-dark/80 sm:items-center sm:px-4">
+                <div className="flex items-start justify-between gap-2 border-b border-border-light bg-gradient-to-r from-gray-50/90 to-surface-light/80 px-3 py-2.5 dark:border-border-light dark:from-gray-50/90 dark:to-surface-light/80 sm:items-center sm:px-4">
                   <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center">
                     <div className="mt-0.5 shrink-0 rounded-lg bg-primary/15 p-2 ring-1 ring-primary/10 shadow-sm sm:mt-0">
                       <FileText className="h-3.5 w-3.5 text-primary" />
@@ -1118,7 +1118,7 @@ export default function OcrWorkPage() {
                   <div className="flex flex-col h-full min-h-0 overflow-hidden">
 
                   {/* Grouped Session List — 패널(흰색)과 카드 구분용 캔버스 */}
-                  <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable] space-y-3 bg-surface-alt-light p-2.5 dark:bg-slate-950 sm:p-3">
+                  <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable] space-y-3 bg-surface-alt-light p-2.5 dark:bg-surface-alt-light sm:p-3">
                     {paginatedGroups.map(([sName, files]) => {
                       const isExpanded = expandedSessions[sName] ?? true
                       const renderedSessionName = displaySessionName(sName)
@@ -1161,11 +1161,11 @@ export default function OcrWorkPage() {
                       return (
                         <div
                           key={sName}
-                          className="flex flex-col overflow-hidden rounded-xl border border-slate-300 bg-white shadow-md shadow-slate-900/5 ring-1 ring-slate-900/[0.12] transition-shadow hover:shadow-lg dark:border-slate-600 dark:bg-slate-800/90 dark:shadow-black/40 dark:ring-white/[0.16]"
+                          className="flex flex-col overflow-hidden rounded-xl border border-slate-300 bg-white shadow-md shadow-slate-900/5 ring-1 ring-slate-900/[0.12] transition-shadow hover:shadow-lg dark:border-slate-300 dark:bg-white dark:shadow-slate-900/5 dark:ring-slate-900/[0.12]"
                         >
                           {/* Session header */}
                           <div
-                            className={`bg-gradient-to-br from-gray-50/90 to-white px-3 py-2.5 dark:from-slate-800 dark:to-slate-800/90 sm:px-4 ${isExpanded ? 'border-b border-border-light dark:border-slate-700' : ''}`}
+                            className={`bg-gradient-to-br from-gray-50/90 to-white px-3 py-2.5 dark:from-gray-50/90 dark:to-white sm:px-4 ${isExpanded ? 'border-b border-border-light dark:border-border-light' : ''}`}
                           >
                             <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                               <button
@@ -1184,7 +1184,7 @@ export default function OcrWorkPage() {
                                       <FolderOpen className="h-3.5 w-3.5" />
                                     </span>
                                     {!isUnnamedSession ? (
-                                      <span className="truncate rounded-md bg-black/[0.03] px-1.5 py-0.5 text-sm font-bold tracking-tight text-text-primary-light dark:bg-white/[0.06] dark:text-text-primary-dark">
+                                      <span className="truncate rounded-md bg-black/[0.03] px-1.5 py-0.5 text-sm font-bold tracking-tight text-slate-600 dark:bg-white/[0.06] dark:text-slate-600">
                                         {renderedSessionName}
                                       </span>
                                     ) : (
@@ -1209,22 +1209,22 @@ export default function OcrWorkPage() {
                                     </div>
                                     <div className="flex flex-wrap items-center gap-1">
                                       {pendingInSession > 0 && (
-                                        <span className="inline-flex items-center rounded-full border border-orange-200/80 bg-orange-50/90 px-1.5 py-px text-[9px] font-bold text-orange-700 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300">
+                                        <span className="inline-flex items-center rounded-full bg-orange-500 px-1.5 py-px text-[9px] font-bold text-white">
                                           대기 {pendingInSession}
                                         </span>
                                       )}
                                       {workingInSession > 0 && (
-                                        <span className="inline-flex items-center rounded-full border border-blue-200/80 bg-blue-50/90 px-1.5 py-px text-[9px] font-bold text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+                                        <span className="inline-flex items-center rounded-full bg-blue-500 px-1.5 py-px text-[9px] font-bold text-white">
                                           진행 {workingInSession}
                                         </span>
                                       )}
                                       {doneInSession > 0 && (
-                                        <span className="inline-flex items-center rounded-full border border-emerald-200/80 bg-emerald-50/90 px-1.5 py-px text-[9px] font-bold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                                        <span className="inline-flex items-center rounded-full bg-emerald-500 px-1.5 py-px text-[9px] font-bold text-white">
                                           완료 {doneInSession}
                                         </span>
                                       )}
                                       {failedInSession > 0 && (
-                                        <span className="inline-flex items-center rounded-full border border-red-200/80 bg-red-50/90 px-1.5 py-px text-[9px] font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
+                                        <span className="inline-flex items-center rounded-full bg-red-500 px-1.5 py-px text-[9px] font-bold text-white">
                                           실패 {failedInSession}
                                         </span>
                                       )}
@@ -1320,16 +1320,16 @@ export default function OcrWorkPage() {
                           
                           {/* File List for Session */}
                           {isExpanded && (
-                            <div className="bg-gradient-to-b from-gray-50/50 to-white p-1 dark:from-slate-900 dark:to-slate-900/95 sm:p-1.5">
-                              <div className="mb-1 rounded-lg border border-border-light/90 bg-white/90 px-1.5 py-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:px-2">
+                            <div className="bg-gradient-to-b from-gray-50/50 to-white p-1 dark:from-gray-50/50 dark:to-white sm:p-1.5">
+                              <div className="mb-1 rounded-lg border border-border-light/90 bg-white/90 px-1.5 py-1.5 shadow-sm dark:border-border-light/90 dark:bg-white/90 sm:px-2">
                                 {primaryWorkingFile ? (
                                   <>
                                     <div className="mb-1 flex min-w-0 items-center gap-1.5">
                                       <span className="material-symbols-outlined shrink-0 !text-base text-primary">motion_mode</span>
-                                      <p className="min-w-0 text-[11px] font-bold leading-snug text-text-primary-light dark:text-text-primary-dark">
+                                      <p className="min-w-0 text-[11px] font-bold leading-snug">
                                         <span className="text-primary">진행</span>
-                                        <span className="mx-1 text-text-secondary-light dark:text-text-secondary-dark">·</span>
-                                        <span className="font-semibold break-words" title={primaryWorkingFile.displayName}>
+                                        <span className="mx-1 text-text-secondary-light">·</span>
+                                        <span className="font-semibold text-slate-600 break-words" title={primaryWorkingFile.displayName}>
                                           {primaryWorkingFile.displayName}
                                         </span>
                                       </p>
@@ -1344,8 +1344,10 @@ export default function OcrWorkPage() {
                                   </>
                                 ) : (
                                   <>
-                                    <p className="mb-1 text-[10px] font-medium text-text-secondary-light dark:text-text-secondary-dark">
-                                      대기 중 · 아래 목록 참고
+                                    <p className="mb-1 text-[10px] font-bold">
+                                      <span className="text-orange-500">대기 중</span>
+                                      <span className="mx-1 text-text-secondary-light">·</span>
+                                      <span className="text-text-secondary-light">아래 목록 참고</span>
                                     </p>
                                     <PipelineProgress
                                       compact
@@ -1367,37 +1369,41 @@ export default function OcrWorkPage() {
                                   const effectiveStatus = file.status
                                   const errorMessage = tracked?.message || file.error
                                   const tikaHint = tracked?.tikaUserMessage || file.tikaUserMessage
-                                  const statusMuted =
-                                    effectiveStatus === 'completed'
-                                      ? 'text-emerald-600 dark:text-emerald-400'
-                                      : effectiveStatus === 'failed'
-                                        ? 'text-red-600 dark:text-red-400'
-                                        : effectiveStatus === 'pending'
-                                          ? 'text-gray-500 dark:text-gray-400'
-                                          : 'text-blue-600 dark:text-blue-400'
                                   const isCurrentWork = !!primaryWorkingFile && primaryWorkingFile.id === file.id
+                                  const statusIconBg =
+                                    effectiveStatus === 'completed' ? 'bg-emerald-500' :
+                                    effectiveStatus === 'failed' ? 'bg-red-500' :
+                                    effectiveStatus === 'processing' ? 'bg-orange-500' :
+                                    (effectiveStatus === 'uploading' || effectiveStatus === 'queued') ? 'bg-blue-500' :
+                                    'bg-gray-400'
+                                  const statusLabelBg =
+                                    effectiveStatus === 'completed' ? 'bg-emerald-500 text-white' :
+                                    effectiveStatus === 'failed' ? 'bg-red-500 text-white' :
+                                    effectiveStatus === 'processing' ? 'bg-orange-500 text-white' :
+                                    (effectiveStatus === 'uploading' || effectiveStatus === 'queued') ? 'bg-blue-500 text-white' :
+                                    'bg-gray-400 text-white'
 
                                   return (
                                     <li key={file.id} className="group/item flex items-stretch gap-1">
                                       <div
-                                        className={`min-w-0 flex-1 rounded-md border bg-white/95 px-1.5 py-1.5 shadow-sm transition-all hover:shadow dark:bg-slate-900 sm:px-2 ${
+                                        className={`min-w-0 flex-1 rounded-md border bg-white/95 px-1.5 py-1.5 shadow-sm transition-all hover:shadow dark:bg-white/95 sm:px-2 ${
                                           isCurrentWork
-                                            ? 'border-primary/50 ring-1 ring-primary/25 hover:border-primary/60 dark:border-primary/45 dark:hover:border-primary/55'
-                                            : 'border-border-light/80 hover:border-primary/25 dark:border-border-dark/80 dark:hover:border-primary/30'
+                                            ? 'border-primary/50 ring-1 ring-primary/25 hover:border-primary/60 dark:border-primary/50 dark:hover:border-primary/60'
+                                            : 'border-border-light/80 hover:border-primary/25 dark:border-border-light/80 dark:hover:border-primary/25'
                                         }`}
                                       >
                                         <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
                                           <div className="flex min-w-0 gap-1.5">
                                             <div className="flex w-9 shrink-0 flex-col items-center gap-px pt-px">
-                                              <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-gray-100 ring-1 ring-black/[0.04] dark:bg-gray-800 dark:ring-white/10">
-                                                {effectiveStatus === 'pending' && <Clock className="h-3 w-3 text-gray-400" />}
-                                                {effectiveStatus === 'uploading' && <Clock className="h-3 w-3 animate-pulse text-blue-600" />}
-                                                {effectiveStatus === 'processing' && <Loader2 className="h-3 w-3 animate-spin text-orange-500" />}
-                                                {effectiveStatus === 'queued' && <Clock className="h-3 w-3 animate-pulse text-blue-600" />}
-                                                {effectiveStatus === 'completed' && <CheckCircle className="h-3 w-3 text-emerald-500" />}
-                                                {effectiveStatus === 'failed' && <AlertCircle className="h-3 w-3 text-red-500" />}
+                                              <div className={`flex size-7 shrink-0 items-center justify-center rounded-md ${statusIconBg}`}>
+                                                {effectiveStatus === 'pending' && <Clock className="h-4 w-4 text-white" />}
+                                                {effectiveStatus === 'uploading' && <Clock className="h-4 w-4 animate-pulse text-white" />}
+                                                {effectiveStatus === 'processing' && <Loader2 className="h-4 w-4 animate-spin text-white" />}
+                                                {effectiveStatus === 'queued' && <Clock className="h-4 w-4 animate-pulse text-white" />}
+                                                {effectiveStatus === 'completed' && <CheckCircle className="h-4 w-4 text-white" />}
+                                                {effectiveStatus === 'failed' && <AlertCircle className="h-4 w-4 text-white" />}
                                               </div>
-                                              <span className={`text-[9px] font-extrabold uppercase leading-tight tracking-wide ${statusMuted}`}>
+                                              <span className={`rounded px-1 py-px text-[9px] font-extrabold leading-tight tracking-wide ${statusLabelBg}`}>
                                                 {queueStatusLabel(effectiveStatus)}
                                               </span>
                                             </div>
@@ -1412,7 +1418,7 @@ export default function OcrWorkPage() {
                                                     {file.displayName}
                                                   </Link>
                                                 ) : (
-                                                  <p className="text-[13px] font-bold leading-snug text-text-primary-light line-clamp-2 dark:text-text-primary-dark sm:truncate sm:line-clamp-none">
+                                                  <p className="text-[13px] font-bold leading-snug text-slate-600 line-clamp-2 sm:truncate sm:line-clamp-none">
                                                     {file.displayName}
                                                   </p>
                                                 )}
@@ -1547,7 +1553,7 @@ export default function OcrWorkPage() {
                                                     id={`ocr-work-doctype-${file.id}`}
                                                     value={file.docType}
                                                     onChange={event => updateFile(file.id, { docType: event.target.value })}
-                                                    className="w-full min-w-0 cursor-pointer appearance-none rounded-md border border-slate-200/95 bg-white py-1 pl-1.5 pr-7 text-xs font-semibold leading-snug text-slate-900 shadow-sm transition-all hover:border-primary/45 hover:bg-slate-50/90 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:[color-scheme:dark] dark:hover:border-primary/50 dark:hover:bg-slate-800/70 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/25 dark:focus:ring-primary/30 [&>option]:text-slate-900 dark:[&>option]:bg-slate-900 dark:[&>option]:text-slate-100"
+                                                    className="w-full min-w-0 cursor-pointer appearance-none rounded-md border border-slate-200/95 bg-white py-1 pl-1.5 pr-7 text-xs font-semibold leading-snug text-slate-600 shadow-sm transition-all hover:border-primary/45 hover:bg-slate-50/90 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/25 [&>option]:text-slate-600"
                                                   >
                                                     {allDocTypes.map(type => (
                                                       <option key={type} value={type}>
@@ -1562,14 +1568,14 @@ export default function OcrWorkPage() {
                                                 </div>
                                               ) : (
                                                 <div
-                                                  className="flex h-[1.875rem] w-[7rem] min-w-0 shrink-0 items-center rounded-md border border-slate-200/70 bg-slate-50/95 px-1.5 py-0.5 dark:border-slate-600 dark:bg-slate-900 sm:w-[7.25rem]"
+                                                  className="flex h-[1.875rem] w-[7rem] min-w-0 shrink-0 items-center rounded-md border border-slate-200/70 bg-slate-50/95 px-1.5 py-0.5 dark:border-slate-200/70 dark:bg-slate-50/95 sm:w-[7.25rem]"
                                                   title={
                                                     file.status !== 'pending'
                                                       ? '진행·완료된 파일은 문서 유형을 바꿀 수 없습니다'
                                                       : '작업 등록 중에는 변경할 수 없습니다'
                                                   }
                                                 >
-                                                  <span className="truncate text-xs font-semibold leading-snug text-slate-900 dark:text-slate-100">
+                                                  <span className="truncate text-xs font-semibold leading-snug text-slate-600">
                                                     {file.docType || '미분류'}
                                                   </span>
                                                 </div>
@@ -1611,11 +1617,11 @@ export default function OcrWorkPage() {
 
                   {/* Session Pagination Controls */}
                   {totalSessionPages > 0 && (
-                    <div className="px-4 py-2 border-t border-border-light dark:border-border-dark bg-gray-50/50 dark:bg-gray-800/30 flex items-center justify-center gap-3">
+                    <div className="px-4 py-2 border-t border-border-light dark:border-border-light bg-surface-alt-light dark:bg-surface-alt-light flex items-center justify-center gap-3">
                       <button
                         onClick={() => setSessionPage(prev => Math.max(1, prev - 1))}
                         disabled={sessionPage === 1}
-                        className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-gray-800 border border-border-light dark:border-border-dark disabled:opacity-30 transition-all"
+                        className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-white border border-border-light dark:border-border-light disabled:opacity-30 transition-all text-text-primary-light"
                       >
                         <span className="material-symbols-outlined !text-sm">chevron_left</span>
                       </button>
@@ -1628,7 +1634,7 @@ export default function OcrWorkPage() {
                             className={`h-7 min-w-7 px-2 rounded-lg text-xs font-bold transition-all ${
                               sessionPage === page
                                 ? 'bg-primary text-white shadow-lg shadow-primary/20'
-                                : 'hover:bg-white dark:hover:bg-gray-800 text-text-secondary-light'
+                                : 'hover:bg-white dark:hover:bg-white text-text-secondary-light'
                             }`}
                           >
                             {page}
@@ -1639,7 +1645,7 @@ export default function OcrWorkPage() {
                       <button
                         onClick={() => setSessionPage(prev => Math.min(totalSessionPages, prev + 1))}
                         disabled={sessionPage === totalSessionPages}
-                        className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-gray-800 border border-border-light dark:border-border-dark disabled:opacity-30 transition-all"
+                        className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-white border border-border-light dark:border-border-light disabled:opacity-30 transition-all text-text-primary-light"
                       >
                         <span className="material-symbols-outlined !text-sm">chevron_right</span>
                       </button>

@@ -306,7 +306,7 @@ export default function OcrFilezillaPage() {
 
   if (!isSupported) {
     return (
-      <div className="flex min-h-screen bg-background-light dark:bg-background-dark text-black dark:text-white">
+      <div className="flex min-h-screen bg-slate-50 dark:bg-slate-50 text-black dark:text-white">
         <Sidebar />
         <main className="flex-grow flex items-center justify-center p-10 mt-14">
           <div className="max-w-md text-center bg-surface-light dark:bg-surface-dark p-8 rounded-2xl border border-border-light dark:border-border-dark shadow-xl">
@@ -329,14 +329,14 @@ export default function OcrFilezillaPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background-light dark:bg-background-dark text-black dark:text-white">
+    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-50 text-black dark:text-white">
       <Sidebar />
       <main className="flex-grow flex flex-col min-w-0 h-screen overflow-hidden pt-14">
         {/* Header */}
         <header className="px-8 py-6 border-b border-border-light dark:border-border-dark bg-surface-light/50 dark:bg-surface-dark/50 backdrop-blur-md">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-primary">OCR 작업하기 (파일질라)</h1>
+              <h1 className="text-2xl font-bold text-text-primary-light">OCR 작업하기 (파일질라)</h1>
               <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mt-1">로컬 폴더를 직접 연결하여 끊김 없이 OCR 작업을 진행하세요.</p>
             </div>
             {!dirHandle ? (

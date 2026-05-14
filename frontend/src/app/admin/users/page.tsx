@@ -17,7 +17,6 @@ interface User {
   permission_group: string
   permission_group_name: string
   masking_access_level: MaskingAccessLevel
-  total_jobs: number
   created_at: string | null
   last_login: string | null
 }
@@ -39,11 +38,11 @@ interface UserFormState {
 
 const emptyForm: UserFormState = { username: '', name: '', email: '', password: '', type: 'U', permission_group: 'default' }
 
-const maskingLabel: Record<MaskingAccessLevel, string> = { masked: '마스킹만', original: '원본 포함' }
+const maskingLabel: Record<MaskingAccessLevel, string> = { masked: '마스킹', original: '원본 보기' }
 const roleLabel: Record<UserType, string> = { A: '관리자', U: '일반 사용자' }
 
 const inputClass =
-  'rounded-lg border border-border-light bg-background-light px-3 py-2 text-text-primary-light focus:outline-none focus:ring-2 focus:ring-primary/50 dark:border-border-dark dark:bg-background-dark dark:text-text-primary-dark'
+  'rounded-lg border border-slate-300 bg-white px-3 py-2 text-text-primary-light shadow-sm placeholder:text-slate-400 [color-scheme:light] autofill:shadow-[inset_0_0_0_1000px_white] focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 dark:border-slate-400 dark:bg-white dark:text-text-primary-light dark:focus:bg-white'
 
 export default function UsersPage() {
   const router = useRouter()
@@ -59,6 +58,7 @@ export default function UsersPage() {
   const [saving, setSaving] = useState(false)
 
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null)
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
@@ -79,11 +79,12 @@ export default function UsersPage() {
         fetch(`${API_BASE_URL}/api/admin/users`),
         fetch(`${API_BASE_URL}/api/admin/permission-groups`),
       ])
-      if (!usersRes.ok) throw new Error('사용자 목록을 불러오지 못했습니다.')
-      if (!groupsRes.ok) throw new Error('그룹 목록을 불러오지 못했습니다.')
+      if (!usersRes.ok) throw new Error('사용자 목록을 불러오지 못했습니다')
+      if (!groupsRes.ok) throw new Error('그룹 목록을 불러오지 못했습니다')
       const [usersData, groupsData] = await Promise.all([usersRes.json(), groupsRes.json()])
       setUsers(usersData)
       setGroups(groupsData)
+      setSelectedUserIds(prev => new Set([...prev].filter(id => usersData.some((user: User) => user.user_id === id))))
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '데이터를 불러오는 중 오류가 발생했습니다.')
     } finally {
@@ -147,36 +148,67 @@ export default function UsersPage() {
     }
   }
 
+  function toggleUserSelection(userId: string) {
+    setSelectedUserIds(prev => {
+      const next = new Set(prev)
+      if (next.has(userId)) next.delete(userId)
+      else next.add(userId)
+      return next
+    })
+  }
+
+  function toggleAllUsers() {
+    setSelectedUserIds(prev => {
+      if (prev.size === users.length) return new Set()
+      return new Set(users.map(user => user.user_id))
+    })
+  }
+
+  async function handleBulkDelete() {
+    const selectedIds = [...selectedUserIds]
+    if (selectedIds.length === 0) {
+      alert('삭제할 사용자를 선택해주세요.')
+      return
+    }
+
+    if (!confirm(`선택한 사용자 ${selectedIds.length}명을 삭제하시겠습니까?`)) return
+
+    setDeleting(true)
+    try {
+      await Promise.all(selectedIds.map(async userId => {
+        const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}`, { method: 'DELETE' })
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}))
+          throw new Error(d.detail || '사용자 삭제에 실패했습니다.')
+        }
+      }))
+      setSelectedUserIds(new Set())
+      await loadAll()
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : '삭제 중 오류가 발생했습니다.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   function formatDate(v: string | null) {
     if (!v) return '-'
     return new Date(v).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   }
 
-  const adminCount = users.filter(u => u.type === 'A').length
+  const allUsersSelected = users.length > 0 && selectedUserIds.size === users.length
 
   return (
-    <div className="min-h-screen bg-background-light dark:bg-background-dark">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-50">
       <Sidebar />
       <div className="ml-64 mt-14 flex flex-col gap-6 p-8">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-primary">사용자 관리</h1>
+            <h1 className="text-2xl font-bold text-text-primary-light dark:text-text-primary-dark">사용자 관리</h1>
             <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-              사용자를 등록하고 그룹 권한을 배정합니다.
+              사용자를 등록하고 그룹 권한을 설정합니다
             </p>
           </div>
-          <button
-            onClick={openCreate}
-            className="rounded-xl bg-primary px-4 py-2 font-medium text-white transition-colors hover:bg-primary/90"
-          >
-            사용자 등록
-          </button>
-        </div>
-
-        <div className="grid grid-cols-3 gap-4">
-          <StatCard label="전체 사용자" value={users.length} />
-          <StatCard label="관리자" value={adminCount} />
-          <StatCard label="일반 사용자" value={users.length - adminCount} />
         </div>
 
         {error && (
@@ -185,7 +217,25 @@ export default function UsersPage() {
           </div>
         )}
 
-        <section className="overflow-hidden rounded-2xl border border-border-light bg-surface-light dark:border-border-dark dark:bg-surface-dark">
+        <div className="flex justify-end">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={openCreate}
+              className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+            >
+              사용자 등록
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              disabled={deleting}
+              className="rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {deleting ? '삭제 중...' : '삭제'}
+            </button>
+          </div>
+        </div>
+
+        <section className="overflow-hidden rounded-2xl border border-border-light bg-white dark:border-border-dark dark:bg-white">
           {loading ? (
             <div className="flex items-center justify-center p-16">
               <span className="material-symbols-outlined animate-spin text-4xl text-primary">progress_activity</span>
@@ -194,9 +244,24 @@ export default function UsersPage() {
             <div className="p-12 text-center text-text-secondary-light dark:text-text-secondary-dark">등록된 사용자가 없습니다.</div>
           ) : (
             <table className="w-full text-sm">
-              <thead className="border-b border-border-light bg-background-light dark:border-border-dark dark:bg-background-dark">
+              <thead className="border-b border-primary/20 bg-primary/10 dark:border-primary/20 dark:bg-primary/10">
                 <tr>
-                  {['아이디', '이름', '이메일', '역할', '권한 그룹', '작업 수', '최근 로그인', ''].map(h => (
+                  <th className="w-12 px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={toggleAllUsers}
+                      aria-checked={allUsersSelected}
+                      aria-label="전체 사용자 선택"
+                      className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${
+                        allUsersSelected
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-primary bg-surface-light dark:bg-surface-dark'
+                      }`}
+                    >
+                      {allUsersSelected && <span className="material-symbols-outlined text-[14px] leading-none">check</span>}
+                    </button>
+                  </th>
+                  {['아이디', '이름', '이메일', '역할', '권한 그룹', '최근 로그인', ''].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark">
                       {h}
                     </th>
@@ -205,12 +270,34 @@ export default function UsersPage() {
               </thead>
               <tbody className="divide-y divide-border-light dark:divide-border-dark">
                 {users.map(user => (
-                  <tr key={user.user_id} className="transition-colors hover:bg-background-light dark:hover:bg-background-dark">
-                    <td className="px-4 py-3 font-medium text-text-primary-light dark:text-text-primary-dark">{user.username}</td>
-                    <td className="px-4 py-3 text-text-primary-light dark:text-text-primary-dark">{user.name || '-'}</td>
+                  <tr
+                    key={user.user_id}
+                    onClick={() => openEdit(user)}
+                    className="cursor-pointer transition-colors hover:bg-background-light dark:hover:bg-background-dark"
+                  >
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleUserSelection(user.user_id)
+                        }}
+                        aria-checked={selectedUserIds.has(user.user_id)}
+                        aria-label={`${user.name || user.username} 선택`}
+                        className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${
+                          selectedUserIds.has(user.user_id)
+                            ? 'border-primary bg-primary text-white'
+                            : 'border-primary bg-surface-light dark:bg-surface-dark'
+                        }`}
+                      >
+                        {selectedUserIds.has(user.user_id) && <span className="material-symbols-outlined text-[14px] leading-none">check</span>}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 font-medium text-text-primary-light dark:text-text-primary-light">{user.username}</td>
+                    <td className="px-4 py-3 text-text-primary-light dark:text-text-primary-light">{user.name || '-'}</td>
                     <td className="px-4 py-3 text-text-secondary-light dark:text-text-secondary-dark">{user.email || '-'}</td>
                     <td className="px-4 py-3">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${user.type === 'A' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300' : 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300'}`}>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold shadow-sm ${user.type === 'A' ? 'bg-rose-100 text-rose-700' : 'bg-primary/10 text-primary'}`}>
                         {roleLabel[user.type]}
                       </span>
                     </td>
@@ -222,18 +309,8 @@ export default function UsersPage() {
                         </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-text-secondary-light dark:text-text-secondary-dark">{user.total_jobs}</td>
                     <td className="px-4 py-3 text-text-secondary-light dark:text-text-secondary-dark">{formatDate(user.last_login)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => openEdit(user)} className="rounded-lg p-1.5 text-primary transition-colors hover:bg-primary/10" title="수정">
-                          <span className="material-symbols-outlined text-lg">edit</span>
-                        </button>
-                        <button onClick={() => setDeleteTarget(user)} className="rounded-lg p-1.5 text-red-500 transition-colors hover:bg-red-50 dark:hover:bg-red-500/10" title="삭제">
-                          <span className="material-symbols-outlined text-lg">delete</span>
-                        </button>
-                      </div>
-                    </td>
+                    <td className="px-4 py-3" />
                   </tr>
                 ))}
               </tbody>
@@ -247,7 +324,7 @@ export default function UsersPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-2xl border border-border-light bg-surface-light shadow-2xl dark:border-border-dark dark:bg-surface-dark">
             <div className="flex items-center justify-between border-b border-border-light px-6 py-4 dark:border-border-dark">
-              <h2 className="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">
+              <h2 className="text-lg font-bold text-text-primary-light">
                 {modalMode === 'create' ? '사용자 등록' : '사용자 수정'}
               </h2>
               <button onClick={() => setModalMode(null)} className="rounded-lg p-1 hover:bg-black/5 dark:hover:bg-white/5">
@@ -287,7 +364,7 @@ export default function UsersPage() {
                 <select value={form.permission_group} onChange={e => setForm(p => ({ ...p, permission_group: e.target.value }))} className={inputClass}>
                   {groups.map(g => (
                     <option key={g.group_key} value={g.group_key}>
-                      {g.group_name} — {maskingLabel[g.masking_access_level]}
+                      {g.group_name} / {maskingLabel[g.masking_access_level]}
                     </option>
                   ))}
                 </select>
@@ -310,10 +387,10 @@ export default function UsersPage() {
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-2xl border border-border-light bg-surface-light p-6 shadow-2xl dark:border-border-dark dark:bg-surface-dark">
-            <h2 className="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">사용자 삭제</h2>
+            <h2 className="text-lg font-bold text-text-primary-light">사용자 삭제</h2>
             <p className="mt-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
               <strong>{deleteTarget.name || deleteTarget.username}</strong> 사용자를 삭제합니다.<br />
-              해당 사용자의 모든 작업과 세션도 함께 삭제됩니다.
+              해당 사용자의 모든 작업과 설정이 함께 삭제됩니다.
             </p>
             <div className="mt-6 flex gap-3">
               <button onClick={() => setDeleteTarget(null)} className="flex-1 rounded-xl border border-border-light px-4 py-2 text-text-primary-light hover:bg-black/5 dark:border-border-dark dark:text-text-primary-dark dark:hover:bg-white/5">취소</button>
@@ -324,15 +401,6 @@ export default function UsersPage() {
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-function StatCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-2xl border border-border-light bg-surface-light p-5 dark:border-border-dark dark:bg-surface-dark">
-      <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{label}</p>
-      <p className="mt-2 text-3xl font-bold text-text-primary-light dark:text-text-primary-dark">{value}</p>
     </div>
   )
 }
