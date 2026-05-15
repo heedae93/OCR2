@@ -65,6 +65,8 @@ global_pdf_generator = None
 models_preloaded = False
 
 
+# 서버 시작 시 모든 OCR 모델(엔진, 레이아웃 감지기, PDF 생성기 등)을 미리 로드한다.
+# 첫 요청 시 발생하는 콜드 스타트 지연을 제거하기 위해 main.py의 startup 이벤트에서 호출된다. ( FastApi 서버 시작될 때 자동으로 모델 로드 )
 async def preload_all_models():
     """
     Pre-load all OCR models at server startup for faster processing.
@@ -141,6 +143,8 @@ async def preload_all_models():
     logger.info("=" * 50)
 
 
+# 전역 OCRPDFGenerator 인스턴스를 반환한다. 없으면 lazy 초기화한다.
+# 모든 job에서 재사용되는 싱글톤 PDF 생성기다.
 def get_global_pdf_generator():
     """Get the global PDF generator instance (pre-loaded or lazy init)"""
     global global_pdf_generator
@@ -150,6 +154,8 @@ def get_global_pdf_generator():
     return global_pdf_generator
 
 
+# 특정 GPU ID에 해당하는 OCR 엔진(CustomOCRModel)을 반환한다.
+# 풀에 없으면 새로 초기화하고 캐싱한다. thread-safe (gpu_pool_lock 사용).
 def get_ocr_engine_for_gpu(gpu_id: int):
     """Get or create OCR engine for specific GPU"""
     global ocr_engine_pool
@@ -179,6 +185,7 @@ def get_ocr_engine_for_gpu(gpu_id: int):
         return ocr_engine_pool[gpu_id]
 
 
+# PaddleOCR 기반 라인 감지 엔진(OCREngine)을 반환한다. lazy 초기화.
 def get_ocr_engine():
     """Lazy initialization of PaddleOCR engine (line-level detection)."""
     global ocr_engine
@@ -188,6 +195,8 @@ def get_ocr_engine():
     return ocr_engine
 
 
+# 검색 가능 PDF 생성기(SearchablePDFGenerator)를 반환한다. lazy 초기화.
+# OCR 결과를 바탕으로 투명 텍스트 레이어를 PDF에 합성할 때 사용된다.
 def get_pdf_generator():
     """Lazy initialization of PDF generator (using SearchablePDFGenerator)"""
     global pdf_generator
@@ -197,6 +206,7 @@ def get_pdf_generator():
     return pdf_generator
 
 
+# 다단(컬럼) 구조 감지기(ColumnDetector)를 반환한다. lazy 초기화.
 def get_column_detector():
     """Lazy initialization of column detector"""
     global column_detector
@@ -206,6 +216,8 @@ def get_column_detector():
     return column_detector
 
 
+# 특정 GPU ID에 해당하는 레이아웃 감지기(LayoutDetector)를 반환한다.
+# 풀에 없으면 초기화 후 캐싱한다. thread-safe (gpu_pool_lock 사용).
 def get_layout_detector_for_gpu(gpu_id: int):
     """Get or create layout detector for specific GPU"""
     global layout_detector_pool
@@ -226,6 +238,8 @@ def get_layout_detector_for_gpu(gpu_id: int):
         return layout_detector_pool[gpu_id]
 
 
+# 레이아웃 감지기(LayoutDetector) 단일 인스턴스를 반환한다. lazy 초기화.
+# GPU/CPU 모드는 Config.OCR_USE_GPU 설정을 따른다.
 def get_layout_detector():
     """Lazy initialization of layout detector"""
     global layout_detector
@@ -239,6 +253,8 @@ def get_layout_detector():
     return layout_detector
 
 
+# 읽기 순서 정렬기(ReadingOrderSorter)를 반환한다. lazy 초기화.
+# 단일/다단 컬럼을 자동 감지하고 좌표 기반으로 라인 읽기 순서를 정렬한다.
 def get_reading_order_sorter() -> ReadingOrderSorter:
     """Lazy initialization of the smart reading order sorter"""
     global reading_order_sorter
@@ -257,6 +273,9 @@ def get_reading_order_sorter() -> ReadingOrderSorter:
     return reading_order_sorter
 
 
+# 단어 단위 OCR 박스들을 y좌표 기준으로 그룹핑해 라인 단위 항목으로 병합한다.
+# y_threshold: 같은 라인으로 묶을 y 중심 좌표 허용 오차(px)
+# x_gap: (현재 미사용, 확장 예비 파라미터)
 def _merge_ocr_lines(blocks: List[Dict], y_threshold: float = 6.0, x_gap: float = 25.0) -> List[Dict]:
     """Group word-level boxes into line-level entries."""
     if not blocks:
@@ -328,7 +347,24 @@ def upload_file(
     doc_type: Optional[str] = Query(None),
     session_id: str = "default"
 ):
-    """Upload a file for OCR processing"""
+    """
+    POST /upload — 파일 업로드 및 OCR 작업 준비.
+
+    지원 형식: PDF, 이미지(PNG/JPG/TIFF/BMP/WEBP), TXT, HWP/HWPX, Office(DOC/DOCX/XLS/XLSX/PPT/PPTX)
+
+    처리 흐름:
+      1. 파일 확장자 검증 (ALLOWED_UPLOAD_EXTENSIONS)
+      2. job_id(UUID) 생성 후 data/raw/{job_id}/ 에 파일 저장
+      3. HWP/HWPX 또는 Office 파일이면 LibreOffice headless로 ocr_input.pdf 변환
+         → OCR worker는 이 PDF를 원본으로 사용 (fitz 이미지 변환 → OCR 파이프라인)
+      4. 파일 유형별 preview PDF 생성
+         - PDF: 원본 복사
+         - HWP/Office: 변환된 ocr_input.pdf 복사
+         - TXT: 텍스트를 PDF로 렌더링
+         - 이미지: EXIF 회전 보정 후 PDF로 래핑
+      5. PostgreSQL에 Job 레코드 저장 (status: "uploaded")
+      6. job_id 반환
+    """
     try:
         # Validate file type
         if not file.filename:
@@ -359,6 +395,17 @@ def upload_file(
             ocr_input = job_dir / "ocr_input.pdf"
             try:
                 convert_hwp_to_pdf(file_path, ocr_input)
+            except HwpConversionError as e:
+                try:
+                    shutil.rmtree(job_dir, ignore_errors=True)
+                except OSError:
+                    pass
+                raise HTTPException(status_code=400, detail=str(e)) from e
+        elif file_ext in OFFICE_EXTENSIONS:
+            from utils.hwp_convert import convert_office_to_pdf, HwpConversionError
+            ocr_input = job_dir / "ocr_input.pdf"
+            try:
+                convert_office_to_pdf(file_path, ocr_input)
             except HwpConversionError as e:
                 try:
                     shutil.rmtree(job_dir, ignore_errors=True)
@@ -425,18 +472,11 @@ def upload_file(
                 logger.error(f"Failed to create preview PDF from text: {e}")
                 raise
         elif file_ext in OFFICE_EXTENSIONS:
-            hint_path = job_dir / "_office_preview_hint.txt"
-            hint_path.write_text(
-                "Office 문서입니다. 작업을 시작하면 Tika 서버에서 본문 텍스트를 추출합니다.",
-                encoding="utf-8",
-            )
             try:
-                from utils.text_to_pdf import convert_plain_text_to_pdf
-
-                convert_plain_text_to_pdf(hint_path, output_pdf)
-                logger.info(f"Created placeholder preview PDF for Office: {output_pdf}")
+                shutil.copy2(job_dir / "ocr_input.pdf", output_pdf)
+                logger.info(f"Created preview PDF from Office conversion: {output_pdf}")
             except Exception as e:
-                logger.error(f"Failed preview PDF for Office: {e}")
+                logger.error(f"Failed to copy preview PDF from Office conversion: {e}")
                 raise
         else:
             # For image files, create a simple PDF for preview with EXIF handling
@@ -484,10 +524,16 @@ def upload_file(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# OCR worker가 실제로 처리할 입력 파일을 결정한다.
+# HWP/Office 파일은 업로드 시 ocr_input.pdf로 변환되어 있으므로 이를 우선 사용한다.
 def _resolve_job_ocr_input(job_dir: Path) -> Path:
     """
-    HWP 업로드 시 `ocr_input.pdf`가 있으면 그 PDF를 사용하고,
-    그렇지 않으면 job 디렉터리의 첫 PDF, 없으면 첫 파일을 사용한다.
+    OCR worker가 실제로 처리할 입력 파일 경로를 결정한다.
+
+    우선순위:
+      1. ocr_input.pdf — HWP/HWPX 또는 Office 파일 업로드 시 LibreOffice 변환본
+      2. 디렉터리 내 첫 번째 PDF
+      3. 디렉터리 내 첫 번째 파일 (이미지 등)
     """
     ocr_input = job_dir / "ocr_input.pdf"
     if ocr_input.is_file():
@@ -504,6 +550,8 @@ def _resolve_job_ocr_input(job_dir: Path) -> Path:
     return files[0]
 
 
+# Tika/PyMuPDF/TXT 등으로 텍스트를 직접 추출한 경우 OCR 없이 작업을 완료한다.
+# 추출된 페이지 텍스트로 PDF를 생성하고, OCR JSON 저장 및 PII 감지까지 수행한다.
 def _complete_job_from_extracted_pages(
     job_id: str,
     page_texts: List[str],
@@ -609,6 +657,9 @@ def _complete_job_from_extracted_pages(
     logger.info(f"Job {job_id} completed via text extraction ({extraction_method})")
 
 
+# GET /page-image/{job_id}/{page_number}
+# OCR 처리 중 생성된 특정 페이지 이미지(PNG)를 반환한다.
+# 에디터 화면에서 원본 이미지를 렌더링할 때 사용된다.
 @router.get("/page-image/{job_id}/{page_number}")
 def get_page_image(job_id: str, page_number: int):
     """Get a specific page image for rendering"""
@@ -633,6 +684,10 @@ def get_page_image(job_id: str, page_number: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# POST /process/{job_id}
+# 업로드된 파일의 OCR 처리를 시작한다.
+# Redis 연결 확인 후 Celery OCR 큐와 Tika 큐에 작업을 디스패치한다.
+# 이미 처리 중인 경우 거부하고, 완료/실패 상태면 재처리를 허용한다.
 @router.post("/process/{job_id}")
 def process_job(job_id: str):
     """Start OCR processing for a job"""
@@ -749,6 +804,9 @@ def process_job(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# POST /cancel/{job_id}
+# 처리 중이거나 대기 중인 OCR 작업을 취소한다.
+# 파일 기반 취소 플래그와 메모리 기반 취소를 병행해 Celery worker에 중단 신호를 전달한다.
 @router.post("/cancel/{job_id}")
 def cancel_job(job_id: str):
     """Cancel an OCR processing job"""
@@ -801,6 +859,8 @@ def cancel_job(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# POST /cancel-all
+# DB에서 processing/queued 상태인 모든 작업을 일괄 취소한다.
 @router.post("/cancel-all")
 def cancel_all_jobs():
     """Cancel all processing and queued jobs"""
@@ -837,6 +897,9 @@ def cancel_all_jobs():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# POST /cancel/{job_id} (async 버전)
+# 특정 작업을 취소하고 DB 상태를 즉시 cancelled로 갱신한다.
+# cancel_job(sync)과 같은 경로를 공유하며, 비동기 처리가 필요한 경우 사용된다.
 @router.post("/cancel/{job_id}")
 async def cancel_job_api(job_id: str):
     """Cancel a specific processing or queued job"""
@@ -875,15 +938,24 @@ async def cancel_job_api(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Celery worker에서 실행되는 OCR 핵심 처리 함수.
+# PDF/이미지/HWP/Office/TXT 파일을 유형에 맞게 처리하고
+# 검색 가능한 PDF와 OCR JSON 결과를 생성한다.
 def process_job_task(job_id: str):
     """
-    Background task for OCR processing with improved text scaling
+    Celery worker에서 실행되는 OCR 핵심 처리 태스크.
 
-    Pipeline:
-    1. Load image/PDF
-    2. Perform OCR (detection + recognition)
-    3. Detect columns (for proper reading order)
-    4. Generate searchable PDF with PRECISE text scaling
+    입력 파일 유형별 처리 흐름:
+      - PDF (원본 또는 HWP/Office 변환본):
+          fitz(PyMuPDF)로 페이지별 이미지 변환 → 텍스트/스캔 페이지 감지
+          → 텍스트 페이지는 fitz 직접 추출, 스캔 페이지는 PaddleOCR 처리
+      - 이미지 (PNG/JPG/TIFF 등):
+          EXIF 회전 보정 후 단일 페이지로 PaddleOCR 처리
+      - TXT:
+          텍스트 직접 추출, OCR 스킵
+      공통 후처리:
+          레이아웃 감지 → 읽기 순서 정렬 → 컬럼 감지
+          → 검색 가능 PDF 생성 (투명 텍스트 레이어) → PII 감지 → DB 저장
     """
     temp_files = []
 
@@ -926,12 +998,6 @@ def process_job_task(job_id: str):
         orig_ext = ""
         if db_job_row:
             orig_ext = Path(db_job_row.original_filename or "").suffix.lower()
-        if orig_ext in {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"}:
-            raise RuntimeError(
-                "Office 문서는 PDF로 변환한 뒤 업로드해 주세요. "
-                "(현재 환경에서는 Office 원본을 바로 OCR 처리할 수 없습니다.)"
-            )
-
         # ── TXT 파일: 텍스트 직접 추출, OCR 스킵 ───────────────────────────
         _actual_ext = input_file.suffix.lower()
         if orig_ext == ".txt" or _actual_ext == ".txt":
@@ -1571,7 +1637,19 @@ def process_job_task(job_id: str):
         cleanup_temp_files(temp_files)
 
 
+# OCRPage.lines를 PDF 생성 파이프라인이 요구하는 raw dict 리스트로 변환한다.
+# bbox가 없거나 텍스트가 비어있는 라인은 제외한다.
 def _convert_page_lines_to_raw(page: Optional[OCRPage]) -> list:
+    """
+    OCRPage.lines를 PDF 생성 파이프라인(OCRPDFGenerator)이 요구하는
+    raw dict 리스트 형태로 변환한다.
+
+    반환 형식:
+      [{'bbox': [x1,y1,x2,y2], 'text': str, 'score': float,
+        'column': int?, 'layout_type': str?, 'reading_order': int?, 'words': list?}, ...]
+
+    bbox가 없거나 텍스트가 비어 있는 라인은 건너뛴다.
+    """
     if not page or not page.lines:
         return []
 
@@ -1602,6 +1680,9 @@ def _convert_page_lines_to_raw(page: Optional[OCRPage]) -> list:
     return raw_lines
 
 
+# POST /export/{job_id}
+# 에디터에서 적용한 Smart Tool 편집(마스킹, 텍스트 수정 등)을 반영해 최종 PDF를 재생성한다.
+# 원본 이미지 위에 OCR 텍스트 레이어와 편집 내용을 합성해 반환한다.
 @router.post("/export/{job_id}")
 async def export_with_smart_tools(job_id: str, payload: PDFExportRequest, user_id: str = ""):
     """Apply Smart Tool edits and regenerate the final PDF."""
@@ -1807,6 +1888,9 @@ async def export_with_smart_tools(job_id: str, payload: PDFExportRequest, user_i
         cleanup_temp_files(temp_files)
 
 
+# GET /status/{job_id}
+# 작업 진행 상태를 반환한다 (non-blocking).
+# 파일 기반 상태(worker가 실시간 갱신)를 우선하고, 없으면 DB에서 조회한다.
 @router.get("/status/{job_id}", response_model=JobResponse)
 async def get_job_status(job_id: str):
     """Get job status from file or database (non-blocking)"""
@@ -2007,6 +2091,9 @@ async def get_job_status(job_id: str):
         db.close()
 
 
+# PATCH /status/{job_id}
+# 프론트엔드에서 직접 작업 상태를 수동으로 갱신한다 (에러 발생 시 등).
+# DB와 메모리(JobManager) 양쪽을 모두 업데이트한다.
 @router.patch("/status/{job_id}")
 async def update_job_status_manual(
     job_id: str, 
@@ -2047,6 +2134,9 @@ async def update_job_status_manual(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# GET /ocr-results/{job_id}
+# 처리 완료된 작업의 OCR 결과 JSON을 반환한다.
+# {job_id}_ocr.json 파일을 읽어 에디터 화면에 전달한다.
 @router.get("/ocr-results/{job_id}")
 async def get_ocr_results(job_id: str):
     """Get OCR results for a job"""
@@ -2075,6 +2165,9 @@ async def get_ocr_results(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# POST /reprocess-page/{job_id}
+# 특정 페이지 하나만 OCR을 재처리한다.
+# 텍스트 PDF 페이지는 fitz로 직접 추출하고, 스캔 페이지는 PaddleOCR로 처리한다.
 @router.post("/reprocess-page/{job_id}")
 async def reprocess_single_page(job_id: str, payload: dict):
     """단일 페이지 OCR 재처리 (임시 기능)"""
@@ -2283,6 +2376,8 @@ async def reprocess_single_page(job_id: str, payload: dict):
     return new_page.model_dump()
 
 
+# GET /download-json/{job_id}
+# OCR 결과 JSON 파일을 다운로드한다.
 @router.get("/download-json/{job_id}")
 async def download_json(job_id: str):
     """Download OCR results as JSON file"""
@@ -2298,6 +2393,10 @@ async def download_json(job_id: str):
     )
 
 
+# POST /save-edits/{job_id}
+# 에디터에서 사용자가 수정한 OCR 텍스트를 저장한다.
+# 수정 이력을 JSONL 로그 파일에 기록하고, 메인 OCR JSON도 덮어쓴다.
+# 이 로그는 향후 모델 파인튜닝 데이터로 활용된다.
 @router.post("/save-edits/{job_id}")
 async def save_ocr_edits(job_id: str, payload: dict):
     """

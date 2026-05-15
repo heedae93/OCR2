@@ -16,7 +16,6 @@ import {
 import { Job, OCRResult, SmartToolLayer } from "@/types";
 import PDFViewer from "@/components/PDFViewer";
 import ExportModal from "@/components/ExportModal";
-import ThemeToggle from "@/components/ThemeToggle";
 import TextEditor from "@/components/TextEditor";
 import SessionSidebar from "@/components/SessionSidebar";
 import OCRProgressOverlay from "@/components/OCRProgressOverlay";
@@ -841,8 +840,6 @@ export default function EditorPage() {
                 </span>
               </button>
             </div> */}
-            <div className="h-6 w-px bg-border-light dark:bg-border-dark"></div>
-            <ThemeToggle />
             <div className="relative">
               <button
                 onClick={() => setUserMenuOpen(v => !v)}

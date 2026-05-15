@@ -35,8 +35,6 @@ export interface TrackedJob {
   queuedAt?: string
   completedAt?: string
   error?: string
-  tikaUserMessage?: string
-  tikaTrackStatus?: string
   userId?: string
 }
 
@@ -70,6 +68,15 @@ function isActiveStatus(status: TrackedJobStatus) {
 
 export function OcrActivityProvider({ children }: { children: ReactNode }) {
   const [trackedJobs, setTrackedJobs] = useState<TrackedJob[]>([])
+  const trackedJobsRef = useRef(trackedJobs)
+  trackedJobsRef.current = trackedJobs
+
+  /** 폴링 effect는 이 값만 구독 — `trackedJobs` 전체를 deps에 넣으면 매 폴링마다 effect가 즉시 재실행될 수 있음 */
+  const activeJobIdsKey = useMemo(() => {
+    const ids = trackedJobs.filter(job => isActiveStatus(job.status)).map(job => job.jobId)
+    return ids.length === 0 ? '' : [...ids].sort().join(',')
+  }, [trackedJobs])
+
   const [isReady, setIsReady] = useState(false)
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [currentUserId, setCurrentUserId] = useState('default')
@@ -181,7 +188,7 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
     if (!isReady) return
 
     const pollStatuses = async () => {
-      const activeJobsSnapshot = trackedJobs.filter(job => isActiveStatus(job.status))
+      const activeJobsSnapshot = trackedJobsRef.current.filter(job => isActiveStatus(job.status))
       if (activeJobsSnapshot.length === 0) return
 
       const results = await Promise.allSettled(
@@ -272,7 +279,7 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
       clearInterval(pollTimerRef.current)
     }
 
-    if (trackedJobs.some(job => isActiveStatus(job.status))) {
+    if (activeJobIdsKey !== '') {
       pollTimerRef.current = setInterval(() => {
         void pollStatuses()
       }, 3000)
@@ -284,7 +291,7 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
         pollTimerRef.current = null
       }
     }
-  }, [isReady, trackedJobs])
+  }, [isReady, activeJobIdsKey])
 
   const activeJobs = useMemo(
     () => trackedJobs.filter(job => isActiveStatus(job.status)),
