@@ -76,3 +76,6 @@ backend/models/
 backend/test_data/*.pdf
 backend/test_data/**/*.pdf
 backend/test_data/embeddings_cache.json
+
+# benchmark results
+backend/benchmark/results/*.json
