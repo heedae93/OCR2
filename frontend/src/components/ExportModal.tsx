@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Loader2, FileText, Code, FileJson, FileSpreadsheet, Archive, Download, Files, ShieldCheck } from 'lucide-react'
+import { X, Loader2, FileText, Code, FileJson, FileSpreadsheet, Archive, Download, Files, ShieldCheck, Printer } from 'lucide-react'
 import { API_BASE_URL } from '@/lib/api'
 
 interface ExportModalProps {
@@ -194,6 +194,8 @@ export default function ExportModal({
   const [asZip, setAsZip] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
+  const [printing, setPrinting] = useState(false)
+  const [printImages, setPrintImages] = useState<{ jobId: string; images: string[] } | null>(null)
   const [isVisible, setIsVisible] = useState(false)
 
   useEffect(() => {
@@ -256,6 +258,73 @@ export default function ExportModal({
       setError('내보내기에 실패했습니다. 다시 시도해 주세요.')
     } finally {
       setDownloading(false)
+    }
+  }
+
+  const handlePrint = async () => {
+    setPrinting(true)
+    setError(null)
+    try {
+      let images: string[]
+
+      if (printImages?.jobId === jobId) {
+        images = printImages.images
+      } else {
+        const res = await fetch(`${API_BASE_URL}/api/masking/${jobId}/download?inline=true`)
+        if (!res.ok) throw new Error('PDF 다운로드 실패')
+        const arrayBuffer = await res.arrayBuffer()
+
+        const pdfjsLib = await import('pdfjs-dist')
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+        images = []
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i)
+          const viewport = page.getViewport({ scale: 1.5 })
+          const canvas = document.createElement('canvas')
+          canvas.width = viewport.width
+          canvas.height = viewport.height
+          const ctx = canvas.getContext('2d')!
+          await page.render({ canvasContext: ctx, viewport }).promise
+          images.push(canvas.toDataURL('image/png'))
+        }
+
+        setPrintImages({ jobId, images })
+      }
+
+      const win = window.open('', '_blank')
+      if (!win) {
+        setError('팝업이 차단되었습니다. 브라우저 팝업 차단을 해제해 주세요.')
+        return
+      }
+
+      const imgTags = images
+        .map((src, i) => `<img src="${src}" alt="Page ${i + 1}" />`)
+        .join('\n')
+
+      win.document.write(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>인쇄</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #fff; }
+  img { display: block; width: 100%; height: auto; }
+  @media print {
+    @page { size: A4 portrait; margin: 0; }
+    img { display: block; width: 100% !important; height: auto !important; page-break-after: always; page-break-inside: avoid; }
+    img:last-child { page-break-after: auto; }
+  }
+</style></head>
+<body>${imgTags}
+<script>window.onload = function() { window.print(); }</script>
+</body></html>`)
+      win.document.close()
+    } catch (e) {
+      setError('인쇄 준비 중 오류가 발생했습니다.')
+      console.error(e)
+    } finally {
+      setPrinting(false)
     }
   }
 
@@ -439,6 +508,26 @@ export default function ExportModal({
           >
             취소
           </button>
+          {selectedFormats.has('masked_pdf') && !isMultiTarget && (
+            <button
+              type="button"
+              onClick={handlePrint}
+              disabled={printing || downloading || isExporting}
+              className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {printing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  준비 중...
+                </>
+              ) : (
+                <>
+                  <Printer className="w-4 h-4" />
+                  인쇄하기
+                </>
+              )}
+            </button>
+          )}
           <button
             type="button"
             onClick={handleExport}

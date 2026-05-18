@@ -242,12 +242,19 @@ async def detect_pii(job_id: str, db: DBSession = Depends(get_db)):
     return result
 
 @router.get("/{job_id}/download")
-async def download_masked_pdf(job_id: str):
+async def download_masked_pdf(job_id: str, inline: bool = False):
     pii_path = Config.PROCESSED_DIR / f"{job_id}_pii.json"
     if not pii_path.exists(): raise HTTPException(status_code=404, detail="PII not found")
-    with open(pii_path, "r", encoding="utf-8") as f: pii_data = json.load(f)
-    pdf_path = Config.PROCESSED_DIR / f"{job_id}.pdf"
-    if not pdf_path.exists(): raise HTTPException(status_code=404, detail="PDF not found")
-    boxes = [b for b in pii_data.get("masked_boxes", []) if b.get("bbox") and b.get("masked_value") != b.get("value")]
-    masked_pdf_bytes = _apply_masking(pdf_path, boxes, _load_ocr(job_id))
-    return StreamingResponse(io.BytesIO(masked_pdf_bytes), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="masked_{job_id}.pdf"'})
+
+    masked_pdf_path = Config.PROCESSED_DIR / f"{job_id}_masked.pdf"
+    if masked_pdf_path.exists():
+        masked_pdf_bytes = masked_pdf_path.read_bytes()
+    else:
+        with open(pii_path, "r", encoding="utf-8") as f: pii_data = json.load(f)
+        pdf_path = Config.PROCESSED_DIR / f"{job_id}.pdf"
+        if not pdf_path.exists(): raise HTTPException(status_code=404, detail="PDF not found")
+        boxes = [b for b in pii_data.get("masked_boxes", []) if b.get("bbox") and b.get("masked_value") != b.get("value")]
+        masked_pdf_bytes = _apply_masking(pdf_path, boxes, _load_ocr(job_id))
+
+    disposition = "inline" if inline else "attachment"
+    return StreamingResponse(io.BytesIO(masked_pdf_bytes), media_type="application/pdf", headers={"Content-Disposition": f'{disposition}; filename="masked_{job_id}.pdf"'})
