@@ -37,17 +37,19 @@ PII_PATTERNS = {
     "BUSINESS_REG_NO": [
         r"\b\d{3}-\d{2}-\d{5}\b"
     ],
+    # ACCOUNT_NO: 은행명이 명시된 경우에만 정규식으로 추출 (날짜/사업자번호 오탐 방지)
+    # 은행명 없이 단독 숫자만 있는 경우는 NER(3차) 및 공간 근접성(2.5차)으로만 추출
     "ACCOUNT_NO": [
-        r"\b(?!01[016789]|02-|070)\d{3,6}-\d{2,6}-\d{4,7}\b",
-        r"\b\d{3,4}-\d{3,4}-\d{4}-\d{2}\b",
-        # 은행명 + 하이픈 없는 숫자 계좌번호 (예: 케이뱅크 1001 33370105, 기업 21302612001120)
-        r"(?:케이뱅크|국민|신한|우리|하나|기업|농협|씨티|SC제일|카카오뱅크|토스뱅크|수협|우체국|새마을|부산|경남|대구|전북|광주|제주|산업|기술|외환)[\s]*(\d[\d\s]{7,19}\d)",
+        r'(?:신한|국민|하나|우리|농협|기업|SC제일|씨티|카카오|토스|케이뱅크|우체국|새마을금고|수협)은행\s*([\d][\d\-\s]{8,22}\d)',
     ],
     "HEALTH_INSURANCE_NO": [
         r"\b\d{1,2}-\d{7,10}\b"
     ],
     "CREDIT_CARD": [
         r"\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}\b",
+    ],
+    "ENGLISH_NAME": [
+        r'\(([A-Z][a-z]+(?:[\s\-][A-Z]?[a-z]+)+)\)',  # (Hong Gil-dong), (Lee Young-hee)
     ],
     "PASSPORT_NO": [
         r"\b[A-Z]{1,2}\d{7,8}\b",
@@ -101,12 +103,9 @@ ALLOWED_TYPES = {
 _kobert_ner_model = None
 _kobert_ner_tokenizer = None
 
-# [수정] 모델의 문맥 판단력을 100% 신뢰하도록 하한선을 높임 (오탐 차단)
-# KOBERT_NAME_CONFIDENCE_MIN = 0.85
-
-
-# [수정] 사용자의 요청에 따라 NER의 문맥 판단을 최대한 활용하기 위해 하한선을 대폭 낮춤
-KOBERT_NAME_CONFIDENCE_MIN = 0.50
+# NER 모델이 사람 이름이라고 확신하는 기준점 (오탐 원천 차단을 위해 상향)
+# 임계값이 너무 낮으면 '바랍니다'의 오타인 '바락' 등도 이름으로 통과됨
+KOBERT_NAME_CONFIDENCE_MIN = 0.60
 
 def _clean_kobert_name(value: str, score: float) -> str:
     """NER 결과를 검증하고 불필요한 기호를 제거하여 반환 (유효하지 않으면 None)"""
@@ -198,27 +197,29 @@ def _extract_with_kobert_ner(text: str) -> List[Dict[str, Any]]:
                 idx = text.find(value)
                 if idx != -1:
                     remainder = text[idx + len(value):]
-                    # 기관명 바로 뒤에 이어지는 10~25자리 숫자 패턴 탐색 (^ 추가로 엄격하게 매칭)
-                    match = re.search(r'^[:\s]*([\d\-\s]{10,25})', remainder)
+                    # '은행 계좌번호: ' 와 같은 글자들이 올 수 있으므로 최대 15자의 비숫자 문자 허용 (3차)
+                    match = re.search(r'^[^0-9]{0,15}([\d\-\s]{10,25})', remainder)
                     if match:
                         acc_num = match.group(1).strip()
                         if len(re.sub(r'[\s\-]', '', acc_num)) >= 10:
-                            pii_items.append({
-                                "type": "ACCOUNT_NO",
-                                "value": acc_num,
-                                "confidence": entity['score']
-                            })
+                            if not re.fullmatch(r'\d{3}-\d{2}-\d{5}', acc_num) and not re.match(r'\d{4}[-./]\d{2}[-./]\d{2}', acc_num):
+                                pii_items.append({
+                                    "type": "ACCOUNT_NO",
+                                    "value": acc_num,
+                                    "confidence": entity['score']
+                                })
             
             # 계좌번호 문맥 인식 2: 수량/숫자(QT)로 인식된 값 중 계좌번호 형태이면서 문맥 키워드가 있는 경우
             elif entity_type in ['QT', 'QUANTITY', 'AF', 'ARTIFACT']:
                 clean_val = re.sub(r'[\s\-]', '', value)
                 if clean_val.isdigit() and 10 <= len(clean_val) <= 20:
-                    if re.search(r'(은행|뱅크|농협|수협|우체국|새마을|증권|투자|계좌)', text):
-                        pii_items.append({
-                            "type": "ACCOUNT_NO",
-                            "value": value,
-                            "confidence": entity['score']
-                        })
+                    if re.search(r'(은행|뱅크|농협|수협|우체국|새마을|증권|투자|계좌|입금|송금)', text):
+                        if not re.fullmatch(r'\d{3}-\d{2}-\d{5}', value) and not re.match(r'\d{4}[-./]\d{2}[-./]\d{2}', value):
+                            pii_items.append({
+                                "type": "ACCOUNT_NO",
+                                "value": value,
+                                "confidence": entity['score']
+                            })
             # 필요시 다른 태그 추가 (ORG → BUSINESS_REG_NO 등)
         
         logger.info(f"[KoBERT NER] {len(pii_items)}개 추출")
@@ -399,6 +400,30 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
                             if re.search(r'(?:로|길|동|읍|면)\s*\d+', value) or re.search(r'\d+\s*번지', value) or re.search(r'\d+동\s*\d+호', value):
                                 sub_bbox = _estimate_sub_bbox(value, text, line.get("bbox")) or line.get("bbox")
                                 results.append({"type": "ROAD_ADDRESS", "value": value, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT)"})
+
+                        elif entity_type in ['ORG', 'ORGANIZATION', 'OG']:
+                            # 기관명(은행 등) 바로 뒤에 오는 10~25자리 숫자 → 계좌번호
+                            idx = text.find(value)
+                            if idx != -1:
+                                remainder = text[idx + len(value):]
+                                # '은행 계좌번호: ' 와 같은 글자들이 올 수 있으므로 최대 15자의 비숫자 문자 허용 (3차)
+                                acc_match = re.search(r'^[^0-9]{0,15}([\d\-\s]{10,25})', remainder)
+                                if acc_match:
+                                    acc_num = acc_match.group(1).strip()
+                                    if len(re.sub(r'[\s\-]', '', acc_num)) >= 10:
+                                        if not re.fullmatch(r'\d{3}-\d{2}-\d{5}', acc_num) and not re.match(r'\d{4}[-./]\d{2}[-./]\d{2}', acc_num):
+                                            sub_bbox = _estimate_sub_bbox(acc_num, text, line.get("bbox")) or line.get("bbox")
+                                            results.append({"type": "ACCOUNT_NO", "value": acc_num, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT)"})
+
+                        elif entity_type in ['QT', 'QUANTITY']:
+                            # 숫자(QT)가 10~20자리이고 은행 키워드가 문맥에 있으면 계좌번호
+                            clean_val = re.sub(r'[\s\-]', '', value)
+                            if clean_val.isdigit() and 10 <= len(clean_val) <= 20:
+                                if re.search(r'(은행|뱅크|농협|수협|우체국|새마을|증권|투자|계좌|입금|송금)', text):
+                                    if not re.fullmatch(r'\d{3}-\d{2}-\d{5}', value) and not re.match(r'\d{4}[-./]\d{2}[-./]\d{2}', value):
+                                        sub_bbox = _estimate_sub_bbox(value, text, line.get("bbox")) or line.get("bbox")
+                                        results.append({"type": "ACCOUNT_NO", "value": value, "page": page_num, "bbox": sub_bbox, "source": "NER (KoBERT)"})
+
         except Exception as e:
             print(f"[오류] KoBERT NER 실행 중 에러: {e}")
     else:
@@ -427,17 +452,10 @@ def extract_pii_from_pages(ocr_pages: list) -> list:
                 for name_type, name_val in found_names:
                     if name_val in text:
                         sub_bbox = _estimate_sub_bbox(name_val, text, line_bbox) or line_bbox
-                        results.append({"type": name_type, "value": name_val, "page": page_num, "bbox": sub_bbox, "source": "이름 전파 (Propagation)"})
+                        results.append({"type": name_type, "value": name_val, "page": page_num, "bbox": sub_bbox, "source": "이름 전파"})
 
-    # 3차에서는 value+bbox 기준 중복 제거 (같은 이름이 다른 위치에 있으면 유지)
-    seen = set()
-    deduped_results = []
-    for r in results:
-        key = (r["type"], r["value"], str(r.get("bbox")))
-        if key not in seen:
-            seen.add(key)
-            deduped_results.append(r)
-    results = deduped_results
+    # 최종 중복 제거: 더 완전한 정보(긴 값)를 가진 항목을 유지
+    results = _deduplicate(results)
 
     # ── 최종 추출 결과 명확하게 터미널에 출력 (print 사용) ──
     print("\n" + "="*55)
@@ -538,17 +556,17 @@ def _deduplicate(results: list) -> list:
             if existing["type"] != item["type"]:
                 continue
 
-            # NAME/ENGLISH_NAME: 위치가 다르면 중복 체크를 건너뜀
-            # → 같은 이름이 여러 위치에 있어도 각각 마스킹 대상으로 유지
+            ex = sc(existing["value"])
+
+            # For NAME/ENGLISH_NAME, if values are identical but location is different, keep both.
             if item["type"] in ("NAME", "ENGLISH_NAME"):
                 same_loc = (
                     item.get("page") == existing.get("page") and
                     str(item.get("bbox")) == str(existing.get("bbox"))
                 )
-                if not same_loc:
-                    continue
+                if not same_loc and val == ex:
+                    continue # This is not a duplicate, check against next existing item.
 
-            ex = sc(existing["value"])
             if val == ex or val in ex:
                 # 새 항목이 기존보다 같거나 짧음 → 기존 유지
                 is_dup = True
@@ -667,6 +685,17 @@ def _extract_pii_by_proximity(ocr_pages: list, results: list) -> list:
                             if (is_horiz and 0 < dist_h < h_width * 3) or (is_vert and 0 < dist_v < h_height * 15):
                                 match_found = True
                 
+                # 계좌번호(ACCOUNT_NO) 특화 로직 (2.5차)
+                elif pii_type == "ACCOUNT_NO":
+                    clean_text = re.sub(r'[\s\-]', '', text)
+                    if clean_text.isdigit() and 10 <= len(clean_text) <= 25:
+                        is_business_no = re.fullmatch(r'\d{3}-\d{2}-\d{5}', text.strip())
+                        is_date = re.match(r'\d{4}[-./]\d{2}[-./]\d{2}', text.strip())
+                        if not is_business_no and not is_date:
+                            # 거리가 비교적 가까운 경우 매칭
+                            if (is_horiz and 0 < dist_h < h_width * 10) or (is_vert and 0 < dist_v < h_height * 5):
+                                match_found = True
+
                 # 주민번호(RRN) 등 다른 타입은 이미 1차 정규식에서 (라벨 없이도) 잡혔을 가능성이 큼
                 # 만약 안 잡혔다면 여기서 추가 가능 (필요 시)
 
