@@ -151,7 +151,7 @@ export default function StatisticsPage() {
                 const completed = summary.status_counts['completed'] ?? 0
                 const failed = summary.status_counts['failed'] ?? 0
                 const other = Math.max(0, total - completed - failed)
-                const r = 44, cx = 64, cy = 64
+                const r = 56, cx = 80, cy = 80
                 const circ = 2 * Math.PI * r
                 const segs = [
                   { value: completed, color: '#22c55e', label: '완료' },
@@ -168,25 +168,25 @@ export default function StatisticsPage() {
                 return (
                   <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-6 flex flex-col sm:flex-row gap-6">
                     {/* 도넛 차트 */}
-                    <div className="flex flex-col items-center gap-4 shrink-0">
-                      <div className="relative w-[128px] h-[128px]">
-                        <svg width="128" height="128" className="-rotate-90">
+                    <div className="flex flex-col items-center gap-4 shrink-0 w-[260px]">
+                      <div className="relative w-[160px] h-[160px]">
+                        <svg width="160" height="160" className="-rotate-90">
                           {total === 0 ? (
-                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e2e8f0" strokeWidth="16" />
+                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e2e8f0" strokeWidth="18" />
                           ) : arcs.map((arc, i) => (
                             <circle key={i} cx={cx} cy={cy} r={r} fill="none"
-                              stroke={arc.color} strokeWidth="16"
+                              stroke={arc.color} strokeWidth="18"
                               strokeDasharray={`${arc.dash} ${circ - arc.dash}`}
                               strokeDashoffset={arc.offset}
                             />
                           ))}
                         </svg>
                         <div className="absolute inset-0 flex flex-col items-center justify-center">
-                          <span className="text-2xl font-bold text-text-primary-light">{total}</span>
-                          <span className="text-[10px] text-text-secondary-light">전체</span>
+                          <span className="text-3xl font-bold text-text-primary-light">{total}</span>
+                          <span className="text-xs text-text-secondary-light">전체</span>
                         </div>
                       </div>
-                      <div className="flex flex-col gap-1.5 w-full min-w-[140px]">
+                      <div className="flex flex-col gap-1.5 w-full">
                         <div className="flex items-center justify-between text-xs pb-1.5 border-b border-border-light">
                           <div className="flex items-center gap-1.5">
                             <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-slate-400" />
@@ -211,7 +211,7 @@ export default function StatisticsPage() {
                     <div className="hidden sm:block w-px bg-border-light dark:bg-border-dark self-stretch" />
 
                     {/* 나머지 수치 카드들 */}
-                    <div className="flex-1 grid grid-cols-2 gap-4 content-center">
+                    <div className="grid grid-cols-2 gap-3 content-center shrink-0 w-[340px]">
                       {summaryCards.map(({ label, value, icon, color }) => (
                         <div key={label} className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-white border border-border-light dark:border-border-dark shadow-sm">
                           <span className={`material-symbols-outlined text-2xl ${color}`}>{icon}</span>
@@ -225,78 +225,6 @@ export default function StatisticsPage() {
                   </div>
                 )
               })()}
-
-              {/* 성공률 게이지 + Top 5 세션 완료율 */}
-              {summary && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* 성공률 링 게이지 */}
-                  {(() => {
-                    const total = summary.total_jobs
-                    const completed = summary.status_counts['completed'] ?? 0
-                    const rate = total > 0 ? Math.round(completed / total * 100) : 0
-                    const r = 64, cx = 80, cy = 80
-                    const circ = 2 * Math.PI * r
-                    const fill = (rate / 100) * circ
-                    const color = rate >= 80 ? '#22c55e' : rate >= 50 ? '#f59e0b' : '#ef4444'
-                    const label = rate >= 80 ? '양호' : rate >= 50 ? '보통' : '주의'
-                    return (
-                      <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-6 flex flex-col items-center gap-4">
-                        <h2 className="text-base font-semibold text-text-primary-light self-start">전체 성공률</h2>
-                        <div className="relative w-[160px] h-[160px]">
-                          <svg width="160" height="160" className="-rotate-90">
-                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e2e8f0" strokeWidth="16" />
-                            <circle cx={cx} cy={cy} r={r} fill="none"
-                              stroke={color} strokeWidth="16" strokeLinecap="round"
-                              strokeDasharray={`${fill} ${circ - fill}`}
-                            />
-                          </svg>
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
-                            <span className="text-4xl font-black text-text-primary-light tabular-nums">{rate}%</span>
-                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: color }}>{label}</span>
-                          </div>
-                        </div>
-                        <p className="text-sm text-text-secondary-light tabular-nums">
-                          완료 <span className="font-bold text-text-primary-light">{completed}</span> / 전체 <span className="font-bold text-text-primary-light">{total}</span>건
-                        </p>
-                      </div>
-                    )
-                  })()}
-
-                  {/* Top 5 세션 완료율 */}
-                  <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-6 flex flex-col gap-4">
-                    <h2 className="text-base font-semibold text-text-primary-light">완료율 TOP 5 세션</h2>
-                    {sessions.length > 0 ? (
-                      <div className="flex flex-col gap-3">
-                        {[...sessions]
-                          .sort((a, b) => b.completion_rate - a.completion_rate)
-                          .slice(0, 5)
-                          .map((s, i) => (
-                            <div key={s.session_id} className="flex flex-col gap-1">
-                              <div className="flex items-center justify-between text-xs">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-white"
-                                    style={{ backgroundColor: i === 0 ? '#f59e0b' : i === 1 ? '#94a3b8' : i === 2 ? '#b45309' : '#cbd5e1' }}>
-                                    {i + 1}
-                                  </span>
-                                  <span className="truncate font-medium text-text-primary-light">{s.session_name}</span>
-                                </div>
-                                <span className="shrink-0 ml-2 font-bold tabular-nums text-text-primary-light">{s.completion_rate}%</span>
-                              </div>
-                              <div className="h-2 rounded-full bg-black/10 overflow-hidden">
-                                <div className="h-full rounded-full bg-green-500 transition-all duration-500" style={{ width: `${s.completion_rate}%` }} />
-                              </div>
-                              <div className="text-[10px] text-text-secondary-light tabular-nums">
-                                완료 {s.completed} / 전체 {s.total}건
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-text-secondary-light">데이터 없음</div>
-                    )}
-                  </div>
-                </div>
-              )}
 
               {/* Row: Accuracy + File Types + Processing Time */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
