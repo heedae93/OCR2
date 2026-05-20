@@ -9,19 +9,15 @@ import { useOcrActivity } from '@/contexts/OcrActivityContext'
 import {
   AlertCircle,
   CheckCircle,
-  Clock,
   ChevronDown,
-  ChevronUp,
   Loader2,
   Trash2,
   Upload,
   X,
-  Plus,
   FolderOpen,
   StopCircle,
   Zap,
   FileText,
-  CloudUpload,
 } from 'lucide-react'
 
 const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/api`
@@ -98,7 +94,7 @@ import PipelineProgress from '@/components/PipelineProgress'
 export default function OcrWorkPage() {
   const { addTrackedJobs, trackedJobs, removeTrackedJobs, clearAllTrackedJobs } = useOcrActivity()
   const [sessionName, setSessionName] = useState('')
-  const [defaultDocType, setDefaultDocType] = useState('미분류')
+  const [defaultDocType, setDefaultDocType] = useState('')
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
   const [queue, setQueue] = useState<QueueFile[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -308,6 +304,23 @@ export default function OcrWorkPage() {
       localStorage.removeItem(`ocr_work_session_name_${userId}`)
     }
   }, [sessionName])
+
+  // 작업명 변경 시 드래프트 파일들의 sessionKey를 최신 작업명으로 갱신
+  useEffect(() => {
+    setQueue(prev => prev.map(file => {
+      if (file.status !== 'pending' || file.jobId || file.trackedOnly) return file
+      const fileNonce = file.sessionKey?.slice(
+        (file.sessionKey.indexOf(SESSION_KEY_SEP) ?? -1) + SESSION_KEY_SEP.length
+      )
+      if (fileNonce !== draftSessionNonce) return file
+      const newLabel = sessionName.trim() || UNNAMED_SESSION_LABEL
+      return {
+        ...file,
+        sessionName: newLabel,
+        sessionKey: makeSessionKey(newLabel, draftSessionNonce),
+      }
+    }))
+  }, [sessionName, draftSessionNonce])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const sessionNameInputRef = useRef<HTMLInputElement>(null)
@@ -397,13 +410,14 @@ export default function OcrWorkPage() {
   const updateSessionDocType = useCallback((sName: string, docType: string) => {
     if (bulkDocTypeLocked) return
     setQueue(prev => prev.map(file => {
-      const fileSession =
-        file.status === 'pending' && !file.jobId && !file.trackedOnly
-          ? (file.sessionKey || (sessionName.trim() || UNNAMED_SESSION_LABEL))
-          : (file.sessionKey || file.sessionName || UNNAMED_SESSION_LABEL)
+      // 제출 전 대기 파일은 현재 드래프트 파일이므로 전체 일괄 업데이트
+      if (file.status === 'pending' && !file.jobId && !file.trackedOnly) {
+        return { ...file, docType }
+      }
+      const fileSession = file.sessionKey || file.sessionName || UNNAMED_SESSION_LABEL
       return displaySessionName(fileSession) === sName ? { ...file, docType } : file
     }))
-  }, [sessionName, bulkDocTypeLocked])
+  }, [bulkDocTypeLocked])
 
   const removeSession = useCallback((sName: string) => {
     if (isSubmitting) return
@@ -841,138 +855,120 @@ export default function OcrWorkPage() {
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[360px_minmax(0,1fr)] xl:items-stretch">
             <aside className="flex min-h-0 flex-col gap-3 xl:col-start-1 xl:h-[calc(100vh-9rem)] xl:overflow-y-auto xl:sticky xl:top-6">
-              <div className="shrink-0 rounded-xl border border-border-light bg-surface-light p-4 dark:border-border-dark dark:bg-surface-dark xl:p-3.5">
-                <label className="block text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark mb-2 uppercase tracking-wider">
-                  작업 이름
-                </label>
-                <input
-                  ref={sessionNameInputRef}
-                  type="text"
-                  value={sessionName}
-                  onChange={event => setSessionName(event.target.value)}
-                  placeholder="작업 이름을 입력하세요"
-                  disabled={isSubmitting}
-                  aria-invalid={needsSessionName}
-                  aria-describedby={needsSessionName ? 'ocr-work-session-name-hint' : undefined}
-                  className={`w-full px-3 py-2 text-sm border rounded-lg bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all ${
-                    needsSessionName
-                      ? 'border-amber-500/90 ring-2 ring-amber-500/20 dark:border-amber-500 dark:ring-amber-500/25'
-                      : 'border-border-light dark:border-border-dark'
-                  }`}
-                />
-                {needsSessionName && (
-                  <div
-                    id="ocr-work-session-name-hint"
-                    role="alert"
-                    className="mt-2.5 flex gap-2.5 rounded-lg border border-amber-200/95 bg-amber-50 px-3 py-2.5 shadow-sm dark:border-amber-800/90 dark:bg-amber-950/50 dark:shadow-none"
-                  >
-                    <AlertCircle
-                      className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
-                      aria-hidden
-                    />
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-amber-950 dark:text-amber-100">
-                        작업 이름을 입력해 주세요
-                      </p>
-                      <p className="mt-1 text-[11px] leading-snug text-amber-900/85 dark:text-amber-200/90">
-                        등록·목록에서 작업을 구분하려면 이름이 필요합니다. 입력하면 아래 대기 파일이 이 이름으로 묶입니다.
-                      </p>
-                    </div>
-                  </div>
-                )}
-                <p
-                  className={`mt-2 text-[11px] text-text-secondary-light dark:text-text-secondary-dark ${needsSessionName ? 'opacity-80' : ''}`}
-                >
-                  선택/업로드한 파일은 현재 작업명으로 작업 내역에 묶여 등록됩니다.
-                </p>
-              </div>
+              <div className="shrink-0 rounded-xl border border-border-light bg-surface-light p-4 dark:border-border-dark dark:bg-surface-dark xl:p-3.5 flex flex-col gap-4">
 
-              <div className="shrink-0 rounded-xl border border-border-light bg-surface-light p-4 dark:border-border-dark dark:bg-surface-dark xl:p-3.5">
-                <label
-                  htmlFor="ocr-work-bulk-doc-type"
-                  className="mb-2 block text-xs font-bold uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark xl:mb-1.5"
-                >
-                  문서 유형 일괄 선택
-                </label>
-                {pendingUploadCount === 0 ? (
-                  <div className="relative">
-                    <select
-                      id="ocr-work-bulk-doc-type"
-                      disabled
-                      value=""
-                      className="w-full cursor-not-allowed appearance-none rounded-lg border border-border-light bg-background-light py-2 pl-3 pr-9 text-sm text-text-secondary-light opacity-60 dark:border-border-dark dark:bg-background-dark dark:text-text-secondary-dark"
+                {/* 작업명 */}
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark mb-2 uppercase tracking-wider">
+                    작업명
+                  </label>
+                  <input
+                    ref={sessionNameInputRef}
+                    autoFocus
+                    type="text"
+                    value={sessionName}
+                    onChange={event => setSessionName(event.target.value)}
+                    placeholder="작업명을 입력하세요"
+                    disabled={isSubmitting}
+                    aria-invalid={needsSessionName}
+                    aria-describedby={needsSessionName ? 'ocr-work-session-name-hint' : undefined}
+                    className={`w-full px-3 py-2 text-sm border rounded-lg bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all ${
+                      needsSessionName
+                        ? 'border-amber-500/90 ring-2 ring-amber-500/20 dark:border-amber-500 dark:ring-amber-500/25'
+                        : 'border-border-light dark:border-border-dark'
+                    }`}
+                  />
+                  {needsSessionName && (
+                    <div
+                      id="ocr-work-session-name-hint"
+                      role="alert"
+                      className="mt-2.5 flex gap-2.5 rounded-lg border border-orange-400 bg-orange-500 px-3 py-2.5 shadow-sm"
                     >
-                      <option value="">파일을 추가하면 선택할 수 있습니다</option>
-                    </select>
-                    <ChevronDown
-                      className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary-light opacity-50 dark:text-text-secondary-dark"
-                      aria-hidden
-                    />
-                  </div>
-                ) : (
-                  <div className="relative" title={bulkDocTypeLocked ? '작업 등록을 시작한 뒤에는 문서 유형 일괄을 변경할 수 없습니다.' : undefined}>
-                    <select
-                      id="ocr-work-bulk-doc-type"
-                      value={bulkSidebarSelectValue}
-                      disabled={isSubmitting || bulkDocTypeLocked}
-                      onChange={event => {
-                        const v = event.target.value
-                        if (v) updateSessionDocType(sessionName.trim() || UNNAMED_SESSION_LABEL, v)
-                      }}
-                      className="w-full cursor-pointer appearance-none rounded-lg border border-border-light bg-background-light py-2 pl-3 pr-9 text-sm text-text-primary-light focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-border-dark dark:bg-background-dark dark:text-text-primary-dark"
-                    >
-                      {pendingDocTypesForSidebar.length !== 1 && (
-                        <option value="">유형 선택</option>
-                      )}
-                      {allDocTypes.map(type => (
-                        <option key={type} value={type}>
-                          {type}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown
-                      className={`pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400 ${isSubmitting || bulkDocTypeLocked ? 'opacity-50' : ''}`}
-                      aria-hidden
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex min-h-0 flex-1 flex-col gap-3">
-              <div className="flex min-h-[7rem] flex-1 flex-col rounded-xl border border-border-light bg-surface-light p-3 dark:border-border-dark dark:bg-surface-dark xl:min-h-0 xl:p-3">
-                <div
-                  {...getRootProps()}
-                  className={`group relative flex min-h-[7rem] flex-1 flex-col items-stretch justify-center overflow-hidden rounded-lg border-2 border-dashed p-3 transition-all ${
-                    isDragActive
-                      ? 'cursor-pointer border-primary bg-primary/5 ring-4 ring-primary/10'
-                      : 'cursor-pointer border-border-light hover:border-primary/50 hover:bg-primary/5 dark:border-border-dark'
-                  }`}
-                >
-                  <input {...getInputProps()} />
-                  <div className="relative z-10 flex h-full w-full flex-col items-center justify-center gap-2">
-                    <div className="rounded-full bg-primary/10 p-2.5 text-primary transition-transform group-hover:scale-110">
-                      <CloudUpload className="h-6 w-6" />
+                      <AlertCircle
+                        className="mt-0.5 h-4 w-4 shrink-0 text-white"
+                        aria-hidden
+                      />
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-white">
+                          작업명을 입력해 주세요
+                        </p>
+                        <p className="mt-1 text-[11px] leading-snug text-white/90">
+                          등록·목록에서 작업을 구분하려면 이름이 필요합니다. 입력하면 아래 대기 파일이 이 이름으로 묶입니다.
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-center">
-                      <p className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
-                        {isDragActive ? '여기에 놓으세요' : '파일 추가'}
-                      </p>
-                      <p className="mt-1 text-[10px] text-text-secondary-light dark:text-text-secondary-dark">
-                        PDF / 이미지 / TXT / Office
-                      </p>
-                    </div>
-                    <div className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary">
-                      <span className="material-symbols-outlined !text-[12px] leading-none">move_to_inbox</span>
-                      이 영역으로 드래그해서 업로드
-                    </div>
-                  </div>
-                  <span className="material-symbols-outlined absolute -bottom-5 -right-4 text-8xl opacity-[0.04] dark:opacity-[0.06] pointer-events-none">
-                    upload_file
-                  </span>
+                  )}
+                  <p className={`mt-2 text-[11px] text-text-secondary-light dark:text-text-secondary-dark ${needsSessionName ? 'opacity-80' : ''}`}>
+                    선택/업로드한 파일은 현재 작업명으로 작업 내역에 묶여 등록됩니다.
+                  </p>
                 </div>
-                <div className="mt-2 grid w-full grid-cols-1 gap-2">
-                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-bold text-white shadow-sm transition-all hover:bg-primary/90 active:scale-[0.98]">
-                    <Upload className="w-4 h-4" />
+
+                <div className="h-px bg-border-light dark:bg-border-dark" />
+
+                {/* 문서 유형 일괄 선택 */}
+                <div>
+                  <label
+                    htmlFor="ocr-work-bulk-doc-type"
+                    className="mb-2 block text-xs font-bold uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark xl:mb-1.5"
+                  >
+                    문서 유형 일괄 선택
+                  </label>
+                  {pendingUploadCount === 0 ? (
+                    <div className="relative">
+                      <select
+                        id="ocr-work-bulk-doc-type"
+                        disabled
+                        value=""
+                        className="w-full cursor-not-allowed appearance-none rounded-lg border border-border-light bg-background-light py-2 pl-3 pr-9 text-sm text-text-secondary-light opacity-60 dark:border-border-dark dark:bg-background-dark dark:text-text-secondary-dark"
+                      >
+                        <option value="">파일을 추가하면 선택할 수 있습니다</option>
+                      </select>
+                      <ChevronDown
+                        className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary-light opacity-50 dark:text-text-secondary-dark"
+                        aria-hidden
+                      />
+                    </div>
+                  ) : (
+                    <div className="relative" title={bulkDocTypeLocked ? '작업 등록을 시작한 뒤에는 문서 유형 일괄을 변경할 수 없습니다.' : undefined}>
+                      <select
+                        id="ocr-work-bulk-doc-type"
+                        value={bulkSidebarSelectValue}
+                        disabled={isSubmitting || bulkDocTypeLocked}
+                        onChange={event => {
+                          const v = event.target.value
+                          if (v) {
+                            updateSessionDocType(sessionName.trim() || UNNAMED_SESSION_LABEL, v)
+                            setDefaultDocType(v)
+                          }
+                        }}
+                        className="w-full cursor-pointer appearance-none rounded-lg border border-border-light bg-background-light py-2 pl-3 pr-9 text-sm text-text-primary-light focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-border-dark dark:bg-background-dark dark:text-text-primary-dark"
+                      >
+                        {pendingDocTypesForSidebar.length !== 1 && (
+                          <option value="">유형 선택</option>
+                        )}
+                        {allDocTypes.map(type => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        className={`pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400 ${isSubmitting || bulkDocTypeLocked ? 'opacity-50' : ''}`}
+                        aria-hidden
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="h-px bg-border-light dark:bg-border-dark" />
+
+                {/* 파일 추가 */}
+              <div className="flex min-h-0 flex-1 flex-col gap-3">
+              <div className="flex flex-col xl:min-h-0">
+                <input {...getInputProps()} />
+                <div className="mt-2 grid w-full grid-cols-2 gap-2">
+                  <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-slate-500 px-3 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-slate-600 active:scale-[0.98]">
+                    <Upload className="w-3.5 h-3.5" />
                     파일 선택
                     <input
                       ref={fileInputRef}
@@ -984,8 +980,8 @@ export default function OcrWorkPage() {
                       onChange={event => handleFileSelect(event, 'file')}
                     />
                   </label>
-                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-primary/10 px-5 py-2 text-sm font-bold text-primary transition-all hover:bg-primary/20 active:scale-[0.98]">
-                    <FolderOpen className="w-4 h-4" />
+                  <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-slate-500 px-3 py-2 text-xs font-bold text-white transition-all hover:bg-slate-600 active:scale-[0.98]">
+                    <FolderOpen className="w-3.5 h-3.5" />
                     폴더 선택
                     <input
                       ref={folderInputRef}
@@ -1019,12 +1015,20 @@ export default function OcrWorkPage() {
                   </>
                 )}
               </button>
-              </div>{/* 업로드+버튼 래퍼 끝 */}
+              </div>{/* 파일추가 래퍼 끝 */}
+              </div>{/* 통합 박스 끝 */}
 
             </aside>
 
             <div className="flex min-h-[620px] flex-col xl:col-start-2 xl:h-[calc(100vh-9rem)] xl:min-h-[calc(100vh-9rem)]">
-              <section className="flex h-full min-h-[620px] flex-1 flex-col overflow-hidden rounded-xl border border-border-light bg-surface-light dark:border-border-light dark:bg-surface-light xl:min-h-0">
+              <section
+                {...getRootProps({ onClick: e => e.stopPropagation() })}
+                className={`flex h-full min-h-[620px] flex-1 flex-col overflow-hidden rounded-xl border bg-surface-light dark:bg-surface-light xl:min-h-0 transition-all ${
+                  isDragActive
+                    ? 'border-primary ring-2 ring-primary/30 bg-primary/5'
+                    : 'border-border-light dark:border-border-light'
+                }`}
+              >
                 {/* Queue Header with Bulk Controls */}
                 <div className="flex items-start justify-between gap-2 border-b border-border-light bg-gradient-to-r from-gray-50/90 to-surface-light/80 px-3 py-2.5 dark:border-border-light dark:from-gray-50/90 dark:to-surface-light/80 sm:items-center sm:px-4">
                   <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center">
@@ -1113,6 +1117,7 @@ export default function OcrWorkPage() {
                   <div className="flex flex-col items-center justify-center h-full py-20 text-text-secondary-light dark:text-text-secondary-dark">
                     <FileText className="w-12 h-12 mb-3 opacity-20" />
                     <p className="text-sm">선택한 파일 목록이 여기에 표시됩니다</p>
+                    <p className="mt-2 text-xs font-medium text-primary">이 영역으로 파일을 드래그해서 업로드할 수 있습니다</p>
                   </div>
                 ) : (
                   <div className="flex flex-col h-full min-h-0 overflow-hidden">
@@ -1370,12 +1375,6 @@ export default function OcrWorkPage() {
                                   const errorMessage = tracked?.message || file.error
                                   const tikaHint = tracked?.tikaUserMessage || file.tikaUserMessage
                                   const isCurrentWork = !!primaryWorkingFile && primaryWorkingFile.id === file.id
-                                  const statusIconBg =
-                                    effectiveStatus === 'completed' ? 'bg-emerald-500' :
-                                    effectiveStatus === 'failed' ? 'bg-red-500' :
-                                    effectiveStatus === 'processing' ? 'bg-orange-500' :
-                                    (effectiveStatus === 'uploading' || effectiveStatus === 'queued') ? 'bg-blue-500' :
-                                    'bg-gray-400'
                                   const statusLabelBg =
                                     effectiveStatus === 'completed' ? 'bg-emerald-500 text-white' :
                                     effectiveStatus === 'failed' ? 'bg-red-500 text-white' :
@@ -1384,216 +1383,192 @@ export default function OcrWorkPage() {
                                     'bg-gray-400 text-white'
 
                                   return (
-                                    <li key={file.id} className="group/item flex items-stretch gap-1">
-                                      <div
-                                        className={`min-w-0 flex-1 rounded-md border bg-white/95 px-1.5 py-1.5 shadow-sm transition-all hover:shadow dark:bg-white/95 sm:px-2 ${
-                                          isCurrentWork
-                                            ? 'border-primary/50 ring-1 ring-primary/25 hover:border-primary/60 dark:border-primary/50 dark:hover:border-primary/60'
-                                            : 'border-border-light/80 hover:border-primary/25 dark:border-border-light/80 dark:hover:border-primary/25'
-                                        }`}
-                                      >
-                                        <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                                          <div className="flex min-w-0 gap-1.5">
-                                            <div className="flex w-9 shrink-0 flex-col items-center gap-px pt-px">
-                                              <div className={`flex size-7 shrink-0 items-center justify-center rounded-md ${statusIconBg}`}>
-                                                {effectiveStatus === 'pending' && <Clock className="h-4 w-4 text-white" />}
-                                                {effectiveStatus === 'uploading' && <Clock className="h-4 w-4 animate-pulse text-white" />}
-                                                {effectiveStatus === 'processing' && <Loader2 className="h-4 w-4 animate-spin text-white" />}
-                                                {effectiveStatus === 'queued' && <Clock className="h-4 w-4 animate-pulse text-white" />}
-                                                {effectiveStatus === 'completed' && <CheckCircle className="h-4 w-4 text-white" />}
-                                                {effectiveStatus === 'failed' && <AlertCircle className="h-4 w-4 text-white" />}
-                                              </div>
-                                              <span className={`rounded px-1 py-px text-[9px] font-extrabold leading-tight tracking-wide ${statusLabelBg}`}>
-                                                {queueStatusLabel(effectiveStatus)}
-                                              </span>
-                                            </div>
-
-                                            <div className="min-w-0 flex-1 space-y-0.5">
-                                              <div className="min-w-0">
-                                                {effectiveStatus === 'completed' ? (
-                                                  <Link
-                                                    href="/jobs"
-                                                    className="block text-[13px] font-bold leading-snug text-primary hover:underline underline-offset-2 line-clamp-2 sm:truncate sm:line-clamp-none"
-                                                  >
-                                                    {file.displayName}
-                                                  </Link>
-                                                ) : (
-                                                  <p className="text-[13px] font-bold leading-snug text-slate-600 line-clamp-2 sm:truncate sm:line-clamp-none">
-                                                    {file.displayName}
-                                                  </p>
-                                                )}
-                                              </div>
-                                              <p className="text-[10px] font-medium leading-snug text-text-secondary-light dark:text-text-secondary-dark">
-                                                {file.trackedOnly ? '진행' : formatBytes(file.fileSize)} · {file.sourceType === 'folder' ? '폴더' : '파일'}
-                                              </p>
-                                              {tikaHint ? (
-                                                <p
-                                                  className="text-[10px] font-medium leading-snug text-amber-800/95 dark:text-amber-200/90"
-                                                  title="Tika 텍스트 추적 (검색 레이어 보조)"
-                                                >
-                                                  Tika: {tikaHint}
-                                                </p>
-                                              ) : null}
-                                              {effectiveStatus === 'failed' && (
-                                                <div className="mt-0.5 flex min-w-0 items-start gap-0.5">
-                                                  <span className="material-symbols-outlined shrink-0 !text-[11px] text-red-500">error_outline</span>
-                                                  <span className="break-words text-[10px] font-bold leading-snug text-red-500">
-                                                    {errorMessage || '실패'}
-                                                  </span>
-                                                </div>
-                                              )}
-                                            </div>
+                                    <li
+                                      key={file.id}
+                                      className={`group/item flex items-center gap-2 rounded-md border bg-white/95 px-2 py-1.5 shadow-sm transition-all hover:shadow dark:bg-white/95 ${
+                                        isCurrentWork
+                                          ? 'border-primary/50 ring-1 ring-primary/25 hover:border-primary/60 dark:border-primary/50 dark:hover:border-primary/60'
+                                          : 'border-border-light/80 hover:border-primary/25 dark:border-border-light/80 dark:hover:border-primary/25'
+                                      }`}
+                                    >
+                                      {/* 1. 문서유형선택 */}
+                                      <div className="w-[7rem] shrink-0 mr-2">
+                                        {file.status === 'pending' && !isSubmitting ? (
+                                          <div className="relative">
+                                            <select
+                                              id={`ocr-work-doctype-${file.id}`}
+                                              value={file.docType}
+                                              onChange={event => updateFile(file.id, { docType: event.target.value })}
+                                              className="w-full min-w-0 cursor-pointer appearance-none rounded-md border border-slate-200/95 bg-white py-1 pl-1.5 pr-7 text-xs font-semibold leading-snug text-slate-600 shadow-sm transition-all hover:border-primary/45 hover:bg-slate-50/90 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/25 [&>option]:text-slate-600"
+                                            >
+                                              <option value="">문서유형선택</option>
+                                              {allDocTypes.map(type => (
+                                                <option key={type} value={type}>
+                                                  {type}
+                                                </option>
+                                              ))}
+                                            </select>
+                                            <ChevronDown
+                                              className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500"
+                                              aria-hidden
+                                            />
                                           </div>
-
-                                          <div className="flex w-full flex-wrap items-center justify-end gap-x-2 gap-y-1 self-center">
-                                            <div className="flex shrink-0 items-center justify-end gap-px sm:ml-auto sm:self-center">
-                                              {effectiveStatus === 'failed' && file.jobId && (
-                                                <button
-                                                  type="button"
-                                                  onClick={async () => {
-                                                    try {
-                                                      const response = await fetch(`${API_BASE}/process/${file.jobId}`, { method: 'POST' })
-                                                      if (!response.ok) {
-                                                        const payload = await response.json().catch(() => ({}))
-                                                        throw new Error(payload?.detail || '재시작에 실패했습니다.')
-                                                      }
-                                                      updateFile(file.id, {
-                                                        status: 'queued',
-                                                        progress: 0,
-                                                        error: undefined,
-                                                        failedStage: undefined,
-                                                        tikaUserMessage: undefined,
-                                                        tikaTrackStatus: undefined,
-                                                      })
-                                                    } catch (error) {
-                                                      updateFile(file.id, {
-                                                        status: 'failed',
-                                                        error: error instanceof Error ? error.message : '재시작에 실패했습니다.',
-                                                      })
-                                                    }
-                                                  }}
-                                                  className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-1.5 py-1 text-[10px] font-bold text-blue-700 transition-all hover:bg-blue-100 hover:text-blue-800 dark:border-blue-800/70 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/45"
-                                                  title="재시작"
-                                                >
-                                                  <span className="material-symbols-outlined !text-[12px] leading-none">refresh</span>
-                                                  재시작
-                                                </button>
-                                              )}
-
-                                              {(effectiveStatus === 'queued' || effectiveStatus === 'processing') && (
-                                                <button
-                                                  type="button"
-                                                  onClick={async () => {
-                                                    if (!confirm('이 작업을 중지하면 같은 작업의 남은 파일도 모두 실패 처리됩니다.\n계속하시겠습니까?')) {
-                                                      return
-                                                    }
-
-                                                    const cancellableFiles = files.filter(f =>
-                                                      ['pending', 'uploading', 'queued', 'processing'].includes(f.status),
-                                                    )
-                                                    const cancellableIds = new Set(cancellableFiles.map(f => f.id))
-                                                    const jobIds = cancellableFiles
-                                                      .map(f => f.jobId)
-                                                      .filter((id): id is string => Boolean(id))
-
-                                                    if (jobIds.length > 0) {
-                                                      await Promise.allSettled(
-                                                        jobIds.map(async jobId => {
-                                                          await fetch(`${API_BASE}/cancel/${jobId}`, { method: 'POST' })
-                                                          await fetch(`${API_BASE}/status/${jobId}`, {
-                                                            method: 'PATCH',
-                                                            headers: { 'Content-Type': 'application/json' },
-                                                            body: JSON.stringify({
-                                                              status: 'failed',
-                                                              error_message: '사용자가 작업을 중지했습니다.',
-                                                            }),
-                                                          })
-                                                        }),
-                                                      )
-                                                    }
-
-                                                    setQueue(prev =>
-                                                      prev.map(item =>
-                                                        cancellableIds.has(item.id)
-                                                          ? {
-                                                              ...item,
-                                                              status: 'failed',
-                                                              progress: 0,
-                                                              error: '사용자가 작업을 중지했습니다.',
-                                                            }
-                                                          : item,
-                                                      ),
-                                                    )
-                                                  }}
-                                                  className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-1.5 py-1 text-[10px] font-bold text-red-700 transition-all hover:bg-red-100 hover:text-red-800 dark:border-red-800/70 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/45"
-                                                  title="중지"
-                                                >
-                                                  <StopCircle className="h-3 w-3" />
-                                                  중지
-                                                </button>
-                                              )}
-                                            </div>
-
-                                            <div className="flex min-w-0 max-w-full items-center gap-1.5">
-                                              {file.status === 'pending' && !isSubmitting ? (
-                                                <label
-                                                  htmlFor={`ocr-work-doctype-${file.id}`}
-                                                  className="shrink-0 cursor-pointer select-none text-[10px] font-semibold leading-snug text-text-secondary-light dark:text-text-secondary-dark"
-                                                >
-                                                  문서 유형 선택
-                                                </label>
-                                              ) : (
-                                                <span className="shrink-0 text-[10px] font-semibold leading-snug text-text-secondary-light dark:text-text-secondary-dark">
-                                                  문서 유형 선택
-                                                </span>
-                                              )}
-                                              {file.status === 'pending' && !isSubmitting ? (
-                                                <div className="relative w-[7rem] shrink-0 sm:w-[7.25rem]">
-                                                  <select
-                                                    id={`ocr-work-doctype-${file.id}`}
-                                                    value={file.docType}
-                                                    onChange={event => updateFile(file.id, { docType: event.target.value })}
-                                                    className="w-full min-w-0 cursor-pointer appearance-none rounded-md border border-slate-200/95 bg-white py-1 pl-1.5 pr-7 text-xs font-semibold leading-snug text-slate-600 shadow-sm transition-all hover:border-primary/45 hover:bg-slate-50/90 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/25 [&>option]:text-slate-600"
-                                                  >
-                                                    {allDocTypes.map(type => (
-                                                      <option key={type} value={type}>
-                                                        {type}
-                                                      </option>
-                                                    ))}
-                                                  </select>
-                                                  <ChevronDown
-                                                    className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500"
-                                                    aria-hidden
-                                                  />
-                                                </div>
-                                              ) : (
-                                                <div
-                                                  className="flex h-[1.875rem] w-[7rem] min-w-0 shrink-0 items-center rounded-md border border-slate-200/70 bg-slate-50/95 px-1.5 py-0.5 dark:border-slate-200/70 dark:bg-slate-50/95 sm:w-[7.25rem]"
-                                                  title={
-                                                    file.status !== 'pending'
-                                                      ? '진행·완료된 파일은 문서 유형을 바꿀 수 없습니다'
-                                                      : '작업 등록 중에는 변경할 수 없습니다'
-                                                  }
-                                                >
-                                                  <span className="truncate text-xs font-semibold leading-snug text-slate-600">
-                                                    {file.docType || '미분류'}
-                                                  </span>
-                                                </div>
-                                              )}
-                                            </div>
+                                        ) : (
+                                          <div
+                                            className="flex h-[1.875rem] w-full min-w-0 items-center rounded-md border border-slate-200/70 bg-slate-50/95 px-1.5 py-0.5"
+                                            title={
+                                              file.status !== 'pending'
+                                                ? '진행·완료된 파일은 문서 유형을 바꿀 수 없습니다'
+                                                : '작업 등록 중에는 변경할 수 없습니다'
+                                            }
+                                          >
+                                            <span className="truncate text-xs font-semibold leading-snug text-slate-600">
+                                              {file.docType || '미분류'}
+                                            </span>
                                           </div>
-                                        </div>
+                                        )}
                                       </div>
 
-                                      {(file.status === 'pending' || effectiveStatus === 'failed' || effectiveStatus === 'completed') && !isSubmitting && (
+                                      {/* 2. 파일명 */}
+                                      <div className="min-w-0 flex-1 space-y-0.5">
+                                        {effectiveStatus === 'completed' ? (
+                                          <Link
+                                            href="/jobs"
+                                            className="block truncate text-[13px] font-bold leading-snug text-slate-600 hover:underline underline-offset-2"
+                                          >
+                                            {file.displayName}
+                                          </Link>
+                                        ) : (
+                                          <p className="truncate text-[13px] font-bold leading-snug text-slate-600">
+                                            {file.displayName}
+                                          </p>
+                                        )}
+                                        {tikaHint && (
+                                          <p
+                                            className="truncate text-[10px] font-medium leading-snug text-amber-800/95 dark:text-amber-200/90"
+                                            title="Tika 텍스트 추적 (검색 레이어 보조)"
+                                          >
+                                            Tika: {tikaHint}
+                                          </p>
+                                        )}
+                                        {effectiveStatus === 'failed' && (
+                                          <div className="flex min-w-0 items-start gap-0.5">
+                                            <span className="material-symbols-outlined shrink-0 !text-[11px] text-red-500">error_outline</span>
+                                            <span className="break-words text-[10px] font-bold leading-snug text-red-500">
+                                              {errorMessage || '실패'}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {/* 3. 파일크기 */}
+                                      <div className="w-14 shrink-0 text-right text-[11px] font-medium text-text-secondary-light dark:text-text-secondary-dark">
+                                        {file.trackedOnly ? '진행' : formatBytes(file.fileSize)}
+                                      </div>
+
+                                      {/* 4. 상태 */}
+                                      <div className="flex w-16 shrink-0 flex-col items-center gap-0.5">
+                                        <span className={`rounded px-1 py-px text-[9px] font-extrabold leading-tight tracking-wide ${statusLabelBg}`}>
+                                          {queueStatusLabel(effectiveStatus)}
+                                        </span>
+                                        {effectiveStatus === 'failed' && file.jobId && (
+                                          <button
+                                            type="button"
+                                            onClick={async () => {
+                                              try {
+                                                const response = await fetch(`${API_BASE}/process/${file.jobId}`, { method: 'POST' })
+                                                if (!response.ok) {
+                                                  const payload = await response.json().catch(() => ({}))
+                                                  throw new Error(payload?.detail || '재시작에 실패했습니다.')
+                                                }
+                                                updateFile(file.id, {
+                                                  status: 'queued',
+                                                  progress: 0,
+                                                  error: undefined,
+                                                  failedStage: undefined,
+                                                  tikaUserMessage: undefined,
+                                                  tikaTrackStatus: undefined,
+                                                })
+                                              } catch (error) {
+                                                updateFile(file.id, {
+                                                  status: 'failed',
+                                                  error: error instanceof Error ? error.message : '재시작에 실패했습니다.',
+                                                })
+                                              }
+                                            }}
+                                            className="inline-flex items-center gap-0.5 rounded border border-blue-200 bg-blue-50 px-1 py-px text-[9px] font-bold text-blue-700 transition-all hover:bg-blue-100"
+                                            title="재시작"
+                                          >
+                                            <span className="material-symbols-outlined !text-[10px] leading-none">refresh</span>
+                                            재시작
+                                          </button>
+                                        )}
+                                        {(effectiveStatus === 'queued' || effectiveStatus === 'processing') && (
+                                          <button
+                                            type="button"
+                                            onClick={async () => {
+                                              if (!confirm('이 작업을 중지하면 같은 작업의 남은 파일도 모두 실패 처리됩니다.\n계속하시겠습니까?')) {
+                                                return
+                                              }
+
+                                              const cancellableFiles = files.filter(f =>
+                                                ['pending', 'uploading', 'queued', 'processing'].includes(f.status),
+                                              )
+                                              const cancellableIds = new Set(cancellableFiles.map(f => f.id))
+                                              const jobIds = cancellableFiles
+                                                .map(f => f.jobId)
+                                                .filter((id): id is string => Boolean(id))
+
+                                              if (jobIds.length > 0) {
+                                                await Promise.allSettled(
+                                                  jobIds.map(async jobId => {
+                                                    await fetch(`${API_BASE}/cancel/${jobId}`, { method: 'POST' })
+                                                    await fetch(`${API_BASE}/status/${jobId}`, {
+                                                      method: 'PATCH',
+                                                      headers: { 'Content-Type': 'application/json' },
+                                                      body: JSON.stringify({
+                                                        status: 'failed',
+                                                        error_message: '사용자가 작업을 중지했습니다.',
+                                                      }),
+                                                    })
+                                                  }),
+                                                )
+                                              }
+
+                                              setQueue(prev =>
+                                                prev.map(item =>
+                                                  cancellableIds.has(item.id)
+                                                    ? {
+                                                        ...item,
+                                                        status: 'failed',
+                                                        progress: 0,
+                                                        error: '사용자가 작업을 중지했습니다.',
+                                                      }
+                                                    : item,
+                                                ),
+                                              )
+                                            }}
+                                            className="inline-flex items-center gap-0.5 rounded border border-red-200 bg-red-50 px-1 py-px text-[9px] font-bold text-red-700 transition-all hover:bg-red-100"
+                                            title="중지"
+                                          >
+                                            <StopCircle className="h-2.5 w-2.5" />
+                                            중지
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      {/* 5. 삭제버튼 */}
+                                      {(file.status === 'pending' || effectiveStatus === 'failed' || effectiveStatus === 'completed') && !isSubmitting ? (
                                         <button
                                           type="button"
                                           onClick={() => removeFile(file.id)}
-                                          className="inline-flex w-8 shrink-0 items-center justify-center self-stretch rounded-md border border-border-light bg-surface-light text-text-secondary-light shadow-sm transition-all hover:border-red-300 hover:bg-red-50 hover:text-red-500 dark:border-border-dark dark:bg-surface-dark dark:hover:border-red-800 dark:hover:bg-red-500/10"
+                                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border-light bg-surface-light text-text-secondary-light shadow-sm transition-all hover:border-red-300 hover:bg-red-50 hover:text-red-500 dark:border-border-dark dark:bg-surface-dark dark:hover:border-red-800 dark:hover:bg-red-500/10"
                                           title="삭제"
                                         >
                                           <X className="h-3 w-3" />
                                         </button>
+                                      ) : (
+                                        <div className="h-7 w-7 shrink-0" />
                                       )}
                                     </li>
                                   )

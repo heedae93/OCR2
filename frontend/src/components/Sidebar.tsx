@@ -133,7 +133,7 @@ const fetchTodayCount = async (userId: string) => {
 
   return (
     <>
-    <aside className="fixed left-0 top-0 z-[300] flex h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-[#334155] bg-[#1E293B] pointer-events-auto">
+    <aside className="fixed left-0 top-0 z-[300] flex h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-[#334155] bg-[#1E293B] pointer-events-auto" style={{ scrollbarGutter: 'stable' }}>
       <div className="flex min-h-full flex-col gap-2 p-4">
         <Link
           href="/"

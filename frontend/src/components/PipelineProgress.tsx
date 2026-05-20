@@ -61,7 +61,6 @@ export default function PipelineProgress({ status, progress, subStage, failedSta
         {PIPELINE_STAGES.map((stage, idx) => {
           const isDone = activeStage >= 0 && idx < activeStage
           const isActive = idx === activeStage
-          const isLongLabel = false
           return (
             <div key={stage.key} className="flex items-center" style={{ flex: idx < PIPELINE_STAGES.length - 1 ? '1 1 0' : '0 0 auto' }}>
               <div className="flex shrink-0 flex-col items-center gap-0.5">
@@ -72,7 +71,7 @@ export default function PipelineProgress({ status, progress, subStage, failedSta
                     ? isFailed
                       ? 'bg-red-500 text-white ring-2 ring-red-500/25'
                       : `bg-primary text-white ring-2 ring-primary/25 ${isPulsing ? 'animate-pulse' : ''}`
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
+                    : 'bg-primary/10 text-primary/40 dark:bg-primary/20 dark:text-primary/50'
                 }`}>
                   <span className="material-symbols-outlined leading-none" style={{ fontSize: `${iconPx}px` }}>
                     {isDone ? 'check' : (isFailed && isActive) ? 'error' : stage.icon}
@@ -81,14 +80,14 @@ export default function PipelineProgress({ status, progress, subStage, failedSta
                 <span className={`${labelCls} mt-0.5 ${labelBox} whitespace-nowrap leading-none ${
                   isFailed && isActive
                     ? 'text-red-500 font-semibold'
-                    : isDone || isActive ? 'text-primary font-semibold' : 'text-gray-400 dark:text-gray-500'
+                    : isDone || isActive ? 'text-primary font-semibold' : 'text-primary/40 dark:text-primary/50'
                 }`}>
                   {stage.label}
                 </span>
               </div>
               {idx < PIPELINE_STAGES.length - 1 && (
                 <div className={`h-px flex-1 mx-0.5 ${lineMb} transition-all duration-500 ${
-                  idx < activeStage ? 'bg-primary' : 'bg-gray-200 dark:bg-gray-700'
+                  idx < activeStage ? 'bg-primary' : 'bg-primary/15 dark:bg-primary/20'
                 }`} />
               )}
             </div>

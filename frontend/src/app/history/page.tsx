@@ -46,29 +46,33 @@ interface MaskingRecord {
 type Tab = 'versions' | 'downloads' | 'masking'
 
 const PII_TYPE_LABELS: Record<string, { label: string; color: string }> = {
-  NAME:              { label: '이름',       color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' },
-  ENGLISH_NAME:      { label: '영문이름',   color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
-  PHONE:             { label: '전화번호',   color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  EMAIL:             { label: '이메일',     color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' },
-  RRN:               { label: '주민번호',   color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
-  FOREIGNER_REG_NO:  { label: '외국인번호', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
-  BUSINESS_REG_NO:   { label: '사업자번호', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  ACCOUNT_NO:        { label: '계좌번호',   color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-  CREDIT_CARD:       { label: '신용카드',   color: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' },
-  ADDRESS:           { label: '주소',       color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400' },
-  ROAD_ADDRESS:      { label: '도로명주소', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400' },
-  HEALTH_INSURANCE_NO: { label: '건강보험번호', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' },
-  UNKNOWN:           { label: '기타',       color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' },
+  NAME:              { label: '이름',       color: 'bg-violet-600 text-white' },
+  ENGLISH_NAME:      { label: '영문이름',   color: 'bg-purple-600 text-white' },
+  PHONE:             { label: '전화번호',   color: 'bg-blue-600 text-white' },
+  EMAIL:             { label: '이메일',     color: 'bg-cyan-600 text-white' },
+  RRN:               { label: '주민번호',   color: 'bg-red-600 text-white' },
+  FOREIGNER_REG_NO:  { label: '외국인번호', color: 'bg-orange-500 text-white' },
+  BUSINESS_REG_NO:   { label: '사업자번호', color: 'bg-amber-500 text-white' },
+  ACCOUNT_NO:        { label: '계좌번호',   color: 'bg-emerald-600 text-white' },
+  CREDIT_CARD:       { label: '신용카드',   color: 'bg-rose-600 text-white' },
+  ADDRESS:           { label: '주소',       color: 'bg-teal-600 text-white' },
+  ROAD_ADDRESS:      { label: '도로명주소', color: 'bg-teal-600 text-white' },
+  HEALTH_INSURANCE_NO: { label: '건강보험번호', color: 'bg-indigo-600 text-white' },
+  UNKNOWN:           { label: '기타',       color: 'bg-gray-500 text-white' },
 }
 
-function piiChip(type: string, count?: number) {
-  const meta = PII_TYPE_LABELS[type] ?? PII_TYPE_LABELS['UNKNOWN']
+function renderMaskedValue(masked: string) {
   return (
-    <span key={type} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${meta.color}`}>
-      {meta.label}{count !== undefined && <span className="font-bold">×{count}</span>}
-    </span>
+    <>
+      {masked.split(/(\*+)/).map((part, i) =>
+        /^\*+$/.test(part)
+          ? <span key={i} className="text-rose-600 dark:text-rose-400">{part}</span>
+          : <span key={i} className="text-text-primary-light dark:text-text-primary-dark">{part}</span>
+      )}
+    </>
   )
 }
+
 
 function CustomCheckbox({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
@@ -713,12 +717,9 @@ export default function HistoryPage() {
                   <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
                     {formatDate(selectedMaskingRecord.processed_at)}
                   </span>
-                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500 text-white">
                     총 {selectedMaskingRecord.total_masked}건 마스킹
                   </span>
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {Object.entries(selectedMaskingRecord.type_counts).map(([t, c]) => piiChip(t, c))}
                 </div>
               </div>
               <button onClick={() => setSelectedMaskingRecord(null)} className="text-text-secondary-light dark:text-text-secondary-dark shrink-0 hover:text-text-primary-light dark:hover:text-text-primary-dark">
@@ -728,7 +729,7 @@ export default function HistoryPage() {
 
             <div className="overflow-y-auto flex-1 rounded-lg border border-border-light dark:border-border-dark">
               <table className="w-full text-xs">
-                <thead className="border-b border-primary/20 bg-primary/10 sticky top-0">
+                <thead className="border-b border-primary/20 bg-[#E9EFFD] sticky top-0 z-10">
                   <tr>
                     {['유형', '원본값', '마스킹값'].map(h => (
                       <th key={h} className="px-4 py-2 text-left font-semibold text-text-secondary-light dark:text-text-secondary-dark">{h}</th>
@@ -737,18 +738,18 @@ export default function HistoryPage() {
                 </thead>
                 <tbody className="divide-y divide-border-light dark:divide-border-dark">
                   {(() => {
-                    const hasPages = selectedMaskingRecord.items.some(it => it.page !== undefined)
-                    const multiPage = hasPages && new Set(selectedMaskingRecord.items.map(it => it.page)).size > 1
+                    const sortedItems = [...selectedMaskingRecord.items].sort((a, b) => (a.page ?? 0) - (b.page ?? 0))
+                    const hasPages = sortedItems.some(it => it.page !== undefined)
+                    const multiPage = hasPages && new Set(sortedItems.map(it => it.page)).size > 1
                     let lastPage: number | undefined = undefined
-                    return selectedMaskingRecord.items.flatMap((item, i) => {
+                    return sortedItems.flatMap((item, i) => {
                       const rows = []
                       if (multiPage && item.page !== undefined && item.page !== lastPage) {
                         lastPage = item.page
                         rows.push(
                           <tr key={`page-${item.page}`} className="bg-primary/5 dark:bg-primary/10">
                             <td colSpan={3} className="px-4 py-1.5">
-                              <span className="text-xs font-semibold text-primary flex items-center gap-1">
-                                <span className="material-symbols-outlined text-sm">description</span>
+                              <span className="text-xs font-semibold text-primary">
                                 {item.page}페이지
                               </span>
                             </td>
@@ -757,9 +758,9 @@ export default function HistoryPage() {
                       }
                       rows.push(
                         <tr key={i} className="hover:bg-background-light dark:hover:bg-background-dark">
-                          <td className="px-4 py-2 whitespace-nowrap">{piiChip(item.type)}</td>
+                          <td className="px-4 py-2 whitespace-nowrap text-xs text-text-secondary-light dark:text-text-secondary-dark">{PII_TYPE_LABELS[item.type]?.label ?? item.type}</td>
                           <td className="px-4 py-2 font-mono text-text-primary-light dark:text-text-primary-dark">{item.value}</td>
-                          <td className="px-4 py-2 font-mono text-rose-600 dark:text-rose-400">{item.masked_value}</td>
+                          <td className="px-4 py-2 font-mono">{renderMaskedValue(item.masked_value)}</td>
                         </tr>
                       )
                       return rows

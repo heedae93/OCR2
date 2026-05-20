@@ -237,13 +237,13 @@ export default function SessionDetailPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "completed":
-        return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+        return "bg-emerald-500 text-white";
       case "processing":
-        return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
+        return "bg-blue-500 text-white";
       case "failed":
-        return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
+        return "bg-red-500 text-white";
       default:
-        return "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400";
+        return "bg-gray-400 text-white";
     }
   };
 
@@ -297,103 +297,26 @@ export default function SessionDetailPage() {
           </nav>
 
           {/* Session Header */}
-          <div className="mb-6 rounded-2xl border border-border-light bg-surface-light/85 p-5 shadow-sm backdrop-blur-sm dark:border-border-dark dark:bg-surface-dark/70">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <h1 className="mb-2 text-3xl font-black tracking-tight">
-                  {session?.session_name}
-                </h1>
-              </div>
-
-              <div className="flex w-full max-w-xl items-center gap-2">
-                <div className="relative flex-1">
-                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary-light text-lg">
-                    search
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="파일명 검색..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        setSearchQuery(searchQuery.trim());
-                      }
-                    }}
-                    className="w-full rounded-xl border border-border-light bg-background-light py-2.5 pl-10 pr-4 text-sm outline-none transition-all focus:border-primary/40 focus:ring-2 focus:ring-primary/20 dark:border-border-dark dark:bg-background-dark"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery(searchQuery.trim())}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-all hover:bg-primary/90 active:scale-[0.98]"
-                >
-                  <span className="material-symbols-outlined !text-base">
-                    search
-                  </span>
-                  검색
-                </button>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="h-[42px] shrink-0 rounded-xl border border-border-light bg-background-light px-3 text-xs font-bold text-text-primary-light outline-none transition-colors focus:border-primary/40 dark:border-border-dark dark:bg-background-dark dark:text-text-primary-dark dark:[color-scheme:dark]"
-                >
-                  <option value="all">전체 상태</option>
-                  <option value="active">진행중</option>
-                  <option value="completed">완료</option>
-                  <option value="failed">실패</option>
-                  <option value="queued">대기</option>
-                </select>
-                {(searchQuery.trim() || statusFilter !== "all") && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchQuery("");
-                      setStatusFilter("all");
-                    }}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-border-light bg-surface-light px-3 py-2.5 text-xs font-bold text-text-secondary-light transition-colors hover:border-primary/30 hover:text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-secondary-dark"
-                  >
-                    <span className="material-symbols-outlined !text-base">
-                      close
-                    </span>
-                    선택 내용 삭제
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary">
-                <span className="material-symbols-outlined !text-sm">
-                  description
-                </span>
-                총 파일 {session?.documents.length ?? 0}개
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                <span className="material-symbols-outlined !text-sm">
-                  check_circle
-                </span>
-                완료{" "}
-                {session?.documents.filter((doc) => doc.status === "completed")
-                  .length ?? 0}
-                개
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-1 text-[11px] font-bold text-red-600 dark:text-red-400">
-                <span className="material-symbols-outlined !text-sm">
-                  cancel
-                </span>
-                실패{" "}
-                {session?.documents.filter((doc) => doc.status === "failed")
-                  .length ?? 0}
-                개
-              </span>
-            </div>
-          </div>
+          <h1 className="mb-3 text-3xl font-black tracking-tight text-text-primary-light dark:text-text-primary-dark">
+            {session?.session_name}
+          </h1>
 
           {/* 일괄 액션바 */}
           <div className="mb-3 flex items-center justify-end gap-2">
             {selectedJobIds.size > 0 && (
               <span className="text-xs font-semibold text-primary">{selectedJobIds.size}개 선택됨</span>
             )}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-8 shrink-0 rounded-lg border border-border-light bg-background-light px-2 text-xs font-bold text-text-primary-light outline-none transition-colors focus:border-primary/40 dark:border-border-dark dark:bg-background-dark dark:text-text-primary-dark dark:[color-scheme:dark]"
+            >
+              <option value="all">전체 상태</option>
+              <option value="active">진행중</option>
+              <option value="completed">완료</option>
+              <option value="failed">실패</option>
+              <option value="queued">대기</option>
+            </select>
             <button
               onClick={handleBulkDownload}
               disabled={selectedJobIds.size === 0}
@@ -426,13 +349,13 @@ export default function SessionDetailPage() {
               <thead>
                 <tr className="border-b border-border-light bg-background-light/90 dark:border-border-dark dark:bg-background-dark/70">
                   <th className="px-4 py-4 text-center">
-                    <input
-                      type="checkbox"
-                      checked={filteredJobs.length > 0 && filteredJobs.every((j) => selectedJobIds.has(j.job_id))}
-                      onChange={(e) => toggleAllSelected(e.target.checked)}
-                      className="h-4 w-4 accent-primary cursor-pointer"
+                    <button
+                      onClick={() => toggleAllSelected(!(filteredJobs.length > 0 && filteredJobs.every((j) => selectedJobIds.has(j.job_id))))}
+                      className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${filteredJobs.length > 0 && filteredJobs.every((j) => selectedJobIds.has(j.job_id)) ? "border-primary bg-primary text-white" : "border-primary bg-surface-light"}`}
                       aria-label="전체 선택"
-                    />
+                    >
+                      {filteredJobs.length > 0 && filteredJobs.every((j) => selectedJobIds.has(j.job_id)) && <span className="material-symbols-outlined text-[14px] leading-none">check</span>}
+                    </button>
                   </th>
                   <th className="px-6 py-4 text-xs font-bold text-text-secondary-light uppercase tracking-wider">
                     파일명
@@ -442,6 +365,9 @@ export default function SessionDetailPage() {
                   </th>
                   <th className="px-6 py-4 text-xs font-bold text-text-secondary-light uppercase tracking-wider text-center whitespace-nowrap">
                     페이지
+                  </th>
+                  <th className="px-6 py-4 text-xs font-bold text-text-secondary-light uppercase tracking-wider text-center whitespace-nowrap">
+                    작업시간
                   </th>
                 </tr>
               </thead>
@@ -464,13 +390,13 @@ export default function SessionDetailPage() {
                         className={`transition-colors ${isMatch ? "bg-cyan-50 dark:bg-cyan-900/20 border-l-4 border-l-cyan-400" : "hover:bg-primary/5 dark:hover:bg-primary/10"}`}
                       >
                         <td className="px-4 py-5 text-center">
-                          <input
-                            type="checkbox"
-                            checked={selectedJobIds.has(job.job_id)}
-                            onChange={(e) => toggleJobSelected(job.job_id, e.target.checked)}
-                            className="h-4 w-4 accent-primary cursor-pointer"
+                          <button
+                            onClick={(e) => { e.stopPropagation(); toggleJobSelected(job.job_id, !selectedJobIds.has(job.job_id)) }}
+                            className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${selectedJobIds.has(job.job_id) ? "border-primary bg-primary text-white" : "border-primary bg-surface-light"}`}
                             aria-label={`${job.original_filename} 선택`}
-                          />
+                          >
+                            {selectedJobIds.has(job.job_id) && <span className="material-symbols-outlined text-[14px] leading-none">check</span>}
+                          </button>
                         </td>
                         <td className="px-6 py-5">
                           <div className="flex flex-col">
@@ -493,11 +419,6 @@ export default function SessionDetailPage() {
                                 </span>
                               )}
                             </div>
-                            {job.message && (
-                              <span className="text-[10px] text-red-500 font-bold mt-1">
-                                {job.message}
-                              </span>
-                            )}
                           </div>
                         </td>
                         <td className="min-w-[320px] px-6 py-5">
@@ -519,6 +440,11 @@ export default function SessionDetailPage() {
                                   <span className={`rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-tighter ${getStatusBadge(job.status)}`}>
                                     {job.status === "completed" ? "완료" : job.status === "failed" ? "실패" : job.status === "processing" ? "처리중" : "대기중"}
                                   </span>
+                                  {job.status === "failed" && job.message && (
+                                    <span className="text-[10px] text-red-500 font-medium text-center max-w-[280px]">
+                                      {job.message}
+                                    </span>
+                                  )}
                                   {showPipeline && (
                                     <div className="w-full min-w-[280px] rounded-xl border border-border-light bg-background-light/70 p-2.5 dark:border-border-dark dark:bg-background-dark/70">
                                       <p className="mb-1.5 text-[11px] font-bold text-text-secondary-light dark:text-text-secondary-dark">진행 상태</p>
@@ -532,6 +458,9 @@ export default function SessionDetailPage() {
                         </td>
                         <td className="px-6 py-5 text-center font-bold text-sm whitespace-nowrap">
                           {job.total_pages > 0 ? `${job.total_pages}p` : "-"}
+                        </td>
+                        <td className="px-6 py-5 text-center text-xs text-text-secondary-light dark:text-text-secondary-dark whitespace-nowrap">
+                          {job.updated_at ? new Date(job.updated_at).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : "-"}
                         </td>
                       </tr>
                     );
