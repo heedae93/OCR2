@@ -375,4 +375,9 @@ class Config:
 Config.ensure_directories()
 if (Config.BASE_DIR / "config.yaml").exists():
     Config.load_from_yaml()
+_local_config = Config.BASE_DIR / "config.local.yaml"
+if _local_config.exists():
+    Config.load_from_yaml(_local_config)
+if os.getenv("REDIS_URL"):
+    Config.REDIS_URL = os.getenv("REDIS_URL", "").strip()
 Config.apply_tika_defaults()

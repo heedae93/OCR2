@@ -275,7 +275,7 @@ export default function SessionDetailPage() {
   return (
     <div className="bg-slate-50 dark:bg-slate-50 min-h-screen text-text-primary-light dark:text-text-primary-dark">
       <Sidebar />
-      <main className="ml-64 mt-14 p-8 lg:p-12 transition-all duration-300">
+      <main className="ml-64 p-8 lg:p-12 transition-all duration-300">
         <div className="max-w-6xl mx-auto">
           {/* Breadcrumbs */}
           <nav className="flex items-center gap-2 text-sm font-bold text-text-secondary-light mb-8">

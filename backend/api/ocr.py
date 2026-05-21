@@ -2394,13 +2394,24 @@ async def download_json(job_id: str):
 async def save_ocr_edits(job_id: str, payload: dict):
     """
     Save user's OCR text edits for model fine-tuning.
-    Logs edits separately and updates the main OCR JSON.
+    Logs edits separately, updates the main OCR JSON,
+    and crops the corresponding image region for training data.
     """
     try:
-        # Validate job exists
+        # Validate job exists (메모리 or DB fallback)
         job = job_manager.get_job(job_id)
         if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
+            try:
+                from database import SessionLocal, Job as DBJob
+                db = SessionLocal()
+                db_job = db.query(DBJob).filter_by(job_id=job_id).first()
+                db.close()
+                if not db_job:
+                    raise HTTPException(status_code=404, detail="Job not found")
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=404, detail="Job not found")
 
         ocr_json_path = resolve_ocr_json_path(job_id)
         if not ocr_json_path:
@@ -2433,6 +2444,76 @@ async def save_ocr_edits(job_id: str, payload: dict):
 
         logger.info(f"Logged {len(edits)} edits for job {job_id}")
 
+        # ── 학습 데이터 생성: bbox 크롭 + label 저장 ──────────────────
+        training_image_dir = Config.DATA_DIR / "training" / "images"
+        training_label_path = Config.DATA_DIR / "training" / "labels.txt"
+        training_image_dir.mkdir(parents=True, exist_ok=True)
+
+        # OCR 결과에서 페이지별 라인 bbox 조회용 인덱스 구성
+        pages_by_number = {}
+        for page in ocr_data.get("pages", []):
+            pages_by_number[page["page_number"]] = page
+
+        cropped_count = 0
+        from PIL import Image as PILImage
+
+        for edit in edits:
+            page_number = edit.get("page_number")
+            line_index = edit.get("line_index")
+            new_text = edit.get("new_text", "").strip()
+
+            if not new_text or page_number is None or line_index is None:
+                continue
+
+            # 해당 페이지의 라인 bbox 조회
+            page_data = pages_by_number.get(page_number)
+            if not page_data:
+                continue
+
+            lines = page_data.get("lines", [])
+            if line_index >= len(lines):
+                continue
+
+            bbox = lines[line_index].get("bbox")
+            if not bbox or len(bbox) < 4:
+                continue  # bbox 없으면 크롭 불가
+
+            # 원본 페이지 이미지 경로
+            page_image_path = Config.PROCESSED_DIR / f"{job_id}_pages" / f"page_{page_number:04d}.png"
+            if not page_image_path.exists():
+                logger.warning(f"[save-edits] Page image not found: {page_image_path}")
+                continue
+
+            try:
+                x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+                # 음수 방지 및 최소 크기 보장
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = max(x1 + 1, x2), max(y1 + 1, y2)
+
+                with PILImage.open(page_image_path) as img:
+                    img_w, img_h = img.size
+                    x2 = min(x2, img_w)
+                    y2 = min(y2, img_h)
+                    cropped = img.crop((x1, y1, x2, y2))
+
+                    crop_filename = f"{job_id}_p{page_number}_l{line_index}.jpg"
+                    crop_path = training_image_dir / crop_filename
+                    cropped.save(str(crop_path), "JPEG", quality=95)
+
+                # labels.txt에 추가 (PaddleOCR 학습 포맷)
+                label_line = f"images/{crop_filename}\t{new_text}\n"
+                with open(training_label_path, 'a', encoding='utf-8') as f:
+                    f.write(label_line)
+
+                cropped_count += 1
+                logger.info(f"[save-edits] Training data saved: {crop_filename} → '{new_text}'")
+
+            except Exception as crop_err:
+                logger.warning(f"[save-edits] Crop failed for page={page_number} line={line_index}: {crop_err}")
+
+        if cropped_count > 0:
+            logger.info(f"[save-edits] Total {cropped_count} training samples saved for job {job_id}")
+
         # Update main OCR results if provided
         if ocr_results:
             with open(ocr_json_path, 'w', encoding='utf-8') as f:
@@ -2441,7 +2522,7 @@ async def save_ocr_edits(job_id: str, payload: dict):
 
         return {
             "status": "success",
-            "message": f"Saved {len(edits)} edits",
+            "message": f"Saved {len(edits)} edits, {cropped_count} training samples generated",
             "saved_at": datetime.now().isoformat()
         }
 

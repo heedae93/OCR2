@@ -337,7 +337,7 @@ export default function ExtractionListPage() {
   return (
     <div className="flex bg-slate-50 dark:bg-slate-50">
       <Sidebar />
-      <main className="flex-1 ml-64 mt-14 flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
+      <main className="flex-1 ml-64 flex flex-col h-[calc(100vh)] overflow-hidden">
         
         {/* Header */}
         <div className="px-8 py-6 border-b border-border-light dark:border-border-dark bg-surface-light/30 dark:bg-surface-dark/30 backdrop-blur-md flex-shrink-0">

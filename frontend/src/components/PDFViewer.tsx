@@ -38,6 +38,7 @@ interface PDFViewerProps {
   showMasking?: boolean;
   maskingData?: MaskedBox[];
   highlightedLineIndex?: number | null;
+  onEditOCRText?: (lineIndex: number, newText: string) => void;
   children?: React.ReactNode;
   pageNavigation?: React.ReactNode;
   onPageDimensionsChange?: (width: number, height: number) => void;
@@ -114,9 +115,12 @@ export default function PDFViewer({
   showMasking = false,
   maskingData = [],
   highlightedLineIndex = null,
+  onEditOCRText,
   children,
   onPageDimensionsChange,
 }: PDFViewerProps) {
+  const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState<string>("");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -628,6 +632,7 @@ export default function PDFViewer({
               style={{
                 width: `${pageWidth}px`,
                 height: `${pageHeight}px`,
+                zIndex: 10,
               }}
             >
               {sentenceGroups.map((group, idx) => {
@@ -704,27 +709,68 @@ export default function PDFViewer({
                       </div>
                     )}
 
-                    {/* OCR 텍스트 비교 */}
-                    {showOCRComparison && (
-                      <div
-                        className="absolute text-xs pointer-events-auto overflow-hidden"
-                        style={{
-                          left: `${x}px`,
-                          top: `${y}px`,
-                          width: `${width}px`,
-                          height: `${height}px`,
-                          backgroundColor: "rgba(255, 255, 255, 0.95)",
-                          color: "black",
-                          padding: "2px",
-                          fontSize: `${Math.max(8, Math.min(height * 0.4, 12))}px`,
-                          lineHeight: "1.3",
-                          whiteSpace: "pre-wrap",
-                          wordBreak: "break-all",
-                        }}
-                      >
-                        {group.text}
-                      </div>
-                    )}
+                    {/* OCR 텍스트 비교 (클릭하면 편집 가능) */}
+                    {showOCRComparison && (() => {
+                      const lineIdx = group.originalIndices[0];
+                      const isEditing = editingLineIndex === lineIdx;
+                      return isEditing ? (
+                        <input
+                          autoFocus
+                          className="absolute text-xs pointer-events-auto border-2 border-blue-500 outline-none"
+                          style={{
+                            left: `${x}px`,
+                            top: `${y}px`,
+                            width: `${width}px`,
+                            height: `${height}px`,
+                            backgroundColor: "rgba(255, 255, 230, 0.98)",
+                            color: "black",
+                            padding: "2px",
+                            fontSize: `${Math.max(8, Math.min(height * 0.4, 12))}px`,
+                            boxSizing: "border-box",
+                          }}
+                          value={editingText}
+                          onChange={(e) => setEditingText(e.target.value)}
+                          onBlur={() => {
+                            if (onEditOCRText && editingText !== group.text) {
+                              onEditOCRText(lineIdx, editingText);
+                            }
+                            setEditingLineIndex(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === "Escape") {
+                              if (e.key === "Enter" && onEditOCRText && editingText !== group.text) {
+                                onEditOCRText(lineIdx, editingText);
+                              }
+                              setEditingLineIndex(null);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div
+                          className="absolute text-xs pointer-events-auto overflow-hidden cursor-text hover:ring-2 hover:ring-blue-400"
+                          title="클릭하여 편집"
+                          style={{
+                            left: `${x}px`,
+                            top: `${y}px`,
+                            width: `${width}px`,
+                            height: `${height}px`,
+                            backgroundColor: "rgba(255, 255, 255, 0.95)",
+                            color: "black",
+                            padding: "2px",
+                            fontSize: `${Math.max(8, Math.min(height * 0.4, 12))}px`,
+                            lineHeight: "1.3",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-all",
+                          }}
+                          onClick={() => {
+                            setEditingLineIndex(lineIdx);
+                            setEditingText(group.text);
+                          }}
+                        >
+                          {group.text}
+                        </div>
+                      );
+                    })()}
 
                     {/* 신뢰도 시각화 */}
                     {showAccuracy && (

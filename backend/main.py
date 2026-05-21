@@ -163,20 +163,17 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
 
-    # Reset orphaned 'processing' jobs left from previous crash/restart
+    # Do not fail active jobs just because the API process restarted.
+    # OCR work runs in Celery, so workers may continue processing while FastAPI restarts.
     try:
         from database import SessionLocal, Job as DBJob
         db = SessionLocal()
-        orphaned = db.query(DBJob).filter(DBJob.status.in_(["processing", "queued"])).all()
-        for job in orphaned:
-            job.status = "failed"
-            job.error_message = "서버 재시작으로 인해 중단됨"
-        db.commit()
+        active_count = db.query(DBJob).filter(DBJob.status.in_(["processing", "queued"])).count()
         db.close()
-        if orphaned:
-            logger.warning(f"Reset {len(orphaned)} orphaned processing/queued jobs to failed")
+        if active_count:
+            logger.info(f"Preserving {active_count} active queued/processing jobs after API startup")
     except Exception as e:
-        logger.error(f"Failed to reset orphaned jobs: {e}")
+        logger.error(f"Failed to inspect active jobs on startup: {e}")
 
     # Pre-load OCR models for all GPUs at startup
     logger.info("=" * 60)

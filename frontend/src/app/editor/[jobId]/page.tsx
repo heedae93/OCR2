@@ -74,6 +74,9 @@ export default function EditorPage() {
   const [showMasking, setShowMasking] = useState(false);
   const [maskingPanelWidth, setMaskingPanelWidth] = useState(288);
   const [smartToolsPanelWidth, setSmartToolsPanelWidth] = useState(288);
+  const [ocrPanelWidth, setOcrPanelWidth] = useState(288);
+  const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState<string>("");
   const [maskingData, setMaskingData] = useState<any[]>([]);
   const PII_LABELS: Record<string, string> = {
     PHONE: "전화번호",
@@ -139,7 +142,11 @@ export default function EditorPage() {
 
   // Debounced auto-save function
   const performSave = useCallback(async () => {
-    if (pendingEdits.length === 0 || !ocrResults) return;
+    console.log("[AutoSave] performSave called, pendingEdits:", pendingEdits.length, pendingEdits);
+    if (pendingEdits.length === 0 || !ocrResults) {
+      console.log("[AutoSave] skipped - pendingEdits empty or no ocrResults");
+      return;
+    }
 
     setSaveStatus("saving");
     try {
@@ -147,12 +154,14 @@ export default function EditorPage() {
         edits: pendingEdits,
         ocr_results: ocrResults,
       };
+      console.log("[AutoSave] sending request to jobId:", jobId, "edits:", payload.edits);
       const response = await saveOCREdits(jobId, payload);
+      console.log("[AutoSave] success:", response);
       setSaveStatus("saved");
       setLastSavedAt(response.saved_at);
       setPendingEdits([]); // Clear pending edits after successful save
     } catch (error) {
-      console.error("Auto-save failed:", error);
+      console.error("[AutoSave] FAILED:", error);
       setSaveStatus("error");
     }
   }, [pendingEdits, ocrResults, jobId]);
@@ -351,49 +360,44 @@ export default function EditorPage() {
   };
 
   const handleEditOCRText = (lineIndex: number, newText: string) => {
+    console.log("[EditOCR] called lineIndex:", lineIndex, "newText:", newText, "ocrResults:", !!ocrResults);
     if (!ocrResults) return;
 
-    const updatedResults = { ...ocrResults };
-    const pageIndex = updatedResults.pages.findIndex(
+    const pageIndex = ocrResults.pages.findIndex(
       (p) => p.page_number === currentPage,
     );
-    if (pageIndex >= 0 && updatedResults.pages[pageIndex].lines[lineIndex]) {
-      const originalText =
-        updatedResults.pages[pageIndex].lines[lineIndex].text || "";
+    console.log("[EditOCR] pageIndex:", pageIndex, "currentPage:", currentPage);
+    if (pageIndex < 0 || !ocrResults.pages[pageIndex].lines[lineIndex]) return;
 
-      // Only track if text actually changed
-      if (originalText !== newText) {
-        // Add to pending edits for auto-save
-        setPendingEdits((prev) => {
-          // Check if this line was already edited
-          const existingIndex = prev.findIndex(
-            (e) => e.page_number === currentPage && e.line_index === lineIndex,
-          );
-          if (existingIndex >= 0) {
-            // Update existing edit
-            const updated = [...prev];
-            updated[existingIndex] = {
-              ...updated[existingIndex],
-              new_text: newText,
-            };
-            return updated;
-          }
-          // Add new edit
-          return [
-            ...prev,
-            {
-              page_number: currentPage,
-              line_index: lineIndex,
-              original_text: originalText,
-              new_text: newText,
-            },
-          ];
-        });
-      }
+    const originalText = ocrResults.pages[pageIndex].lines[lineIndex].text || "";
+    console.log("[EditOCR] originalText:", originalText, "newText:", newText, "changed:", originalText !== newText);
 
-      updatedResults.pages[pageIndex].lines[lineIndex].text = newText;
-      setOcrResults(updatedResults);
+    if (originalText !== newText) {
+      setPendingEdits((prev) => {
+        const existingIndex = prev.findIndex(
+          (e) => e.page_number === currentPage && e.line_index === lineIndex,
+        );
+        if (existingIndex >= 0) {
+          const updated = [...prev];
+          updated[existingIndex] = { ...updated[existingIndex], new_text: newText };
+          return updated;
+        }
+        return [...prev, { page_number: currentPage, line_index: lineIndex, original_text: originalText, new_text: newText }];
+      });
     }
+
+    // 변경된 라인만 새 객체로 교체 (React가 변경 감지하도록 deep copy)
+    const updatedPages = ocrResults.pages.map((page, pIdx) => {
+      if (pIdx !== pageIndex) return page;
+      return {
+        ...page,
+        lines: page.lines.map((line, lIdx) =>
+          lIdx === lineIndex ? { ...line, text: newText } : line
+        ),
+      };
+    });
+
+    setOcrResults({ ...ocrResults, pages: updatedPages });
   };
 
   const handleExportDocument = async (format: "pdf" | "json" | "both") => {
@@ -784,6 +788,22 @@ export default function EditorPage() {
       document.removeEventListener("mouseup", onMouseUp);
     };
 
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
+
+  const handleOcrPanelResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = ocrPanelWidth;
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = startX - moveEvent.clientX;
+      setOcrPanelWidth(Math.max(200, Math.min(600, startWidth + delta)));
+    };
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
   };
@@ -1212,6 +1232,7 @@ export default function EditorPage() {
                     showMasking={showMasking}
                     maskingData={maskingData}
                     highlightedLineIndex={selectedLineIndex}
+                    onEditOCRText={handleEditOCRText}
                     onPageDimensionsChange={(width, height) => {
                       setPageWidth(width);
                       setPageHeight(height);
@@ -1330,6 +1351,134 @@ export default function EditorPage() {
                       </p>
                     </div>
                   )}
+                    </div>
+                  </aside>
+                )}
+                {/* OCR 편집 패널 */}
+                {showOCRComparison && ocrResults && (
+                  <aside
+                    className="h-full flex-shrink-0 flex flex-col border-l border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark relative"
+                    style={{ width: ocrPanelWidth }}
+                  >
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/50 active:bg-primary z-10 transition-colors"
+                      onMouseDown={handleOcrPanelResizeStart}
+                    />
+                    {/* 헤더 */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border-light dark:border-border-dark flex-shrink-0">
+                      <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark flex items-center gap-2">
+                        <span className="material-symbols-outlined text-base">edit_note</span>
+                        OCR 텍스트 편집
+                      </span>
+                      <button
+                        onClick={() => setShowOCRComparison(false)}
+                        className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-text-secondary-light dark:text-text-secondary-dark"
+                      >
+                        <span className="material-symbols-outlined text-xl">close</span>
+                      </button>
+                    </div>
+                    {/* 안내 문구 */}
+                    <div className="px-4 py-2 bg-primary/5 border-b border-border-light dark:border-border-dark flex-shrink-0">
+                      <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                        텍스트를 클릭하면 수정할 수 있습니다. 수정 후 자동 저장됩니다.
+                      </p>
+                    </div>
+                    {/* 라인 목록 */}
+                    <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5">
+                      {(() => {
+                        const currentLines = ocrResults.pages.find(p => p.page_number === currentPage)?.lines ?? [];
+                        if (currentLines.length === 0) {
+                          return (
+                            <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-border-light dark:border-border-dark">
+                              <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                                이 페이지의 OCR 결과가 없습니다
+                              </p>
+                            </div>
+                          );
+                        }
+                        return currentLines.map((line, idx) => {
+                          const isEditing = editingLineIndex === idx;
+                          const isEdited = pendingEdits.some(e => e.page_number === currentPage && e.line_index === idx);
+                          return (
+                            <div
+                              key={idx}
+                              className={`rounded-lg border p-2 transition-colors ${
+                                isEditing
+                                  ? "border-primary bg-primary/5"
+                                  : isEdited
+                                  ? "border-green-400 dark:border-green-600 bg-green-50/50 dark:bg-green-900/10"
+                                  : "border-border-light dark:border-border-dark hover:border-primary/50 hover:bg-black/3 dark:hover:bg-white/5"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[10px] text-text-secondary-light dark:text-text-secondary-dark font-medium">
+                                  #{idx + 1}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  {isEdited && !isEditing && (
+                                    <span className="text-[10px] text-green-600 dark:text-green-400 font-medium">수정됨</span>
+                                  )}
+                                  {line.confidence !== undefined && (
+                                    <span className={`text-[10px] font-medium ${
+                                      (line.confidence ?? 0) > 0.9 ? "text-green-600 dark:text-green-400"
+                                      : (line.confidence ?? 0) > 0.7 ? "text-yellow-600 dark:text-yellow-400"
+                                      : "text-red-500 dark:text-red-400"
+                                    }`}>
+                                      {((line.confidence ?? 0) * 100).toFixed(0)}%
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {isEditing ? (
+                                <div className="flex flex-col gap-1.5">
+                                  <input
+                                    autoFocus
+                                    type="text"
+                                    value={editingText}
+                                    onChange={(e) => setEditingText(e.target.value)}
+                                    className="w-full text-xs p-1.5 rounded border border-primary bg-white dark:bg-gray-800 text-text-primary-light dark:text-text-primary-dark outline-none"
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        handleEditOCRText(idx, editingText);
+                                        setEditingLineIndex(null);
+                                      } else if (e.key === "Escape") {
+                                        setEditingLineIndex(null);
+                                      }
+                                    }}
+                                  />
+                                  <div className="flex gap-1">
+                                    <button
+                                      onClick={() => { handleEditOCRText(idx, editingText); setEditingLineIndex(null); }}
+                                      className="flex-1 text-xs py-1 rounded bg-primary text-white hover:bg-primary/90 font-medium"
+                                    >
+                                      확인
+                                    </button>
+                                    <button
+                                      onClick={() => setEditingLineIndex(null)}
+                                      className="flex-1 text-xs py-1 rounded border border-border-light dark:border-border-dark text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
+                                    >
+                                      취소
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p
+                                  className="text-xs text-text-primary-light dark:text-text-primary-dark cursor-pointer leading-relaxed"
+                                  onClick={() => { setEditingLineIndex(idx); setEditingText(line.text); }}
+                                >
+                                  {line.text || <span className="text-text-secondary-light dark:text-text-secondary-dark italic">빈 텍스트</span>}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                    {/* 저장 상태 */}
+                    <div className="flex-shrink-0 px-4 py-2 border-t border-border-light dark:border-border-dark">
+                      <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark text-center">
+                        {saveStatus === "saving" ? "저장 중..." : saveStatus === "saved" ? "자동 저장 완료" : saveStatus === "unsaved" ? "저장 대기 중..." : "저장 실패"}
+                      </p>
                     </div>
                   </aside>
                 )}

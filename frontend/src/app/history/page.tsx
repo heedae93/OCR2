@@ -272,7 +272,7 @@ export default function HistoryPage() {
   return (
     <div className="bg-slate-50 dark:bg-slate-50 min-h-screen">
       <Sidebar />
-      <main className="ml-64 mt-14 p-6 lg:p-10">
+      <main className="ml-64 p-6 lg:p-10">
         <div className="w-full max-w-6xl mx-auto flex flex-col gap-6">
 
           {/* 헤더 */}

@@ -308,7 +308,7 @@ export default function OcrFilezillaPage() {
     return (
       <div className="flex min-h-screen bg-slate-50 dark:bg-slate-50 text-black dark:text-white">
         <Sidebar />
-        <main className="flex-grow flex items-center justify-center p-10 mt-14">
+        <main className="flex-grow flex items-center justify-center p-10">
           <div className="max-w-md text-center bg-surface-light dark:bg-surface-dark p-8 rounded-2xl border border-border-light dark:border-border-dark shadow-xl">
             <AlertCircle className="w-16 h-16 text-orange-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold mb-4">기능 미지원 브라우저</h2>
@@ -331,7 +331,7 @@ export default function OcrFilezillaPage() {
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-50 text-black dark:text-white">
       <Sidebar />
-      <main className="flex-grow flex flex-col min-w-0 h-screen overflow-hidden pt-14">
+      <main className="flex-grow flex flex-col min-w-0 h-screen overflow-hidden">
         {/* Header */}
         <header className="px-8 py-6 border-b border-border-light dark:border-border-dark bg-surface-light/50 dark:bg-surface-dark/50 backdrop-blur-md">
           <div className="flex items-center justify-between">

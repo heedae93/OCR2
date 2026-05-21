@@ -830,7 +830,7 @@ export default function OcrWorkPage() {
   return (
     <div className="bg-slate-50 dark:bg-slate-50 min-h-screen">
       <Sidebar />
-      <main className="flex-1 ml-64 mt-14 flex flex-col p-6 lg:p-10 min-w-0">
+      <main className="flex-1 ml-64 flex flex-col p-6 pb-16 lg:p-10 lg:pb-20 min-w-0">
         <div className="w-full max-w-7xl mx-auto flex flex-col gap-6">
           <div className="flex items-start justify-between">
             <div className="flex-1 min-w-0 pr-4">
@@ -854,8 +854,8 @@ export default function OcrWorkPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[360px_minmax(0,1fr)] xl:items-stretch">
-            <aside className="flex min-h-0 flex-col gap-3 xl:col-start-1 xl:h-[calc(100vh-9rem)] xl:overflow-y-auto xl:sticky xl:top-6">
-              <div className="shrink-0 rounded-xl border border-border-light bg-surface-light p-4 dark:border-border-dark dark:bg-surface-dark xl:p-3.5 flex flex-col gap-4">
+            <aside className="flex min-h-0 flex-col gap-3 xl:col-start-1 xl:h-[calc(100dvh-10rem)] xl:overflow-y-auto xl:sticky xl:top-6">
+              <div className="flex min-h-[700px] flex-col gap-4 overflow-y-auto rounded-xl border border-border-light bg-surface-light p-4 dark:border-border-dark dark:bg-surface-dark xl:h-full xl:min-h-0 xl:p-3.5">
 
                 {/* 작업명 */}
                 <div>
@@ -874,7 +874,7 @@ export default function OcrWorkPage() {
                     aria-describedby={needsSessionName ? 'ocr-work-session-name-hint' : undefined}
                     className={`w-full px-3 py-2 text-sm border rounded-lg bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all ${
                       needsSessionName
-                        ? 'border-amber-500/90 ring-2 ring-amber-500/20 dark:border-amber-500 dark:ring-amber-500/25'
+                        ? 'border-accent-orange ring-2 ring-accent-orange/25 dark:border-accent-orange dark:ring-accent-orange/25'
                         : 'border-border-light dark:border-border-dark'
                     }`}
                   />
@@ -882,17 +882,17 @@ export default function OcrWorkPage() {
                     <div
                       id="ocr-work-session-name-hint"
                       role="alert"
-                      className="mt-2.5 flex gap-2.5 rounded-lg border border-orange-400 bg-orange-500 px-3 py-2.5 shadow-sm"
+                      className="mt-2.5 flex gap-2.5 rounded-lg border border-accent-orange/45 bg-accent-orange/15 px-3 py-2.5 shadow-sm"
                     >
                       <AlertCircle
-                        className="mt-0.5 h-4 w-4 shrink-0 text-white"
+                        className="mt-0.5 h-4 w-4 shrink-0 text-accent-orange"
                         aria-hidden
                       />
                       <div className="min-w-0">
-                        <p className="text-xs font-semibold text-white">
+                        <p className="text-xs font-semibold text-text-primary-light dark:text-text-primary-dark">
                           작업명을 입력해 주세요
                         </p>
-                        <p className="mt-1 text-[11px] leading-snug text-white/90">
+                        <p className="mt-1 text-[11px] leading-snug text-text-secondary-light dark:text-text-secondary-dark">
                           등록·목록에서 작업을 구분하려면 이름이 필요합니다. 입력하면 아래 대기 파일이 이 이름으로 묶입니다.
                         </p>
                       </div>
@@ -964,11 +964,18 @@ export default function OcrWorkPage() {
 
                 {/* 파일 추가 */}
               <div className="flex min-h-0 flex-1 flex-col gap-3">
-              <div className="flex flex-col xl:min-h-0">
+              <div className="flex min-h-[210px] flex-1 flex-col justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/20">
                 <input {...getInputProps()} />
-                <div className="mt-2 grid w-full grid-cols-2 gap-2">
-                  <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-slate-500 px-3 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-slate-600 active:scale-[0.98]">
-                    <Upload className="w-3.5 h-3.5" />
+                <div className="mb-4 flex flex-col items-center text-center">
+                  <p className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
+                    파일 또는 폴더 추가
+                  </p>
+                  <p className="mt-1 text-[11px] leading-snug text-text-secondary-light dark:text-text-secondary-dark">
+                    선택한 파일은 오른쪽 작업 목록에 추가됩니다.
+                  </p>
+                </div>
+                <div className="grid w-full grid-cols-1 gap-2">
+                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-slate-600 px-3 py-3 text-sm font-bold text-white shadow-sm transition-all active:scale-[0.98]">
                     파일 선택
                     <input
                       ref={fileInputRef}
@@ -980,8 +987,8 @@ export default function OcrWorkPage() {
                       onChange={event => handleFileSelect(event, 'file')}
                     />
                   </label>
-                  <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-slate-500 px-3 py-2 text-xs font-bold text-white transition-all hover:bg-slate-600 active:scale-[0.98]">
-                    <FolderOpen className="w-3.5 h-3.5" />
+                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-700 shadow-sm transition-all active:scale-[0.98] dark:border-slate-300 dark:bg-white">
+                    <FolderOpen className="h-4 w-4" />
                     폴더 선택
                     <input
                       ref={folderInputRef}
@@ -1020,10 +1027,10 @@ export default function OcrWorkPage() {
 
             </aside>
 
-            <div className="flex min-h-[620px] flex-col xl:col-start-2 xl:h-[calc(100vh-9rem)] xl:min-h-[calc(100vh-9rem)]">
+            <div className="flex min-h-[700px] flex-col xl:col-start-2 xl:h-[calc(100dvh-10rem)] xl:min-h-[calc(100dvh-10rem)]">
               <section
                 {...getRootProps({ onClick: e => e.stopPropagation() })}
-                className={`flex h-full min-h-[620px] flex-1 flex-col overflow-hidden rounded-xl border bg-surface-light dark:bg-surface-light xl:min-h-0 transition-all ${
+                className={`flex h-full min-h-[700px] flex-1 flex-col overflow-hidden rounded-xl border bg-surface-light dark:bg-surface-light xl:min-h-0 transition-all ${
                   isDragActive
                     ? 'border-primary ring-2 ring-primary/30 bg-primary/5'
                     : 'border-border-light dark:border-border-light'
@@ -1053,7 +1060,7 @@ export default function OcrWorkPage() {
                               ·
                             </span>
                             <span>
-                              대기 <span className="font-black text-primary">{pendingCount}</span>
+                              대기 <span className="font-black text-accent-orange">{pendingCount}</span>
                             </span>
                             <span className="text-text-secondary-light/40 dark:text-text-secondary-dark/40" aria-hidden>
                               ·
@@ -1114,10 +1121,27 @@ export default function OcrWorkPage() {
                 )}
 
                 {queue.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full py-20 text-text-secondary-light dark:text-text-secondary-dark">
-                    <FileText className="w-12 h-12 mb-3 opacity-20" />
-                    <p className="text-sm">선택한 파일 목록이 여기에 표시됩니다</p>
-                    <p className="mt-2 text-xs font-medium text-primary">이 영역으로 파일을 드래그해서 업로드할 수 있습니다</p>
+                  <div className="flex h-full items-stretch justify-stretch p-2 sm:p-3">
+                    <div
+                      className={`group relative flex h-full min-h-[430px] w-full flex-col items-center justify-center overflow-hidden rounded-3xl border-2 border-dashed px-6 py-12 text-center transition-all duration-200 ${
+                        isDragActive
+                          ? 'border-primary bg-primary/10 shadow-lg shadow-primary/10 ring-4 ring-primary/10'
+                          : 'border-slate-300 bg-white/70 shadow-sm shadow-slate-900/5 hover:border-primary/60 hover:bg-primary/[0.04] dark:border-slate-300 dark:bg-white/70'
+                      }`}
+                    >
+                      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15 transition-transform duration-200 group-hover:scale-105">
+                        <FileText className="h-8 w-8" />
+                      </div>
+                      <p className="text-base font-bold text-slate-700">
+                        선택한 파일 목록이 여기에 표시됩니다
+                      </p>
+                      <p className="mt-2 text-sm font-medium text-primary">
+                        이 영역으로 파일을 드래그해서 업로드할 수 있습니다
+                      </p>
+                      <p className="mt-3 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                        PDF, 이미지, HWP, Office 문서를 끌어다 놓아 작업 목록에 추가하세요.
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex flex-col h-full min-h-0 overflow-hidden">
@@ -1214,7 +1238,7 @@ export default function OcrWorkPage() {
                                     </div>
                                     <div className="flex flex-wrap items-center gap-1">
                                       {pendingInSession > 0 && (
-                                        <span className="inline-flex items-center rounded-full bg-orange-500 px-1.5 py-px text-[9px] font-bold text-white">
+                                        <span className="inline-flex items-center rounded-full bg-accent-orange px-1.5 py-px text-[9px] font-bold text-white">
                                           대기 {pendingInSession}
                                         </span>
                                       )}
@@ -1350,7 +1374,7 @@ export default function OcrWorkPage() {
                                 ) : (
                                   <>
                                     <p className="mb-1 text-[10px] font-bold">
-                                      <span className="text-orange-500">대기 중</span>
+                                      <span className="text-accent-orange">대기 중</span>
                                       <span className="mx-1 text-text-secondary-light">·</span>
                                       <span className="text-text-secondary-light">아래 목록 참고</span>
                                     </p>
@@ -1378,21 +1402,21 @@ export default function OcrWorkPage() {
                                   const statusLabelBg =
                                     effectiveStatus === 'completed' ? 'bg-emerald-500 text-white' :
                                     effectiveStatus === 'failed' ? 'bg-red-500 text-white' :
-                                    effectiveStatus === 'processing' ? 'bg-orange-500 text-white' :
+                                    effectiveStatus === 'processing' ? 'bg-accent-orange text-white' :
                                     (effectiveStatus === 'uploading' || effectiveStatus === 'queued') ? 'bg-blue-500 text-white' :
                                     'bg-gray-400 text-white'
 
                                   return (
                                     <li
                                       key={file.id}
-                                      className={`group/item flex items-center gap-2 rounded-md border bg-white/95 px-2 py-1.5 shadow-sm transition-all hover:shadow dark:bg-white/95 ${
+                                      className={`group/item flex flex-col gap-2 rounded-md border bg-white/95 px-2 py-1.5 shadow-sm transition-all hover:shadow dark:bg-white/95 sm:flex-row sm:items-center sm:gap-2 ${
                                         isCurrentWork
                                           ? 'border-primary/50 ring-1 ring-primary/25 hover:border-primary/60 dark:border-primary/50 dark:hover:border-primary/60'
                                           : 'border-border-light/80 hover:border-primary/25 dark:border-border-light/80 dark:hover:border-primary/25'
                                       }`}
                                     >
                                       {/* 1. 문서유형선택 */}
-                                      <div className="w-[7rem] shrink-0 mr-2">
+                                      <div className="w-full shrink-0 sm:mr-2 sm:w-[7rem]">
                                         {file.status === 'pending' && !isSubmitting ? (
                                           <div className="relative">
                                             <select
@@ -1433,7 +1457,7 @@ export default function OcrWorkPage() {
                                       <div className="min-w-0 flex-1 space-y-0.5">
                                         {effectiveStatus === 'completed' ? (
                                           <Link
-                                            href="/jobs"
+                                            href={file.jobId ? `/editor/${file.jobId}` : '/jobs'}
                                             className="block truncate text-[13px] font-bold leading-snug text-slate-600 hover:underline underline-offset-2"
                                           >
                                             {file.displayName}
@@ -1462,13 +1486,12 @@ export default function OcrWorkPage() {
                                       </div>
 
                                       {/* 3. 파일크기 */}
-                                      <div className="w-14 shrink-0 text-right text-[11px] font-medium text-text-secondary-light dark:text-text-secondary-dark">
-                                        {file.trackedOnly ? '진행' : formatBytes(file.fileSize)}
-                                      </div>
-
-                                      {/* 4. 상태 */}
-                                      <div className="flex w-16 shrink-0 flex-col items-center gap-0.5">
-                                        <span className={`rounded px-1 py-px text-[9px] font-extrabold leading-tight tracking-wide ${statusLabelBg}`}>
+                                      {/* 3. 상태/액션 */}
+                                      <div className="flex w-full shrink-0 items-center justify-end gap-1.5 sm:w-auto">
+                                        <span className="mr-auto text-[11px] font-medium text-text-secondary-light dark:text-text-secondary-dark sm:mr-1">
+                                          {file.trackedOnly ? '작업 중' : formatBytes(file.fileSize)}
+                                        </span>
+                                        <span className={`inline-flex min-w-[2.5rem] items-center justify-center rounded px-1.5 py-0.5 text-[9px] font-extrabold leading-tight tracking-wide ${statusLabelBg}`}>
                                           {queueStatusLabel(effectiveStatus)}
                                         </span>
                                         {effectiveStatus === 'failed' && file.jobId && (
@@ -1496,10 +1519,10 @@ export default function OcrWorkPage() {
                                                 })
                                               }
                                             }}
-                                            className="inline-flex items-center gap-0.5 rounded border border-blue-200 bg-blue-50 px-1 py-px text-[9px] font-bold text-blue-700 transition-all hover:bg-blue-100"
+                                            className="inline-flex h-7 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] font-bold text-blue-700 transition-all hover:bg-blue-100"
                                             title="재시작"
                                           >
-                                            <span className="material-symbols-outlined !text-[10px] leading-none">refresh</span>
+                                            <span className="material-symbols-outlined !text-[12px] leading-none">refresh</span>
                                             재시작
                                           </button>
                                         )}
@@ -1548,28 +1571,26 @@ export default function OcrWorkPage() {
                                                 ),
                                               )
                                             }}
-                                            className="inline-flex items-center gap-0.5 rounded border border-red-200 bg-red-50 px-1 py-px text-[9px] font-bold text-red-700 transition-all hover:bg-red-100"
+                                            className="inline-flex h-7 items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 text-[10px] font-bold text-red-700 transition-all hover:bg-red-100"
                                             title="중지"
                                           >
-                                            <StopCircle className="h-2.5 w-2.5" />
+                                            <StopCircle className="h-3 w-3" />
                                             중지
                                           </button>
                                         )}
+                                        {(file.status === 'pending' || effectiveStatus === 'failed' || effectiveStatus === 'completed') && !isSubmitting ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => removeFile(file.id)}
+                                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border-light bg-surface-light text-text-secondary-light shadow-sm transition-all hover:border-red-300 hover:bg-red-50 hover:text-red-500 dark:border-border-dark dark:bg-surface-dark dark:hover:border-red-800 dark:hover:bg-red-500/10"
+                                            title="삭제"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        ) : (
+                                          <div className="h-7 w-7 shrink-0" />
+                                        )}
                                       </div>
-
-                                      {/* 5. 삭제버튼 */}
-                                      {(file.status === 'pending' || effectiveStatus === 'failed' || effectiveStatus === 'completed') && !isSubmitting ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => removeFile(file.id)}
-                                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border-light bg-surface-light text-text-secondary-light shadow-sm transition-all hover:border-red-300 hover:bg-red-50 hover:text-red-500 dark:border-border-dark dark:bg-surface-dark dark:hover:border-red-800 dark:hover:bg-red-500/10"
-                                          title="삭제"
-                                        >
-                                          <X className="h-3 w-3" />
-                                        </button>
-                                      ) : (
-                                        <div className="h-7 w-7 shrink-0" />
-                                      )}
                                     </li>
                                   )
                                 })}

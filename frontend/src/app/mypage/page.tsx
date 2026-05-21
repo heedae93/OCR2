@@ -98,7 +98,7 @@ export default function MyPage() {
   return (
     <div className="bg-slate-50 dark:bg-slate-50 min-h-screen">
       <Sidebar />
-      <div className="flex-1 ml-64 mt-14 p-8 max-w-2xl">
+      <div className="flex-1 ml-64 p-8 max-w-2xl">
         <h1 className="text-2xl font-bold text-text-primary-light mb-8">마이페이지</h1>
 
         {/* 프로필 카드 */}

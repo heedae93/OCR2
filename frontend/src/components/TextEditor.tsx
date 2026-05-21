@@ -88,11 +88,13 @@ export default function TextEditor({
     setIsEditing(false)
   }
 
+  if (!isActive && elements.length === 0) return null;
+
   return (
     <div
-      className="absolute inset-0 pointer-events-auto"
-      onClick={handleClick}
-      style={{ width: pageWidth, height: pageHeight }}
+      className="absolute inset-0"
+      style={{ width: pageWidth, height: pageHeight, pointerEvents: isActive ? "auto" : "none" }}
+      onClick={isActive ? handleClick : undefined}
     >
       {elements.map((element) => (
         <div

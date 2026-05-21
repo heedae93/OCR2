@@ -2,11 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import { useOcrActivity } from "@/contexts/OcrActivityContext";
-import Header from "@/components/Header";
 
 interface NavItem {
   href: string;
@@ -39,7 +38,9 @@ const baseNavItems: NavItem[] = [
   { href: '/jobs', icon: 'history', label: '작업내역' },
   { href: '/history', icon: 'manage_history', label: '이력관리' },
   { href: '/statistics', icon: 'bar_chart', label: '통계' },
- ]
+];
+
+const helpNavItem: NavItem = { href: "/help", icon: "help", label: "도움말" };
 
 const adminNavItems: NavItem[] = [
   {
@@ -54,12 +55,12 @@ const adminNavItems: NavItem[] = [
 ];
 
 const bottomNavItems: NavItem[] = [
-  { href: "/help", icon: "help", label: "도움말" },
   { href: "/settings", icon: "settings", label: "설정" },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
   const { trackedJobs } = useOcrActivity();
   const [user, setUser] = useState<{
@@ -68,7 +69,7 @@ export default function Sidebar() {
     type?: string;
     user_id?: string;
   } | null>(null);
-  const [todayCount, setTodayCount] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const isProcessing = useMemo(
     () =>
@@ -83,7 +84,6 @@ export default function Sidebar() {
     if (stored) {
       const parsed = JSON.parse(stored);
       setUser(parsed);
-      fetchTodayCount(parsed.user_id || "");
     }
   }, []);
 
@@ -100,25 +100,10 @@ export default function Sidebar() {
     });
   }, [pathname, user?.type]);
 
-const fetchTodayCount = async (userId: string) => {
-    try {
-      const { API_BASE_URL } = await import("@/lib/api");
-      const res = await fetch(
-        `${API_BASE_URL}/api/jobs/statistics/summary?user_id=${userId}`,
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setTodayCount(data.today_completed ?? data.total_jobs ?? 0);
-      }
-    } catch {}
-  };
-
   const navItems =
-    user?.type === "A" ? [...baseNavItems, ...adminNavItems] : baseNavItems;
-  const bottomItems =
     user?.type === "A"
-      ? bottomNavItems
-      : bottomNavItems.filter((item) => item.href !== "/settings");
+      ? [...baseNavItems, ...adminNavItems, ...bottomNavItems, helpNavItem]
+      : [...baseNavItems, helpNavItem];
 
   const isActive = (path: string) =>
     pathname === path || (path !== "/" && path !== "/dashboard" && pathname.startsWith(path));
@@ -133,12 +118,12 @@ const fetchTodayCount = async (userId: string) => {
 
   return (
     <>
-    <aside className="fixed left-0 top-0 z-[300] flex h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-[#334155] bg-[#1E293B] pointer-events-auto" style={{ scrollbarGutter: 'stable' }}>
-      <div className="flex min-h-full flex-col gap-2 p-4">
+    <aside className="fixed inset-y-0 left-0 z-[300] w-64 shrink-0 overflow-y-auto border-r border-[#334155] bg-[#1E293B] pointer-events-auto" style={{ scrollbarGutter: 'stable' }}>
+      <div className="flex flex-col gap-2 px-4 py-3">
         <Link
           href="/"
-          className="group flex items-center transition-all duration-200 hover:opacity-80"
-          style={{ height: '75px' }}
+          className="group flex items-center transition-all duration-200 hover:opacity-80 shrink-0"
+          style={{ height: '64px' }}
         >
           <Image
             src="/aidoc.png"
@@ -149,9 +134,9 @@ const fetchTodayCount = async (userId: string) => {
           />
         </Link>
 
-        <div className="mx-2 mt-3 h-px bg-gradient-to-r from-transparent via-[#475569] to-transparent" />
+        <div className="-mx-2 mt-2 h-px bg-gradient-to-r from-transparent via-[#475569] to-transparent shrink-0" />
 
-        <nav className="flex flex-grow flex-col gap-1 mt-3">
+        <nav className="flex flex-col gap-1 mt-2">
           {navItems.map((item) => {
             const hasChildren = Boolean(item.children?.length);
             const active = isActive(item.href);
@@ -256,61 +241,53 @@ const fetchTodayCount = async (userId: string) => {
           })}
         </nav>
 
-        <div className="mx-2 h-px bg-gradient-to-r from-transparent via-[#475569] to-transparent" />
+        <div className="-mx-2 mt-2 h-px bg-gradient-to-r from-transparent via-[#475569] to-transparent" />
 
-        <nav className="flex flex-col gap-1">
-          {bottomItems.map((item) => {
-            const active = isActive(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`group relative flex shrink-0 items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 transition-all duration-200 ${
-                  active
-                    ? "bg-primary/15 text-primary"
-                    : "text-[#94A3B8] hover:bg-white/5 hover:text-[#F1F5F9]"
-                }`}
-              >
-                {active && (
-                  <div className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
-                )}
-                <span
-                  className={`material-symbols-outlined text-xl transition-all duration-200 ${active ? "text-primary" : "group-hover:scale-110"}`}
-                >
-                  {item.icon}
-                </span>
-                <span
-                  className={`text-sm transition-all duration-200 ${active ? "font-semibold" : "font-medium"}`}
-                >
-                  {item.label}
-                </span>
-              </Link>
-            );
-          })}
-        </nav>
+        {/* 사용자 정보 */}
+        <div className="relative rounded-xl border border-[#334155] bg-[#0F172A] p-3">
+          <button
+            type="button"
+            onClick={() => setMenuOpen(v => !v)}
+            className="flex w-full items-center gap-2.5 hover:opacity-80 transition-opacity"
+          >
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center text-white text-sm font-bold shadow-sm shrink-0">
+              {(user?.name || user?.username || 'U')[0].toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <p className="text-sm font-semibold text-[#F1F5F9] truncate">{user?.name || user?.username || '사용자'}</p>
+              <p className="text-[11px] text-[#64748B] truncate">{user?.username || ''}</p>
+            </div>
+            <span className={`material-symbols-outlined text-sm text-[#64748B] transition-transform duration-200 ${menuOpen ? 'rotate-180' : ''}`}>
+              expand_more
+            </span>
+          </button>
 
-        <div className="mx-1 rounded-xl border border-primary/10 bg-gradient-to-br from-primary/5 to-primary/10 p-3">
-          <div className="mb-2 flex items-center gap-2">
-            <span className="material-symbols-outlined !text-lg text-primary">
-              insights
-            </span>
-            <span className="text-xs font-semibold text-primary">
-              오늘의 처리량
-            </span>
-          </div>
-          <div className="flex items-baseline gap-1">
-            <span className="text-2xl font-bold text-[#F1F5F9]">
-              {todayCount}
-            </span>
-            <span className="text-xs text-[#94A3B8]">
-              파일
-            </span>
-          </div>
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+              <div className="absolute bottom-full left-0 right-0 mb-1.5 z-20 rounded-xl border border-[#334155] bg-[#1E293B] shadow-lg overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => { setMenuOpen(false); router.push('/mypage'); }}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-[#F1F5F9] hover:bg-white/5 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-base">manage_accounts</span>
+                  마이페이지
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMenuOpen(false); router.push('/logout'); }}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-base">logout</span>
+                  로그아웃
+                </button>
+              </div>
+            </>
+          )}
         </div>
-
       </div>
     </aside>
-    <Header />
     </>
   );
 }

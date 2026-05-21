@@ -135,7 +135,7 @@ export default function StatisticsPage() {
   return (
     <div className="bg-slate-50 dark:bg-slate-50 min-h-screen">
       <Sidebar />
-      <main className="flex-1 ml-64 mt-14 p-6 lg:p-10">
+      <main className="flex-1 ml-64 p-6 lg:p-10">
         <div className="w-full max-w-6xl mx-auto flex flex-col gap-8">
           <h1 className="text-3xl font-bold text-text-primary-light">통계</h1>
 

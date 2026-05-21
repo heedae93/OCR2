@@ -8,14 +8,15 @@ import {
 } from 'lucide-react'
 
 const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타', '미분류']
+const ACTIVE_FIELD_CARD_COLOR = 'border-primary/35 ring-2 ring-primary/10'
 
 const DEFAULT_METADATA_FIELDS = [
-  { key: 'title',   label: '문서 제목',   desc: '문서의 이름, 주제 또는 주요 타이틀', color: 'bg-blue-600 text-white' },
-  { key: 'date',    label: '발행 날짜',   desc: '거래일, 작성일, 유효 기간 등',    color: 'bg-green-600 text-white' },
-  { key: 'amount',  label: '금액 / 수치',  desc: '합계, 공급가액, 수량 등 숫자 데이터',  color: 'bg-purple-600 text-white' },
-  { key: 'vendor',  label: '업체 / 기관명', desc: '발행처, 상호, 거래처명 등',        color: 'bg-orange-500 text-white' },
-  { key: 'address', label: '주소 / 위치',   desc: '도로명 주소, 지번, 장소 정보',      color: 'bg-amber-500 text-white' },
-  { key: 'person',  label: '인명 / 담당자', desc: '작성자, 서명자, 고객 성함 등',      color: 'bg-teal-600 text-white' },
+  { key: 'title',   label: '문서 제목',   desc: '문서의 이름, 주제 또는 주요 타이틀', color: 'bg-metadata-title-bg text-metadata-title-text ring-1 ring-metadata-title-ring' },
+  { key: 'date',    label: '발행 날짜',   desc: '거래일, 작성일, 유효 기간 등',    color: 'bg-metadata-date-bg text-metadata-date-text ring-1 ring-metadata-date-ring' },
+  { key: 'amount',  label: '금액 / 수치',  desc: '합계, 공급가액, 수량 등 숫자 데이터',  color: 'bg-metadata-amount-bg text-metadata-amount-text ring-1 ring-metadata-amount-ring' },
+  { key: 'vendor',  label: '업체 / 기관명', desc: '발행처, 상호, 거래처명 등',        color: 'bg-metadata-vendor-bg text-metadata-vendor-text ring-1 ring-metadata-vendor-ring' },
+  { key: 'address', label: '주소 / 위치',   desc: '도로명 주소, 지번, 장소 정보',      color: 'bg-metadata-address-bg text-metadata-address-text ring-1 ring-metadata-address-ring' },
+  { key: 'person',  label: '인명 / 담당자', desc: '작성자, 서명자, 고객 성함 등',      color: 'bg-metadata-person-bg text-metadata-person-text ring-1 ring-metadata-person-ring' },
 ]
 
 export default function MetadataV3Page() {
@@ -184,7 +185,7 @@ export default function MetadataV3Page() {
       key: f.field_key,
       label: f.label,
       desc: f.description || '특정한 패턴이 일치하면 메타데이터 추출',
-      color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+      color: 'bg-metadata-custom-bg text-metadata-custom-text ring-1 ring-metadata-custom-ring',
       isCustom: true,
       id: f.id,
       pattern: f.pattern
@@ -194,7 +195,7 @@ export default function MetadataV3Page() {
   return (
     <div className="flex bg-slate-50 dark:bg-slate-50">
       <Sidebar />
-      <main className="flex-1 ml-64 mt-14 flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
+      <main className="flex-1 ml-64 flex flex-col h-[calc(100vh)] overflow-hidden">
 
         <div className="px-6 py-6 border-b border-border-light bg-surface-light flex-shrink-0">
           <h1 className="text-xl font-bold text-text-primary-light tracking-tight">문서 유형별 추출 메타데이터 관리</h1>
@@ -299,7 +300,7 @@ export default function MetadataV3Page() {
                       const enabled = currentPiiTypes.includes(item.key)
                       
                       return (
-                        <div key={item.key} className={`group relative flex flex-col text-left p-5 rounded-2xl border-2 transition-all duration-200 ease-out bg-white ${enabled ? (item.isCustom ? 'border-sky-400 shadow-md' : 'border-primary shadow-md') : 'border-border-light hover:border-primary/30 opacity-80 hover:opacity-100 hover:shadow-sm'}`}>
+                        <div key={item.key} className={`group relative flex flex-col text-left p-5 rounded-2xl border transition-all duration-200 ease-out bg-white ${enabled ? `${ACTIVE_FIELD_CARD_COLOR} shadow-md` : 'border-border-light hover:border-slate-300 opacity-80 hover:opacity-100 hover:shadow-sm'}`}>
                           
                           {/* 삭제 버튼 - 커스텀 필드일때만 등장 */}
                           {item.isCustom && item.id && (
@@ -310,7 +311,7 @@ export default function MetadataV3Page() {
 
                           <div className="flex items-start justify-between w-full mb-3 cursor-pointer" onClick={() => togglePii(item.key)}>
                             <div className="flex flex-col gap-2 max-w-[70%]">
-                              <span className={`text-xs px-3 py-1.5 rounded-full font-bold self-start ${enabled && item.isCustom ? 'bg-sky-500 text-white' : item.color}`}>{item.label}</span>
+                              <span className={`text-xs px-3 py-1.5 rounded-full font-bold self-start ${item.color}`}>{item.label}</span>
                               {item.pattern && <span className="text-[10px] font-mono tracking-tighter text-text-secondary-light break-all leading-tight bg-black/5 px-2 py-1 rounded">{item.pattern}</span>}
                             </div>
                             <div className={`w-12 h-6 rounded-full flex items-center transition-colors px-1 shrink-0 ${enabled ? (item.isCustom ? 'bg-sky-500' : 'bg-primary') : 'bg-gray-300'}`}>

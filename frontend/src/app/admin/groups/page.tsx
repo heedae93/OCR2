@@ -571,7 +571,7 @@ export default function GroupManagementPage() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-50">
       <Sidebar />
-      <div className="ml-64 mt-14 flex flex-col gap-6 p-8">
+      <div className="ml-64 flex flex-col gap-6 p-8">
         <div>
           <h1 className="text-2xl font-bold text-text-primary-light">그룹관리</h1>
           <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">

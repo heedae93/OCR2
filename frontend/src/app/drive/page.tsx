@@ -248,7 +248,7 @@ export default function DrivePage() {
     <div className="relative flex min-h-screen w-full bg-slate-50 dark:bg-slate-50">
       <Sidebar />
 
-      <main {...getRootProps()} className="ml-64 mt-14 flex-1 p-6 lg:p-10">
+      <main {...getRootProps()} className="ml-64 flex-1 p-6 lg:p-10">
         <input {...getInputProps()} />
 
         <div className="w-full max-w-7xl mx-auto">

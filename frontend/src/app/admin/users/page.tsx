@@ -201,7 +201,7 @@ export default function UsersPage() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-50">
       <Sidebar />
-      <div className="ml-64 mt-14 flex flex-col gap-6 p-8">
+      <div className="ml-64 flex flex-col gap-6 p-8">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-text-primary-light dark:text-text-primary-dark">사용자 관리</h1>
