@@ -1,0 +1,1349 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>BBOCR 프로세스 흐름도</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', -apple-system, sans-serif;
+  background: #0f172a;
+  color: #f1f5f9;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Tab nav ── */
+.tabs {
+  display: flex;
+  gap: 2px;
+  background: #1e293b;
+  border-bottom: 2px solid #334155;
+  padding: 0 24px;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+.tab {
+  padding: 12px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  white-space: nowrap;
+  transition: all 0.2s;
+  user-select: none;
+}
+.tab:hover { color: #94a3b8; }
+.tab.active { color: #60a5fa; border-bottom-color: #3b82f6; }
+
+/* ── Content area ── */
+.content {
+  flex: 1;
+  overflow: auto;
+  padding: 40px 60px;
+  display: none;
+}
+.content.active { display: block; }
+
+/* ══════════════════════════════
+   FLOWCHART PRIMITIVES
+═══════════════════════════════ */
+
+/* Box */
+.fc { display: flex; flex-direction: column; align-items: center; }
+.box {
+  border: 2px solid;
+  border-radius: 6px;
+  padding: 12px 24px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.6;
+  position: relative;
+  min-width: 220px;
+  max-width: 560px;
+}
+.box .box-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.box .box-sub {
+  font-size: 11px;
+  opacity: 0.75;
+  line-height: 1.5;
+}
+
+/* Colors */
+.box-blue   { background: #1e3a8a33; border-color: #3b82f6; }
+.box-green  { background: #064e3b33; border-color: #10b981; }
+.box-purple { background: #312e8133; border-color: #8b5cf6; }
+.box-orange { background: #7c2d1233; border-color: #f97316; }
+.box-red    { background: #7f1d1d33; border-color: #ef4444; }
+.box-gray   { background: #1e293b;   border-color: #475569; }
+.box-teal   { background: #134e4a33; border-color: #14b8a6; }
+.box-yellow { background: #78350f33; border-color: #f59e0b; }
+.box-indigo { background: #312e8133; border-color: #6366f1; }
+
+/* Arrow down */
+.arrow-d {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+.arrow-d .line  { width: 2px; background: #475569; flex: 1; min-height: 28px; }
+.arrow-d .head  { width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 10px solid #475569; }
+.arrow-d .label { font-size: 11px; color: #94a3b8; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); white-space: nowrap; background: #0f172a; padding: 0 4px; }
+
+/* Arrow right */
+.arrow-r {
+  display: flex;
+  align-items: center;
+}
+.arrow-r .line  { height: 2px; background: #475569; flex: 1; min-width: 20px; }
+.arrow-r .head  { width: 0; height: 0; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-left: 10px solid #475569; }
+
+/* Branch row: horizontal split */
+.branch-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+}
+.branch-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 20px;
+}
+
+/* Horizontal connector line above branches */
+.h-line-wrap {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+}
+.h-connector {
+  position: absolute;
+  top: 0;
+  height: 2px;
+  background: #475569;
+}
+
+/* Branch down arrow with label */
+.branch-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.branch-arrow .bl {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  background: #0f172a;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+}
+
+/* Merge connector */
+.merge-line {
+  width: 2px;
+  background: #475569;
+  min-height: 24px;
+}
+
+/* Side note */
+.note {
+  font-size: 11px;
+  color: #64748b;
+  font-style: italic;
+  margin-top: 4px;
+}
+
+/* Wide box that spans */
+.wide { width: 100%; max-width: 720px; }
+
+/* Section label */
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #475569;
+  margin: 8px 0 4px;
+}
+
+/* Sub-flow inside box */
+.inset {
+  background: #0f172a44;
+  border: 1px dashed #475569;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: #94a3b8;
+  text-align: left;
+  line-height: 1.8;
+}
+
+/* Decision diamond */
+.diamond-wrap { position: relative; margin: 4px 0; }
+.diamond {
+  width: 120px;
+  height: 60px;
+  background: #1e293b;
+  border: 2px solid #f59e0b;
+  transform: rotate(45deg);
+  border-radius: 4px;
+  position: relative;
+}
+.diamond-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fbbf24;
+  transform: none;
+  text-align: center;
+  line-height: 1.4;
+  padding: 4px;
+  pointer-events: none;
+}
+.diamond-container {
+  position: relative;
+  width: 130px;
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.diamond-container .dc-inner {
+  width: 90px;
+  height: 50px;
+  background: #78350f22;
+  border: 2px solid #f59e0b;
+  transform: rotate(45deg);
+  border-radius: 3px;
+}
+.diamond-container .dc-label {
+  position: absolute;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fbbf24;
+  text-align: center;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ══ Helpers ══ */
+.gap-sm { height: 8px; }
+.gap-md { height: 16px; }
+.flex-center { display: flex; justify-content: center; }
+.mt8  { margin-top: 8px; }
+.bold { font-weight: 700; }
+.tag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-weight: 600;
+  margin: 2px;
+}
+.tg-blue   { background:#1e3a8a55; color:#93c5fd; }
+.tg-green  { background:#064e3b55; color:#6ee7b7; }
+.tg-red    { background:#7f1d1d55; color:#fca5a5; }
+.tg-purple { background:#4c1d9555; color:#c4b5fd; }
+.tg-orange { background:#7c2d1255; color:#fdba74; }
+.tg-gray   { background:#1e293b;   color:#94a3b8; }
+
+/* ── Page title ── */
+.page-title {
+  font-size: 22px;
+  font-weight: 800;
+  margin-bottom: 32px;
+  color: #f1f5f9;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.page-title span { font-size: 13px; font-weight: 400; color: #64748b; font-family: monospace; }
+
+/* ── Horizontal flow for editor ── */
+.hflow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+}
+.hflow .arrow-r { align-self: center; }
+
+/* ── Split panel ── */
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════ TAB NAV ══════════ -->
+<div class="tabs">
+  <div class="tab active" onclick="show(0)">① OCR 파이프라인</div>
+  <div class="tab" onclick="show(1)">② 문서 작업하기</div>
+  <div class="tab" onclick="show(2)">③ 에디터</div>
+  <div class="tab" onclick="show(3)">④ 작업내역</div>
+  <div class="tab" onclick="show(4)">⑤ 마스킹 처리</div>
+  <div class="tab" onclick="show(5)">⑥ 이력관리</div>
+  <div class="tab" onclick="show(6)">⑦ 메타데이터 관리</div>
+  <div class="tab" onclick="show(7)">⑧ 통계 & 관리자</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     TAB 0: OCR 파이프라인
+════════════════════════════════════════════════════════ -->
+<div class="content active" id="tab0">
+<div class="page-title">🔄 OCR 처리 파이프라인 <span>backend/api/ocr.py · backend/core/</span></div>
+<div class="fc">
+
+  <!-- 파일 업로드 -->
+  <div class="box box-blue wide" style="max-width:620px">
+    <div class="box-title">파일 업로드</div>
+    <div class="box-sub">PDF · PNG · JPG · TIFF · DOCX · XLSX · PPTX · HWP · HWPX · TXT</div>
+  </div>
+  <div class="arrow-d" style="height:36px"><div class="line"></div><div class="head"></div></div>
+
+  <!-- MIME 감지 -->
+  <div class="box box-gray wide" style="max-width:620px">
+    <div class="box-title">MIME 타입 감지</div>
+    <div class="box-sub">파일 형식 판별 · 처리 경로 분기</div>
+    <div style="margin-top:8px">
+      <span class="tag tg-green">PNG / JPG / TIFF / BMP</span>
+      <span style="color:#475569;font-size:12px;margin:0 4px">→ 직접 OCR</span>
+      <span class="tag tg-blue">PDF</span>
+      <span class="tag tg-orange">DOCX / XLSX / PPTX / HWP</span>
+      <span style="color:#475569;font-size:12px;margin:0 4px">→ Tika 경유</span>
+    </div>
+  </div>
+
+  <!-- ────────────────── 2-way split ────────────────── -->
+  <div style="width:820px">
+    <svg width="820" height="50" style="display:block">
+      <line x1="410" y1="0"  x2="410" y2="25" stroke="#475569" stroke-width="2"/>
+      <line x1="125" y1="25" x2="570" y2="25" stroke="#475569" stroke-width="2"/>
+      <line x1="125" y1="25" x2="125" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="118,45 132,45 125,52" fill="#10b981"/>
+      <text x="22" y="20" fill="#10b981" font-size="11" font-weight="bold">이미지 파일</text>
+      <line x1="570" y1="25" x2="570" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="563,45 577,45 570,52" fill="#f97316"/>
+      <text x="575" y="20" fill="#f97316" font-size="11" font-weight="bold">PDF / Office 문서</text>
+    </svg>
+
+    <!-- ── Two columns ── -->
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; width:820px">
+
+      <!-- ═══ LEFT: 이미지 경로 ═══ -->
+      <div class="fc" style="width:250px">
+        <div class="box box-green" style="width:230px">
+          <div class="box-title">이미지 파일</div>
+          <div class="box-sub">PNG · JPG · TIFF · BMP · WEBP</div>
+        </div>
+        <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-purple" style="width:230px">
+          <div class="box-title">OCR 엔진 (PaddleOCR)</div>
+          <div class="box-sub">레이아웃 분석<br>+ 텍스트 인식</div>
+        </div>
+        <!-- dashed spacer — 이 경로는 여기서 끝, 아래에서 합류 -->
+        <div style="width:2px; height:415px; margin:0 auto;
+          background: repeating-linear-gradient(to bottom,
+            #334155 0px, #334155 6px, transparent 6px, transparent 12px);">
+        </div>
+      </div>
+
+      <!-- ═══ RIGHT: PDF / Office 공통 경로 ═══ -->
+      <div class="fc" style="width:500px">
+
+        <!-- ① Tika (PDF + Office 모두 통과) -->
+        <div class="box box-gray" style="width:480px">
+          <div class="box-title">① Tika 텍스트 추출</div>
+          <div class="box-sub">PDF · DOCX · XLSX · PPTX · HWP — 모두 Apache Tika로 처리</div>
+          <div class="inset">
+            추출된 텍스트 → <strong>Tika 테이블 저장</strong><br>
+            메타데이터 파싱 (제목 · 작성자 · 날짜 · 언어)
+          </div>
+        </div>
+        <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+
+        <!-- ② Office → PDF 변환 분기 -->
+        <div style="width:480px">
+          <svg width="480" height="50" style="display:block">
+            <line x1="240" y1="0"  x2="240" y2="25" stroke="#475569" stroke-width="2"/>
+            <line x1="110" y1="25" x2="370" y2="25" stroke="#475569" stroke-width="2"/>
+            <line x1="110" y1="25" x2="110" y2="48" stroke="#475569" stroke-width="2"/>
+            <polygon points="103,45 117,45 110,52" fill="#f97316"/>
+            <text x="18"  y="20" fill="#f97316" font-size="11" font-weight="bold">Office 문서</text>
+            <line x1="370" y1="25" x2="370" y2="48" stroke="#475569" stroke-width="2"/>
+            <polygon points="363,45 377,45 370,52" fill="#3b82f6"/>
+            <text x="376" y="20" fill="#3b82f6"  font-size="11" font-weight="bold">PDF 파일</text>
+          </svg>
+          <div style="display:flex; justify-content:space-between; align-items:flex-start">
+            <div class="fc" style="width:215px">
+              <div class="box box-orange" style="width:200px; padding:10px">
+                <div class="box-title" style="font-size:12px">② PDF 변환</div>
+                <div class="box-sub">LibreOffice / unoconv<br>DOCX · XLSX · PPTX · HWP → PDF</div>
+              </div>
+            </div>
+            <div class="fc" style="width:215px">
+              <div class="box box-blue" style="width:200px; padding:10px">
+                <div class="box-title" style="font-size:12px">② PDF 그대로 사용</div>
+                <div class="box-sub">일반 PDF · 스캔 PDF · 혼합 PDF</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Office + PDF 합류 → PDF 파이프라인 진입 -->
+        <div style="width:480px">
+          <svg width="480" height="44" style="display:block">
+            <line x1="110" y1="0"  x2="110" y2="22" stroke="#475569" stroke-width="2"/>
+            <line x1="110" y1="22" x2="240" y2="22" stroke="#475569" stroke-width="2"/>
+            <line x1="370" y1="0"  x2="370" y2="22" stroke="#475569" stroke-width="2"/>
+            <line x1="370" y1="22" x2="240" y2="22" stroke="#475569" stroke-width="2"/>
+            <line x1="240" y1="22" x2="240" y2="42" stroke="#475569" stroke-width="2"/>
+            <polygon points="233,39 247,39 240,46" fill="#475569"/>
+          </svg>
+        </div>
+
+        <!-- ③ 페이지 타입 감지 -->
+        <div class="box box-gray" style="width:480px">
+          <div class="box-title">③ PDF 파이프라인 — 페이지 타입 감지</div>
+          <div class="box-sub">detect_pdf_type() · 페이지별 텍스트 비율 계산</div>
+        </div>
+
+        <!-- 텍스트 / 스캔 분기 -->
+        <div style="width:480px">
+          <svg width="480" height="50" style="display:block">
+            <line x1="240" y1="0"  x2="240" y2="25" stroke="#475569" stroke-width="2"/>
+            <line x1="110" y1="25" x2="370" y2="25" stroke="#475569" stroke-width="2"/>
+            <line x1="110" y1="25" x2="110" y2="48" stroke="#475569" stroke-width="2"/>
+            <polygon points="103,45 117,45 110,52" fill="#14b8a6"/>
+            <text x="14"  y="20" fill="#14b8a6" font-size="11" font-weight="bold">80%+ 텍스트</text>
+            <line x1="370" y1="25" x2="370" y2="48" stroke="#475569" stroke-width="2"/>
+            <polygon points="363,45 377,45 370,52" fill="#8b5cf6"/>
+            <text x="376" y="20" fill="#8b5cf6"  font-size="11" font-weight="bold">혼합 / 스캔</text>
+          </svg>
+          <div style="display:flex; justify-content:space-between; align-items:flex-start">
+            <div class="fc" style="width:215px">
+              <div class="box box-teal" style="width:200px; padding:10px">
+                <div class="box-title" style="font-size:12px">직접 추출</div>
+                <div class="box-sub">fitz (PyMuPDF)<br>텍스트 레이어 그대로 추출</div>
+              </div>
+            </div>
+            <div class="fc" style="width:215px">
+              <div class="box box-purple" style="width:200px; padding:10px">
+                <div class="box-title" style="font-size:12px">스트리밍 파이프라인</div>
+                <div class="box-sub">페이지 변환 즉시 OCR 큐 투입</div>
+                <div class="inset" style="font-size:10px">
+                  페이지 N<br>
+                  ├─ text → fitz 추출<br>
+                  └─ scan → OCR 엔진
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- fitz + streaming 합류 -->
+        <div style="width:480px">
+          <svg width="480" height="44" style="display:block">
+            <line x1="110" y1="0"  x2="110" y2="22" stroke="#475569" stroke-width="2"/>
+            <line x1="110" y1="22" x2="240" y2="22" stroke="#475569" stroke-width="2"/>
+            <line x1="370" y1="0"  x2="370" y2="22" stroke="#475569" stroke-width="2"/>
+            <line x1="370" y1="22" x2="240" y2="22" stroke="#475569" stroke-width="2"/>
+            <line x1="240" y1="22" x2="240" y2="42" stroke="#475569" stroke-width="2"/>
+            <polygon points="233,39 247,39 240,46" fill="#475569"/>
+          </svg>
+        </div>
+
+      </div><!-- /right col -->
+    </div><!-- /two-col -->
+  </div><!-- /820px wrapper -->
+
+  <!-- ── 이미지 OCR + PDF 파이프라인 최종 합류 ── -->
+  <div style="width:820px">
+    <svg width="820" height="58" style="display:block">
+      <!-- 왼쪽 이미지 경로 (x=125) -->
+      <line x1="125" y1="0"  x2="125" y2="29" stroke="#475569" stroke-width="2"/>
+      <!-- 오른쪽 PDF 파이프라인 (x=570) -->
+      <line x1="570" y1="0"  x2="570" y2="29" stroke="#475569" stroke-width="2"/>
+      <!-- 수평 합류선 -->
+      <line x1="125" y1="29" x2="570" y2="29" stroke="#475569" stroke-width="2"/>
+      <!-- 중앙 하단 화살표 -->
+      <line x1="410" y1="29" x2="410" y2="54" stroke="#475569" stroke-width="2"/>
+      <polygon points="403,51 417,51 410,58" fill="#14b8a6"/>
+    </svg>
+  </div>
+
+  <!-- OCR 결과 공통 포맷 -->
+  <div class="box box-teal wide" style="font-family:monospace; max-width:620px">
+    <div class="box-title" style="font-family:sans-serif">OCR 결과 (공통 포맷)</div>
+    <div class="box-sub" style="color:#5eead4; font-size:12px">
+      { pages: [ { lines: [ { text, bbox, conf } ] } ] }
+    </div>
+    <div style="margin-top:8px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap">
+      <span class="tag tg-gray">text: 인식 텍스트</span>
+      <span class="tag tg-gray">bbox: 좌표</span>
+      <span class="tag tg-gray">conf: 신뢰도</span>
+    </div>
+  </div>
+  <div class="arrow-d" style="height:36px"><div class="line"></div><div class="head"></div></div>
+
+  <!-- PII 감지 -->
+  <div class="box box-red wide" style="max-width:620px">
+    <div class="box-title">PII 감지 + 마스킹</div>
+    <div class="box-sub">정규식 / NER 모델로 개인정보 추출 · 마스킹 PDF 생성</div>
+    <div style="margin-top:8px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap">
+      <span class="tag tg-red">이름</span>
+      <span class="tag tg-red">전화번호</span>
+      <span class="tag tg-red">주민등록번호</span>
+      <span class="tag tg-red">이메일</span>
+      <span class="tag tg-red">계좌번호</span>
+      <span class="tag tg-red">주소</span>
+    </div>
+  </div>
+  <div class="arrow-d" style="height:36px"><div class="line"></div><div class="head"></div></div>
+
+  <!-- 저장 -->
+  <div class="box box-green wide" style="max-width:620px">
+    <div class="box-title">메타데이터 추출 + 저장</div>
+    <div class="box-sub">OCR JSON · PII JSON · 검색가능 출력 PDF</div>
+    <div style="margin-top:8px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap">
+      <span class="tag tg-blue">{jobId}_ocr.json</span>
+      <span class="tag tg-red">{jobId}_pii.json</span>
+      <span class="tag tg-green">{jobId}.pdf</span>
+      <span class="tag tg-orange">{jobId}_masked.pdf</span>
+    </div>
+  </div>
+
+</div><!-- /fc -->
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     TAB 1: 문서 작업하기
+════════════════════════════════════════════════════════ -->
+<div class="content" id="tab1">
+<div class="page-title">📄 문서 작업하기 <span>/ocr-work</span></div>
+<div class="fc">
+
+  <div class="box box-blue wide" style="max-width:520px">
+    <div class="box-title">사용자 접속 /ocr-work</div>
+  </div>
+  <div class="arrow-d" style="height:36px"><div class="line"></div><div class="head"></div></div>
+
+  <div class="box box-gray wide" style="max-width:520px">
+    <div class="box-title">서버 상태 확인</div>
+    <div style="margin-top:8px; display:flex; gap:12px; justify-content:center">
+      <span class="tag tg-red">GET /api/redis/health</span>
+      <span class="tag tg-red">GET /api/worker/health</span>
+    </div>
+  </div>
+
+  <!-- branch: 정상 / 장애 -->
+  <div style="width:520px">
+    <svg width="520" height="50" style="display:block">
+      <line x1="260" y1="0" x2="260" y2="25" stroke="#475569" stroke-width="2"/>
+      <line x1="140" y1="25" x2="380" y2="25" stroke="#475569" stroke-width="2"/>
+      <line x1="140" y1="25" x2="140" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="133,45 147,45 140,52" fill="#10b981"/>
+      <text x="90" y="22" fill="#10b981" font-size="11" font-weight="bold">정상</text>
+      <line x1="380" y1="25" x2="380" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="373,45 387,45 380,52" fill="#ef4444"/>
+      <text x="385" y="22" fill="#ef4444" font-size="11" font-weight="bold">장애</text>
+    </svg>
+    <div style="display:flex; justify-content:space-between; align-items:flex-start">
+      <div class="fc" style="width:260px">
+
+        <div class="box box-gray" style="width:240px">
+          <div class="box-title">작업 설정</div>
+          <div class="box-sub">작업명 입력<br>문서 유형 선택</div>
+          <div class="inset">공문서 / 계약서 / 보고서<br>학술논문 / 영수증 / 신분증 등</div>
+        </div>
+        <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+
+        <div class="box box-gray" style="width:240px">
+          <div class="box-title">파일 추가</div>
+          <div class="box-sub">드래그&드롭 · 파일 선택 · 폴더 선택</div>
+          <div class="inset">PDF · PNG · JPG · DOCX · HWP 등<br>파일 큐 → pending 상태</div>
+        </div>
+        <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+
+        <div class="box box-blue" style="width:240px">
+          <div class="box-title">세션 생성</div>
+          <div class="box-sub">POST /api/sessions<br>→ session_id 발급</div>
+        </div>
+        <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+
+        <div class="box box-purple" style="width:240px">
+          <div class="box-title">파일 업로드 (최대 4개 동시)</div>
+          <div class="box-sub">POST /api/upload → job_id<br>POST /api/sessions/{id}/documents</div>
+        </div>
+        <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+
+        <div class="box box-orange" style="width:240px">
+          <div class="box-title">Redis 큐 등록</div>
+          <div class="box-sub">POST /api/process/{jobId}<br>Celery Worker 작업 할당</div>
+        </div>
+        <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+
+        <div class="box box-purple" style="width:240px">
+          <div class="box-title">OCR 파이프라인 실행</div>
+          <div class="box-sub">레이아웃 분석 → 텍스트 인식<br>PII 감지 → PDF 생성</div>
+        </div>
+        <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+
+        <div class="box box-gray" style="width:240px">
+          <div class="box-title">상태 폴링 (3초마다)</div>
+          <div class="box-sub">GET /api/status/{jobId}<br>progress_percent 업데이트</div>
+        </div>
+
+        <!-- 3-way: processing / completed / failed -->
+        <div style="width:240px">
+          <svg width="240" height="50" style="display:block">
+            <line x1="120" y1="0" x2="120" y2="25" stroke="#475569" stroke-width="2"/>
+            <line x1="40" y1="25" x2="200" y2="25" stroke="#475569" stroke-width="2"/>
+            <line x1="40"  y1="25" x2="40"  y2="48" stroke="#475569" stroke-width="2"/>
+            <polygon points="33,45 47,45 40,52" fill="#f59e0b"/>
+            <line x1="120" y1="25" x2="120" y2="48" stroke="#475569" stroke-width="2"/>
+            <polygon points="113,45 127,45 120,52" fill="#10b981"/>
+            <line x1="200" y1="25" x2="200" y2="48" stroke="#475569" stroke-width="2"/>
+            <polygon points="193,45 207,45 200,52" fill="#ef4444"/>
+          </svg>
+          <div style="display:flex; justify-content:space-between; font-size:11px; font-weight:700">
+            <span style="color:#f59e0b; width:70px; text-align:center">처리중<br>↩ 폴링</span>
+            <span style="color:#10b981; width:80px; text-align:center">✅ 완료<br>에디터 이동</span>
+            <span style="color:#ef4444; width:70px; text-align:center">❌ 실패<br>재시도</span>
+          </div>
+        </div>
+
+      </div>
+      <div style="width:160px; padding-top:12px">
+        <div class="box box-red" style="width:140px; padding:10px">
+          <div class="box-title" style="font-size:12px">⚠️ 서버 장애</div>
+          <div class="box-sub">처리 불가<br>알림 표시</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     TAB 2: 에디터
+════════════════════════════════════════════════════════ -->
+<div class="content" id="tab2">
+<div class="page-title">✏️ 에디터 <span>/editor/[jobId]</span></div>
+<div class="fc">
+
+  <div class="box box-blue wide" style="max-width:680px">
+    <div class="box-title">에디터 진입 /editor/{jobId}</div>
+  </div>
+
+  <!-- 4 load steps -->
+  <div style="width:680px">
+    <svg width="680" height="40" style="display:block">
+      <line x1="340" y1="0" x2="340" y2="18" stroke="#475569" stroke-width="2"/>
+      <line x1="100" y1="18" x2="580" y2="18" stroke="#475569" stroke-width="2"/>
+      <line x1="100" y1="18" x2="100" y2="38" stroke="#475569" stroke-width="2"/>
+      <polygon points="93,35 107,35 100,42" fill="#475569"/>
+      <line x1="260" y1="18" x2="260" y2="38" stroke="#475569" stroke-width="2"/>
+      <polygon points="253,35 267,35 260,42" fill="#475569"/>
+      <line x1="430" y1="18" x2="430" y2="38" stroke="#475569" stroke-width="2"/>
+      <polygon points="423,35 437,35 430,42" fill="#475569"/>
+      <line x1="580" y1="18" x2="580" y2="38" stroke="#475569" stroke-width="2"/>
+      <polygon points="573,35 587,35 580,42" fill="#475569"/>
+    </svg>
+    <div style="display:flex; justify-content:space-between; gap:8px">
+      <div class="box box-gray" style="width:155px; padding:10px">
+        <div class="box-title" style="font-size:11px">작업 메타데이터</div>
+        <div class="box-sub">GET /api/status/{jobId}</div>
+      </div>
+      <div class="box box-gray" style="width:155px; padding:10px">
+        <div class="box-title" style="font-size:11px">OCR JSON</div>
+        <div class="box-sub">GET /api/ocr-results/{jobId}</div>
+      </div>
+      <div class="box box-gray" style="width:155px; padding:10px">
+        <div class="box-title" style="font-size:11px">PDF 파일</div>
+        <div class="box-sub">GET /api/files/processed/{jobId}.pdf</div>
+      </div>
+      <div class="box box-gray" style="width:155px; padding:10px">
+        <div class="box-title" style="font-size:11px">PII 감지 결과</div>
+        <div class="box-sub">GET /api/masking/{jobId}/detect</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- merge -->
+  <div style="width:680px">
+    <svg width="680" height="44" style="display:block">
+      <line x1="100" y1="0" x2="100" y2="22" stroke="#475569" stroke-width="2"/>
+      <line x1="260" y1="0" x2="260" y2="22" stroke="#475569" stroke-width="2"/>
+      <line x1="430" y1="0" x2="430" y2="22" stroke="#475569" stroke-width="2"/>
+      <line x1="580" y1="0" x2="580" y2="22" stroke="#475569" stroke-width="2"/>
+      <line x1="100" y1="22" x2="580" y2="22" stroke="#475569" stroke-width="2"/>
+      <line x1="340" y1="22" x2="340" y2="42" stroke="#475569" stroke-width="2"/>
+      <polygon points="333,39 347,39 340,46" fill="#475569"/>
+    </svg>
+  </div>
+
+  <div class="box box-teal wide" style="max-width:680px">
+    <div class="box-title">PDF + OCR 텍스트 레이어 렌더링</div>
+    <div class="box-sub">좌: PDF 뷰어 &nbsp;|&nbsp; 우: 마스킹/편집 패널</div>
+  </div>
+
+  <!-- 3-way action -->
+  <div style="width:680px">
+    <svg width="680" height="50" style="display:block">
+      <line x1="340" y1="0" x2="340" y2="25" stroke="#475569" stroke-width="2"/>
+      <line x1="115" y1="25" x2="565" y2="25" stroke="#475569" stroke-width="2"/>
+      <line x1="115" y1="25" x2="115" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="108,45 122,45 115,52" fill="#475569"/>
+      <line x1="340" y1="25" x2="340" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="333,45 347,45 340,52" fill="#475569"/>
+      <line x1="565" y1="25" x2="565" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="558,45 572,45 565,52" fill="#475569"/>
+    </svg>
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">
+
+      <!-- 텍스트 편집 -->
+      <div class="fc" style="width:200px">
+        <div class="box box-blue" style="width:190px">
+          <div class="box-title">📝 텍스트 편집</div>
+        </div>
+        <div class="arrow-d" style="height:28px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:190px;padding:10px">
+          <div class="box-sub">라인 클릭 → 인라인 수정</div>
+        </div>
+        <div class="arrow-d" style="height:28px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-green" style="width:190px;padding:10px">
+          <div class="box-title" style="font-size:11px">자동 저장</div>
+          <div class="box-sub">2초 디바운스<br>POST /api/save-ocr-edits</div>
+        </div>
+      </div>
+
+      <!-- 마스킹 -->
+      <div class="fc" style="width:240px">
+        <div class="box box-red" style="width:230px">
+          <div class="box-title">🔴 마스킹 패널</div>
+        </div>
+        <div class="arrow-d" style="height:28px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:230px;padding:10px">
+          <div class="box-sub">NAME · PHONE · RRN<br>EMAIL · 계좌번호</div>
+        </div>
+        <div class="arrow-d" style="height:28px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:230px;padding:10px">
+          <div class="box-sub">개별 항목 ON / OFF 토글<br>원본값 ↔ 마스킹값 비교</div>
+        </div>
+        <div class="arrow-d" style="height:28px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-red" style="width:230px;padding:10px">
+          <div class="box-title" style="font-size:11px">마스킹 PDF 다운로드</div>
+          <div class="box-sub">GET /api/masking/{jobId}/download</div>
+        </div>
+      </div>
+
+      <!-- 내보내기 -->
+      <div class="fc" style="width:200px">
+        <div class="box box-orange" style="width:190px">
+          <div class="box-title">📤 내보내기</div>
+        </div>
+        <div class="arrow-d" style="height:28px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:190px;padding:10px">
+          <div class="box-sub">
+            TXT /api/export/{jobId}/txt<br>
+            XML /api/export/{jobId}/xml<br>
+            JSON /api/download-json/{jobId}<br>
+            PDF (검색가능)
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     TAB 3: 작업내역
+════════════════════════════════════════════════════════ -->
+<div class="content" id="tab3">
+<div class="page-title">📋 작업내역 <span>/jobs</span></div>
+<div class="fc">
+
+  <div class="box box-blue wide" style="max-width:560px">
+    <div class="box-title">작업내역 진입 /jobs</div>
+  </div>
+  <div class="arrow-d" style="height:36px"><div class="line"></div><div class="head"></div></div>
+
+  <div class="box box-gray wide" style="max-width:560px">
+    <div class="box-title">세션 목록 로드</div>
+    <div class="box-sub">GET /api/jobs/statistics/sessions?user_id={userId}</div>
+    <div class="inset">session_id · session_name · 완료율<br>total / completed / failed / processing 수</div>
+  </div>
+  <div class="arrow-d" style="height:36px"><div class="line"></div><div class="head"></div></div>
+
+  <div class="box box-teal wide" style="max-width:560px">
+    <div class="box-title">세션 목록 렌더링</div>
+    <div class="box-sub">완료율 프로그레스바 · 상태 배지 · 파일 수</div>
+  </div>
+
+  <!-- branch: 진행중 / 완료 -->
+  <div style="width:560px">
+    <svg width="560" height="50" style="display:block">
+      <line x1="280" y1="0" x2="280" y2="25" stroke="#475569" stroke-width="2"/>
+      <line x1="140" y1="25" x2="420" y2="25" stroke="#475569" stroke-width="2"/>
+      <line x1="140" y1="25" x2="140" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="133,45 147,45 140,52" fill="#f59e0b"/>
+      <text x="55" y="22" fill="#f59e0b" font-size="11" font-weight="bold">진행중 있음</text>
+      <line x1="420" y1="25" x2="420" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="413,45 427,45 420,52" fill="#64748b"/>
+      <text x="425" y="22" fill="#64748b" font-size="11" font-weight="bold">없음</text>
+    </svg>
+    <div style="display:flex; justify-content:space-between">
+      <div class="box box-yellow" style="width:200px; padding:10px">
+        <div class="box-title" style="font-size:11px">3초마다 자동 갱신</div>
+        <div class="box-sub">폴링 → 목록 재로드</div>
+      </div>
+      <div class="box box-gray" style="width:200px; padding:10px">
+        <div class="box-title" style="font-size:11px">정적 표시</div>
+      </div>
+    </div>
+  </div>
+  <div style="display:flex; flex-direction:column; align-items:center">
+    <div style="height:28px; width:2px; background:#475569"></div>
+    <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:10px solid #475569"></div>
+  </div>
+
+  <!-- 세션 상세 -->
+  <div style="width:560px; display:flex; gap:16px">
+
+    <div class="fc" style="flex:1">
+      <div class="box box-gray" style="width:100%">
+        <div class="box-title">필터 · 검색 · 정렬</div>
+        <div class="inset">
+          상태: all / active / completed / failed<br>
+          정렬: 최신 · 오래된 · 이름 · 진행률<br>
+          전문 검색: GET /api/search (OpenSearch)
+        </div>
+      </div>
+    </div>
+
+    <div class="fc" style="flex:1">
+      <div class="box box-gray" style="width:100%">
+        <div class="box-title">세션 클릭 → 문서 목록</div>
+        <div class="inset">
+          status · progress · 파일명<br>
+          <br>
+          ✅ 완료 → 에디터 열기<br>
+          ✅ 완료 → PDF 다운로드<br>
+          ❌ 실패 → 재처리
+        </div>
+      </div>
+    </div>
+
+    <div class="fc" style="flex:1">
+      <div class="box box-red" style="width:100%">
+        <div class="box-title">대량 작업</div>
+        <div class="inset">
+          실패 세션 일괄 삭제<br>
+          빈 세션 일괄 삭제<br>
+          선택 세션 삭제<br>
+          DELETE /api/sessions/{id}
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     TAB 4: 마스킹 처리
+════════════════════════════════════════════════════════ -->
+<div class="content" id="tab4">
+<div class="page-title">🔴 마스킹 처리 (PII 자동 감지) <span>backend/api/masking.py · backend/core/pii_extractor.py</span></div>
+<div class="fc">
+
+  <div class="box box-purple wide" style="max-width:540px">
+    <div class="box-title">OCR 파이프라인 완료</div>
+    <div class="box-sub">텍스트 인식 결과 { pages, lines, text, bbox, conf }</div>
+  </div>
+  <div class="arrow-d" style="height:36px"><div class="line"></div><div class="head"></div></div>
+
+  <div class="box box-red wide" style="max-width:540px">
+    <div class="box-title">PII 추출 엔진</div>
+    <div class="box-sub">pii_extractor.extract_pii_from_pages()</div>
+  </div>
+
+  <!-- PII 6종 branch -->
+  <div style="width:680px">
+    <svg width="680" height="50" style="display:block">
+      <line x1="340" y1="0" x2="340" y2="25" stroke="#475569" stroke-width="2"/>
+      <line x1="60" y1="25" x2="620" y2="25" stroke="#475569" stroke-width="2"/>
+      <line x1="60"  y1="25" x2="60"  y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="53,45 67,45 60,52" fill="#ef4444"/>
+      <line x1="172" y1="25" x2="172" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="165,45 179,45 172,52" fill="#ef4444"/>
+      <line x1="284" y1="25" x2="284" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="277,45 291,45 284,52" fill="#ef4444"/>
+      <line x1="396" y1="25" x2="396" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="389,45 403,45 396,52" fill="#ef4444"/>
+      <line x1="508" y1="25" x2="508" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="501,45 515,45 508,52" fill="#ef4444"/>
+      <line x1="620" y1="25" x2="620" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="613,45 627,45 620,52" fill="#ef4444"/>
+    </svg>
+    <div style="display:flex; justify-content:space-between; gap:4px">
+      <div class="box box-red" style="width:100px;padding:8px;font-size:11px"><div class="bold">👤 NAME</div><div style="font-size:10px;color:#fca5a5">이름</div></div>
+      <div class="box box-red" style="width:100px;padding:8px;font-size:11px"><div class="bold">📞 PHONE</div><div style="font-size:10px;color:#fca5a5">전화번호</div></div>
+      <div class="box box-red" style="width:100px;padding:8px;font-size:11px"><div class="bold">🪪 RRN</div><div style="font-size:10px;color:#fca5a5">주민등록번호</div></div>
+      <div class="box box-red" style="width:100px;padding:8px;font-size:11px"><div class="bold">📧 EMAIL</div><div style="font-size:10px;color:#fca5a5">이메일</div></div>
+      <div class="box box-red" style="width:100px;padding:8px;font-size:11px"><div class="bold">🏦 ACCOUNT</div><div style="font-size:10px;color:#fca5a5">계좌번호</div></div>
+      <div class="box box-red" style="width:100px;padding:8px;font-size:11px"><div class="bold">📍 ADDRESS</div><div style="font-size:10px;color:#fca5a5">주소</div></div>
+    </div>
+  </div>
+
+  <!-- merge -->
+  <div style="width:680px">
+    <svg width="680" height="44" style="display:block">
+      <line x1="60"  y1="0" x2="60"  y2="22" stroke="#475569" stroke-width="2"/>
+      <line x1="172" y1="0" x2="172" y2="22" stroke="#475569" stroke-width="2"/>
+      <line x1="284" y1="0" x2="284" y2="22" stroke="#475569" stroke-width="2"/>
+      <line x1="396" y1="0" x2="396" y2="22" stroke="#475569" stroke-width="2"/>
+      <line x1="508" y1="0" x2="508" y2="22" stroke="#475569" stroke-width="2"/>
+      <line x1="620" y1="0" x2="620" y2="22" stroke="#475569" stroke-width="2"/>
+      <line x1="60" y1="22" x2="620" y2="22" stroke="#475569" stroke-width="2"/>
+      <line x1="340" y1="22" x2="340" y2="42" stroke="#475569" stroke-width="2"/>
+      <polygon points="333,39 347,39 340,46" fill="#475569"/>
+    </svg>
+  </div>
+
+  <div class="box box-gray wide" style="max-width:540px">
+    <div class="box-title">바운딩 박스 좌표 추출 + 마스킹 값 생성</div>
+    <div class="box-sub">mask_value() → 원본값 : 마스킹값 매핑</div>
+    <div class="inset">홍길동 → ●●● &nbsp;|&nbsp; 010-1234-5678 → 010-●●●●-●●●●</div>
+  </div>
+  <div class="arrow-d" style="height:36px"><div class="line"></div><div class="head"></div></div>
+
+  <div class="box box-gray wide" style="max-width:540px">
+    <div class="box-title">PII 데이터 저장</div>
+    <div class="box-sub">POST /api/masking/{jobId} → {jobId}_pii.json · PIIRecord DB 기록</div>
+  </div>
+  <div class="arrow-d" style="height:36px"><div class="line"></div><div class="head"></div></div>
+
+  <div class="box box-red wide" style="max-width:540px">
+    <div class="box-title">마스킹 PDF 생성</div>
+    <div class="box-sub">GET /api/masking/{jobId}/detect</div>
+    <div class="inset">PDF 페이지에 빨간 사각형 오버레이<br>마스킹 텍스트 삽입 (원본 폰트 유지)<br>deflate 압축 · garbage 최적화</div>
+  </div>
+  <div class="arrow-d" style="height:36px"><div class="line"></div><div class="head"></div></div>
+
+  <div class="box box-green wide" style="max-width:540px">
+    <div class="box-title">마스킹 PDF 제공</div>
+    <div class="box-sub">GET /api/masking/{jobId}/download → {jobId}_masked.pdf<br>DownloadHistory 기록 (IP · 시각 · 사용자)</div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     TAB 5: 이력관리
+════════════════════════════════════════════════════════ -->
+<div class="content" id="tab5">
+<div class="page-title">📂 이력관리 <span>/history</span></div>
+<div class="fc">
+
+  <div class="box box-blue wide" style="max-width:700px">
+    <div class="box-title">이력관리 진입 /history</div>
+  </div>
+
+  <!-- 3-tab branch -->
+  <div style="width:700px">
+    <svg width="700" height="50" style="display:block">
+      <line x1="350" y1="0" x2="350" y2="25" stroke="#475569" stroke-width="2"/>
+      <line x1="120" y1="25" x2="580" y2="25" stroke="#475569" stroke-width="2"/>
+      <line x1="120" y1="25" x2="120" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="113,45 127,45 120,52" fill="#3b82f6"/>
+      <line x1="350" y1="25" x2="350" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="343,45 357,45 350,52" fill="#3b82f6"/>
+      <line x1="580" y1="25" x2="580" y2="48" stroke="#475569" stroke-width="2"/>
+      <polygon points="573,45 587,45 580,52" fill="#3b82f6"/>
+    </svg>
+    <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start">
+
+      <!-- 버전 탭 -->
+      <div class="fc" style="width:210px">
+        <div class="box box-blue" style="width:100%; padding:10px">
+          <div class="box-title" style="font-size:12px">📁 파일 버전 탭</div>
+        </div>
+        <div class="arrow-d" style="height:24px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-sub">GET /api/history/versions<br>?user_id={userId}</div>
+        </div>
+        <div class="arrow-d" style="height:24px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-sub">
+            버전 목록<br>
+            version_number · label<br>
+            파일크기 · 날짜 · 파일타입
+          </div>
+        </div>
+        <div class="arrow-d" style="height:24px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-sub">
+            보기 · 다운로드<br>
+            레이블/노트 수정<br>
+            PATCH /api/history/versions/{id}<br>
+            <br>
+            새 버전 분기<br>
+            POST /api/history/versions<br>
+            <br>
+            삭제<br>
+            DELETE /api/history/versions/{id}
+          </div>
+        </div>
+      </div>
+
+      <!-- 다운로드 탭 -->
+      <div class="fc" style="width:210px">
+        <div class="box box-blue" style="width:100%; padding:10px">
+          <div class="box-title" style="font-size:12px">⬇️ 다운로드 기록 탭</div>
+        </div>
+        <div class="arrow-d" style="height:24px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-sub">GET /api/history/downloads<br>?user_id={userId}</div>
+        </div>
+        <div class="arrow-d" style="height:24px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-sub">
+            다운로드 기록<br>
+            filename · file_type<br>
+            downloaded_at<br>
+            ip_address · user_id
+          </div>
+        </div>
+        <div class="arrow-d" style="height:24px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-red" style="width:100%; padding:10px">
+          <div class="box-sub">기록 삭제<br>DELETE /api/history/downloads</div>
+        </div>
+      </div>
+
+      <!-- 마스킹 탭 -->
+      <div class="fc" style="width:220px">
+        <div class="box box-blue" style="width:100%; padding:10px">
+          <div class="box-title" style="font-size:12px">🔴 마스킹 기록 탭</div>
+        </div>
+        <div class="arrow-d" style="height:24px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-sub">GET /api/history/masking<br>?user_id={userId}</div>
+        </div>
+        <div class="arrow-d" style="height:24px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-sub">
+            마스킹 목록<br>
+            job_id · 파일명<br>
+            처리일시 · 총 마스킹 수
+          </div>
+        </div>
+        <div class="arrow-d" style="height:24px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-sub">
+            상세 항목 보기<br>
+            NAME:5 / PHONE:3 / RRN:2
+          </div>
+        </div>
+        <div class="arrow-d" style="height:24px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-sub">
+            원본값 / 마스킹값<br>
+            페이지 번호 / 신뢰도
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     TAB 6: 메타데이터 관리
+════════════════════════════════════════════════════════ -->
+<div class="content" id="tab6">
+<div class="page-title">🏷️ 메타데이터 관리 <span>/metadata-v3 · /metadata/extraction-list</span></div>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:40px">
+
+  <!-- 왼쪽: 설정 -->
+  <div class="fc">
+    <div class="box box-blue" style="width:100%; max-width:380px">
+      <div class="box-title">추출 설정 진입 /metadata-v3</div>
+    </div>
+    <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+    <div class="box box-gray" style="width:100%; max-width:380px">
+      <div class="box-title">초기 데이터 로드</div>
+      <div class="inset">
+        GET /api/metadata-v3/categories<br>
+        GET /api/metadata-v3/custom-fields<br>
+        GET /api/metadata-v3/masking-rules
+      </div>
+    </div>
+    <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+    <div class="box box-teal" style="width:100%; max-width:380px">
+      <div class="box-title">시각적 그리드 에디터</div>
+      <div class="box-sub">행 = 문서 유형 &nbsp;|&nbsp; 열 = 추출 필드<br>체크박스로 추출 여부 ON/OFF</div>
+    </div>
+    <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+
+    <!-- 2-col: 문서유형 / 추출필드 -->
+    <div style="display:flex; gap:12px; width:100%; max-width:380px">
+      <div class="fc" style="flex:1">
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-title" style="font-size:12px">문서 유형 관리</div>
+          <div class="box-sub">
+            기본 유형<br>
+            공문서 / 계약서 / 보고서<br>
+            학술논문 / 법령문서 / 회의록<br>
+            영수증 / 신분증 / 기타
+          </div>
+        </div>
+        <div class="arrow-d" style="height:20px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-green" style="width:100%; padding:8px">
+          <div class="box-sub" style="font-size:11px">커스텀 추가<br>POST /api/metadata-v3/categories</div>
+        </div>
+        <div class="arrow-d" style="height:20px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-red" style="width:100%; padding:8px">
+          <div class="box-sub" style="font-size:11px">삭제<br>DELETE /api/metadata-v3/categories/{id}</div>
+        </div>
+      </div>
+      <div class="fc" style="flex:1">
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-title" style="font-size:12px">추출 필드 관리</div>
+          <div class="box-sub">
+            기본 필드<br>
+            title / date / amount<br>
+            vendor / address / person
+          </div>
+        </div>
+        <div class="arrow-d" style="height:20px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-green" style="width:100%; padding:8px">
+          <div class="box-sub" style="font-size:11px">커스텀 추가<br>POST /api/metadata-v3/custom-fields<br>{ label, pattern(regex) }</div>
+        </div>
+        <div class="arrow-d" style="height:20px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-red" style="width:100%; padding:8px">
+          <div class="box-sub" style="font-size:11px">삭제<br>DELETE /api/metadata-v3/custom-fields/{id}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+    <div class="box box-green" style="width:100%; max-width:380px">
+      <div class="box-title">추출 규칙 저장</div>
+      <div class="box-sub">POST /api/metadata-v3/masking-rules<br>{ doc_type, field_keys[] }</div>
+    </div>
+    <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+    <div class="box box-purple" style="width:100%; max-width:380px">
+      <div class="box-title">OCR 처리 시 규칙 자동 적용</div>
+      <div class="box-sub">문서 유형별 메타데이터 자동 추출</div>
+    </div>
+  </div>
+
+  <!-- 오른쪽: 추출 결과 목록 -->
+  <div class="fc">
+    <div class="box box-blue" style="width:100%; max-width:380px">
+      <div class="box-title">추출 결과 목록 /metadata/extraction-list</div>
+    </div>
+    <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+    <div class="box box-gray" style="width:100%; max-width:380px">
+      <div class="box-title">문서 목록 로드</div>
+      <div class="box-sub">GET /api/metadata-v3/documents?user_id={userId}</div>
+    </div>
+    <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+    <div class="box box-teal" style="width:100%; max-width:380px">
+      <div class="box-title">추출 결과 표시</div>
+      <div class="box-sub">문서별 필드값 · 신뢰도 스코어</div>
+      <div class="inset">
+        title: "계약서_2024.pdf"<br>
+        date: "2024-01-15" (conf: 0.95)<br>
+        amount: "10,000,000원" (conf: 0.88)<br>
+        vendor: "주식회사 ABC" (conf: 0.92)
+      </div>
+    </div>
+    <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+    <div class="box box-gray" style="width:100%; max-width:380px">
+      <div class="box-title">필터 · 검색</div>
+      <div class="inset">
+        문서 유형 · 추출 필드<br>
+        신뢰도 범위 · 날짜 범위
+      </div>
+    </div>
+    <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+    <div class="box box-blue" style="width:100%; max-width:380px">
+      <div class="box-title">수동 편집</div>
+      <div class="box-sub">추출값 수정 · 노트 추가 · 태그 지정</div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     TAB 7: 통계 & 관리자
+════════════════════════════════════════════════════════ -->
+<div class="content" id="tab7">
+<div class="page-title">📊 통계 & 🔧 관리자</div>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:40px">
+
+  <!-- 통계 -->
+  <div class="fc">
+    <div class="box box-blue" style="width:100%; max-width:380px">
+      <div class="box-title">통계 대시보드 /statistics</div>
+    </div>
+    <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+    <div class="box box-gray" style="width:100%; max-width:380px">
+      <div class="box-title">데이터 로드</div>
+      <div class="inset">
+        GET /api/jobs/statistics<br>
+        GET /api/jobs/statistics/sessions<br>
+        GET /api/jobs/statistics/summary
+      </div>
+    </div>
+    <div class="arrow-d" style="height:32px"><div class="line"></div><div class="head"></div></div>
+    <div class="box box-teal" style="width:100%; max-width:380px">
+      <div class="box-title">대시보드 렌더링</div>
+    </div>
+    <div class="arrow-d" style="height:24px"><div class="line"></div><div class="head"></div></div>
+    <div style="display:flex; flex-direction:column; gap:8px; width:100%; max-width:380px">
+      <div class="box box-gray" style="width:100%; padding:10px">
+        <div class="box-sub">🍩 도넛 차트 — 문서 유형 분포</div>
+      </div>
+      <div class="box box-gray" style="width:100%; padding:10px">
+        <div class="box-sub">⚡ 성공률 게이지 — 완료 / 전체 비율</div>
+      </div>
+      <div class="box box-gray" style="width:100%; padding:10px">
+        <div class="box-sub">🏆 TOP 5 세션 랭킹 — 처리량 기준</div>
+      </div>
+      <div class="box box-gray" style="width:100%; padding:10px">
+        <div class="box-sub">📈 시계열 차트 — 일별 처리량</div>
+      </div>
+      <div class="box box-gray" style="width:100%; padding:10px">
+        <div class="box-sub">📦 요약 카드 — 오늘 / 이번달 / 전체<br>평균 처리시간 · 실패율</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 관리자 -->
+  <div class="fc">
+    <div style="display:flex; gap:12px; width:100%; max-width:380px">
+      <div class="box box-blue" style="flex:1; padding:10px">
+        <div class="box-title" style="font-size:12px">사용자 관리 /admin/users</div>
+      </div>
+      <div class="box box-blue" style="flex:1; padding:10px">
+        <div class="box-title" style="font-size:12px">그룹 관리 /admin/groups</div>
+      </div>
+    </div>
+    <div style="display:flex; gap:12px; width:100%; max-width:380px; margin-top:0">
+      <svg width="380" height="36" style="display:block">
+        <line x1="95"  y1="0" x2="95"  y2="18" stroke="#475569" stroke-width="2"/>
+        <line x1="285" y1="0" x2="285" y2="18" stroke="#475569" stroke-width="2"/>
+        <line x1="95"  y1="18" x2="95"  y2="34" stroke="#475569" stroke-width="2"/>
+        <polygon points="88,31 102,31 95,38" fill="#475569"/>
+        <line x1="285" y1="18" x2="285" y2="34" stroke="#475569" stroke-width="2"/>
+        <polygon points="278,31 292,31 285,38" fill="#475569"/>
+      </svg>
+    </div>
+    <div style="display:flex; gap:12px; width:100%; max-width:380px">
+      <!-- 사용자 -->
+      <div class="fc" style="flex:1">
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-sub">GET /api/users<br>사용자 목록</div>
+        </div>
+        <div class="arrow-d" style="height:20px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-sub">이름 · 이메일<br>역할 · 상태</div>
+        </div>
+        <div class="arrow-d" style="height:20px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-green" style="width:100%; padding:8px">
+          <div class="box-sub" style="font-size:11px">생성<br>POST /api/users</div>
+        </div>
+        <div class="arrow-d" style="height:16px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-blue" style="width:100%; padding:8px">
+          <div class="box-sub" style="font-size:11px">수정<br>PATCH /api/users/{id}</div>
+        </div>
+        <div class="arrow-d" style="height:16px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:100%; padding:8px">
+          <div class="box-sub" style="font-size:11px">역할 변경<br>admin / user</div>
+        </div>
+        <div class="arrow-d" style="height:16px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-red" style="width:100%; padding:8px">
+          <div class="box-sub" style="font-size:11px">삭제<br>DELETE /api/users/{id}</div>
+        </div>
+      </div>
+      <!-- 그룹 -->
+      <div class="fc" style="flex:1">
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-sub">GET /api/users/groups<br>그룹 목록</div>
+        </div>
+        <div class="arrow-d" style="height:20px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-gray" style="width:100%; padding:10px">
+          <div class="box-sub">그룹명 · 멤버수 · 권한</div>
+        </div>
+        <div class="arrow-d" style="height:20px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-green" style="width:100%; padding:8px">
+          <div class="box-sub" style="font-size:11px">그룹 생성<br>POST /api/users/groups</div>
+        </div>
+        <div class="arrow-d" style="height:16px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-blue" style="width:100%; padding:8px">
+          <div class="box-sub" style="font-size:11px">멤버 추가 · 제거</div>
+        </div>
+        <div class="arrow-d" style="height:16px"><div class="line"></div><div class="head"></div></div>
+        <div class="box box-red" style="width:100%; padding:8px">
+          <div class="box-sub" style="font-size:11px">그룹 삭제<br>DELETE /api/users/groups/{id}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+const tabs = document.querySelectorAll('.tab');
+const contents = document.querySelectorAll('.content');
+function show(i) {
+  tabs.forEach((t,j) => t.classList.toggle('active', i===j));
+  contents.forEach((c,j) => c.classList.toggle('active', i===j));
+}
+document.addEventListener('keydown', e => {
+  const cur = [...tabs].findIndex(t => t.classList.contains('active'));
+  if (e.key==='ArrowRight' && cur < tabs.length-1) show(cur+1);
+  if (e.key==='ArrowLeft'  && cur > 0)             show(cur-1);
+});
+</script>
+</body>
+</html>
