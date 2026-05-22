@@ -1261,14 +1261,9 @@ def process_job_task(job_id: str):
                     sorter = get_reading_order_sorter()
 
                     if Config.USE_SMART_READING_ORDER:
-                        sorted_blocks, detected_column_info = sorter.sort_reading_order(
-                            ocr_results,
-                            page_width=width,
-                            page_height=height,
-                            use_layout_priority=bool(layout_regions)
-                        )
+                        detected_column_info = sorter._detect_columns(ocr_results, width)
                         column_info = detected_column_info or column_info
-                        ocr_results = sorter.add_column_labels(sorted_blocks, column_info, width)
+                        ocr_results = sorter.add_column_labels(ocr_results, column_info, width)
 
                     # Text-layer/UI numbering follows visual order:
                     # left-to-right within a row, then top-to-bottom.
@@ -2272,11 +2267,9 @@ async def reprocess_single_page(job_id: str, payload: dict):
     if ocr_results:
         sorter = get_reading_order_sorter()
         if Config.USE_SMART_READING_ORDER:
-            sorted_blocks, detected_col = sorter.sort_reading_order(
-                ocr_results, page_width=width, page_height=height
-            )
+            detected_col = sorter._detect_columns(ocr_results, width)
             column_info = detected_col or column_info
-            ocr_results = sorter.add_column_labels(sorted_blocks, column_info, width)
+            ocr_results = sorter.add_column_labels(ocr_results, column_info, width)
         ocr_results = sorter.sort_visual_left_to_right_top_to_bottom(ocr_results)
         for idx, blk in enumerate(ocr_results):
             blk['reading_order'] = idx
