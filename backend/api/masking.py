@@ -32,6 +32,7 @@ FIELD_KEY_TO_PII_TYPES: dict[str, set[str]] = {
     "vehicle_number":                {"CAR_NO"},
     "business_registration_number":  {"BUSINESS_REG_NO"},
     "ip_mac_address":                {"IP_ADDRESS", "MAC_ADDRESS"},
+    "person_name":                   {"NAME", "ENGLISH_NAME"},
 }
 
 logger = logging.getLogger(__name__)

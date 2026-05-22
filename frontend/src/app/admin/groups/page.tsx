@@ -90,6 +90,7 @@ const defaultFieldOptions: MaskingFieldOption[] = [
   { id: 'vehicle_number', field_key: 'vehicle_number', label: '차량번호', source: 'default' },
   { id: 'business_registration_number', field_key: 'business_registration_number', label: '사업자등록번호', source: 'default' },
   { id: 'ip_mac_address', field_key: 'ip_mac_address', label: 'IP/MAC 주소', source: 'default' },
+  { id: 'person_name', field_key: 'person_name', label: '이름', source: 'default' },
 ]
 const emptyGroupForm: GroupFormState = {
   group_key: '',
