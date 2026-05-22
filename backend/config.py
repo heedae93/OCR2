@@ -18,6 +18,7 @@ class Config:
     RAW_DIR = DATA_DIR / "raw"
     PROCESSED_DIR = DATA_DIR / "processed"
     DEBUG_DIR = DATA_DIR / "debug"
+    LOG_DIR = DATA_DIR / "logs"
     MODELS_DIR = DATA_DIR / "models"
     TEMP_DIR = DATA_DIR / "temp"
 
@@ -152,7 +153,7 @@ class Config:
     def ensure_directories(cls):
         """Create necessary directories if they don't exist"""
         for directory in [cls.RAW_DIR, cls.PROCESSED_DIR, cls.DEBUG_DIR,
-                         cls.MODELS_DIR, cls.TEMP_DIR]:
+                         cls.LOG_DIR, cls.MODELS_DIR, cls.TEMP_DIR]:
             directory.mkdir(parents=True, exist_ok=True)
 
     @classmethod
@@ -174,6 +175,30 @@ class Config:
 
         with open(yaml_path, 'r', encoding='utf-8') as f:
             config_data = yaml.safe_load(f)
+
+        if not config_data:
+            return
+
+        # Update directory settings early because later config values may depend on paths.
+        if "directories" in config_data:
+            directories = config_data["directories"] or {}
+            if directories.get("data_dir"):
+                cls.DATA_DIR = cls._resolve_path(directories["data_dir"])
+                cls.RAW_DIR = cls.DATA_DIR / "raw"
+                cls.PROCESSED_DIR = cls.DATA_DIR / "processed"
+                cls.DEBUG_DIR = cls.DATA_DIR / "debug"
+                cls.LOG_DIR = cls.DATA_DIR / "logs"
+                cls.TEMP_DIR = cls.DATA_DIR / "temp"
+            if directories.get("upload_dir"):
+                cls.RAW_DIR = cls._resolve_path(directories["upload_dir"])
+            if directories.get("output_pdf_dir"):
+                cls.PROCESSED_DIR = cls._resolve_path(directories["output_pdf_dir"])
+            if directories.get("debug_dir"):
+                cls.DEBUG_DIR = cls._resolve_path(directories["debug_dir"])
+            if directories.get("log_dir"):
+                cls.LOG_DIR = cls._resolve_path(directories["log_dir"])
+            if directories.get("temp_dir"):
+                cls.TEMP_DIR = cls._resolve_path(directories["temp_dir"])
 
         # Update GPU settings
         if "gpu" in config_data:
@@ -380,4 +405,5 @@ if _local_config.exists():
     Config.load_from_yaml(_local_config)
 if os.getenv("REDIS_URL"):
     Config.REDIS_URL = os.getenv("REDIS_URL", "").strip()
+Config.ensure_directories()
 Config.apply_tika_defaults()

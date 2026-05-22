@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { useOcrActivity } from "@/contexts/OcrActivityContext";
 
@@ -70,6 +70,7 @@ export default function Sidebar() {
     user_id?: string;
   } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
 
   const isProcessing = useMemo(
     () =>
@@ -100,6 +101,19 @@ export default function Sidebar() {
     });
   }, [pathname, user?.type]);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      sidebarScrollRef.current?.scrollTo({
+        top: sidebarScrollRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [menuOpen]);
+
   const navItems =
     user?.type === "A"
       ? [...baseNavItems, ...adminNavItems, ...bottomNavItems, helpNavItem]
@@ -118,8 +132,12 @@ export default function Sidebar() {
 
   return (
     <>
-    <aside className="fixed inset-y-0 left-0 z-[300] w-64 shrink-0 overflow-y-auto border-r border-[#334155] bg-[#1E293B] pointer-events-auto" style={{ scrollbarGutter: 'stable' }}>
-      <div className="flex flex-col gap-2 px-4 py-3">
+    <aside className="fixed inset-y-0 left-0 z-[300] h-dvh max-h-dvh w-64 shrink-0 overflow-hidden border-r border-[#334155] bg-[#1E293B] pointer-events-auto">
+      <div
+        ref={sidebarScrollRef}
+        className={`flex h-full flex-col gap-2 overflow-y-auto overscroll-contain px-4 pt-3 ${menuOpen ? 'pb-24' : 'pb-3'}`}
+        style={{ scrollbarGutter: 'stable' }}
+      >
         <Link
           href="/"
           className="group flex items-center transition-all duration-200 hover:opacity-80 shrink-0"
@@ -264,8 +282,8 @@ export default function Sidebar() {
 
           {menuOpen && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div className="absolute bottom-full left-0 right-0 mb-1.5 z-20 rounded-xl border border-[#334155] bg-[#1E293B] shadow-lg overflow-hidden">
+              <div className="pointer-events-none fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+              <div className="relative z-20 mt-2 overflow-hidden rounded-xl border border-[#334155] bg-[#1E293B] shadow-lg">
                 <button
                   type="button"
                   onClick={() => { setMenuOpen(false); router.push('/mypage'); }}

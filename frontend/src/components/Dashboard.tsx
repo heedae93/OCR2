@@ -258,7 +258,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-7rem)] flex flex-col gap-4">
+    <div className="flex min-h-[calc(100dvh-8rem)] flex-col gap-4 pb-8">
       {/* 검색 */}
       <section className="rounded-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
