@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import { useOcrActivity } from "@/contexts/OcrActivityContext";
 
@@ -70,7 +70,6 @@ export default function Sidebar() {
     user_id?: string;
   } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const sidebarScrollRef = useRef<HTMLDivElement>(null);
 
   const isProcessing = useMemo(
     () =>
@@ -101,19 +100,6 @@ export default function Sidebar() {
     });
   }, [pathname, user?.type]);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-
-    const frameId = window.requestAnimationFrame(() => {
-      sidebarScrollRef.current?.scrollTo({
-        top: sidebarScrollRef.current.scrollHeight,
-        behavior: "smooth",
-      });
-    });
-
-    return () => window.cancelAnimationFrame(frameId);
-  }, [menuOpen]);
-
   const navItems =
     user?.type === "A"
       ? [...baseNavItems, ...adminNavItems, ...bottomNavItems, helpNavItem]
@@ -131,16 +117,12 @@ export default function Sidebar() {
   };
 
   return (
-    <>
-    <aside className="fixed inset-y-0 left-0 z-[300] h-dvh max-h-dvh w-64 shrink-0 overflow-hidden border-r border-[#334155] bg-[#1E293B] pointer-events-auto">
-      <div
-        ref={sidebarScrollRef}
-        className={`flex h-full flex-col gap-2 overflow-y-auto overscroll-contain px-4 pt-3 ${menuOpen ? 'pb-24' : 'pb-3'}`}
-        style={{ scrollbarGutter: 'stable' }}
-      >
+    <aside className="fixed inset-y-0 left-0 z-[300] flex h-dvh w-64 shrink-0 flex-col overflow-hidden border-r border-[#334155] bg-[#1E293B] pointer-events-auto">
+      {/* 로고 */}
+      <div className="shrink-0 px-4 pt-3">
         <Link
           href="/"
-          className="group flex items-center transition-all duration-200 hover:opacity-80 shrink-0"
+          className="group flex items-center transition-all duration-200 hover:opacity-80"
           style={{ height: '64px' }}
         >
           <Image
@@ -151,9 +133,14 @@ export default function Sidebar() {
             className="w-full object-contain"
           />
         </Link>
+        <div className="-mx-2 mt-2 h-px bg-gradient-to-r from-transparent via-[#475569] to-transparent" />
+      </div>
 
-        <div className="-mx-2 mt-2 h-px bg-gradient-to-r from-transparent via-[#475569] to-transparent shrink-0" />
-
+      {/* 스크롤 가능한 nav 영역 */}
+      <div
+        className="flex-1 overflow-y-auto overscroll-contain px-4 py-2"
+        style={{ scrollbarGutter: 'stable' }}
+      >
         <nav className="flex flex-col gap-1 mt-2">
           {navItems.map((item) => {
             const hasChildren = Boolean(item.children?.length);
@@ -258,32 +245,17 @@ export default function Sidebar() {
             );
           })}
         </nav>
+      </div>
 
-        <div className="-mx-2 mt-2 h-px bg-gradient-to-r from-transparent via-[#475569] to-transparent" />
-
-        {/* 사용자 정보 */}
+      {/* 하단 고정 계정 정보 */}
+      <div className="shrink-0 px-4 pb-3">
+        <div className="-mx-2 mb-3 h-px bg-gradient-to-r from-transparent via-[#475569] to-transparent" />
         <div className="relative rounded-xl border border-[#334155] bg-[#0F172A] p-3">
-          <button
-            type="button"
-            onClick={() => setMenuOpen(v => !v)}
-            className="flex w-full items-center gap-2.5 hover:opacity-80 transition-opacity"
-          >
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center text-white text-sm font-bold shadow-sm shrink-0">
-              {(user?.name || user?.username || 'U')[0].toUpperCase()}
-            </div>
-            <div className="flex-1 min-w-0 text-left">
-              <p className="text-sm font-semibold text-[#F1F5F9] truncate">{user?.name || user?.username || '사용자'}</p>
-              <p className="text-[11px] text-[#64748B] truncate">{user?.username || ''}</p>
-            </div>
-            <span className={`material-symbols-outlined text-sm text-[#64748B] transition-transform duration-200 ${menuOpen ? 'rotate-180' : ''}`}>
-              expand_more
-            </span>
-          </button>
-
+          {/* 드롭업 메뉴 */}
           {menuOpen && (
             <>
-              <div className="pointer-events-none fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div className="relative z-20 mt-2 overflow-hidden rounded-xl border border-[#334155] bg-[#1E293B] shadow-lg">
+              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+              <div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border border-[#334155] bg-[#1E293B] shadow-lg">
                 <button
                   type="button"
                   onClick={() => { setMenuOpen(false); router.push('/mypage'); }}
@@ -303,9 +275,25 @@ export default function Sidebar() {
               </div>
             </>
           )}
+
+          <button
+            type="button"
+            onClick={() => setMenuOpen(v => !v)}
+            className="flex w-full items-center gap-2.5 hover:opacity-80 transition-opacity"
+          >
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center text-white text-sm font-bold shadow-sm shrink-0">
+              {(user?.name || user?.username || 'U')[0].toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <p className="text-sm font-semibold text-[#F1F5F9] truncate">{user?.name || user?.username || '사용자'}</p>
+              <p className="text-[11px] text-[#64748B] truncate">{user?.username || ''}</p>
+            </div>
+            <span className={`material-symbols-outlined text-sm text-[#64748B] transition-transform duration-200 ${menuOpen ? 'rotate-180' : ''}`}>
+              expand_more
+            </span>
+          </button>
         </div>
       </div>
     </aside>
-    </>
   );
 }
