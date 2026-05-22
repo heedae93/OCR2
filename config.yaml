@@ -99,10 +99,11 @@ gpu:
 # ──────────────────────────────────────────────────────────────────────────────
 directories:
   input_image_dir: "" # 입력 이미지 (비워두면 업로드만 사용)
-  upload_dir: "data/raw" # 사용자 업로드 파일
-  output_pdf_dir: "data/processed" # OCR 처리 결과 PDF
-  log_dir: "data/logs" # 애플리케이션 로그
-  debug_dir: "data/debug" # 디버그 시각화 이미지
+  upload_dir: "\\\\192.168.0.231\\D\\bbocr_shared\\raw" # 사용자 업로드 파일
+  output_pdf_dir: "\\\\192.168.0.231\\D\\bbocr_shared\\processed" # OCR 처리 결과 PDF
+  log_dir: "\\\\192.168.0.231\\D\\bbocr_shared\\logs" # 애플리케이션 로그
+  debug_dir: "\\\\192.168.0.231\\D\\bbocr_shared\\debug" # 디버그 시각화 이미지
+  temp_dir: "\\\\192.168.0.231\\D\\bbocr_shared\\temp" # 임시 파일/작업 상태
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  4. 폰트 설정
