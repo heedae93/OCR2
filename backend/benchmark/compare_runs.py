@@ -71,6 +71,23 @@ def compare(results: List[Dict]):
         o = r["overall"]
         return f"{o['tp']}/{o['fp']}/{o['fn']}"
     row("[전체] TP/FP/FN",  [tp_fp_fn(r) for r in results])
+
+    def _fmt_t(r):
+        t = r.get("timing", {})
+        s = t.get("total_elapsed_seconds")
+        if s is None:
+            return "N/A"
+        if s < 60:
+            return f"{s:.1f}s"
+        m, sec = divmod(s, 60)
+        return f"{int(m)}m{sec:.0f}s"
+
+    if any(r.get("timing") for r in results):
+        row("[소요시간] 전체",  [_fmt_t(r) for r in results])
+        avg_vals = [r.get("timing", {}).get("avg_elapsed_seconds") for r in results]
+        if any(v is not None for v in avg_vals):
+            row("[소요시간] 케이스평균", [f"{v:.2f}s" if v is not None else "N/A" for v in avg_vals])
+
     print(dash)
 
     # ── 타입별 F1 ─────────────────────────────────────────────

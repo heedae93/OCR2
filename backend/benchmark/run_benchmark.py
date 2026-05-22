@@ -17,6 +17,7 @@ import sys
 import io
 import json
 import re
+import time
 import logging
 import argparse
 import contextlib
@@ -77,7 +78,9 @@ def _run_extractor(ocr_pages: list, suppress: bool) -> list:
 
 def evaluate_case(case: Dict, suppress: bool = True) -> Dict:
     ground_truth = case["ground_truth"]
+    t0 = time.perf_counter()
     predictions  = _run_extractor(case["ocr_pages"], suppress)
+    elapsed = time.perf_counter() - t0
 
     # type+value 기준으로 중복 제거 (같은 PII가 여러 페이지에 있어도 "찾았냐"만 판단)
     def _dedup(items):
@@ -128,6 +131,7 @@ def evaluate_case(case: Dict, suppress: bool = True) -> Dict:
         "tags":        case.get("tags", []),
         "metrics":     _compute_metrics(tp, len(fp_items), len(fn_items)),
         "by_type":     by_type,
+        "elapsed_seconds": round(elapsed, 3),
         "false_positives": [{"type": x["type"], "value": x["value"]} for x in fp_items],
         "false_negatives": [{"type": x.get("type"), "value": x.get("value")} for x in fn_items],
     }
@@ -159,13 +163,24 @@ def _aggregate(case_results: List[Dict]) -> Tuple[Dict, Dict]:
 # ── 출력 ───────────────────────────────────────────────────────
 
 
+def _fmt_time(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    m, s = divmod(seconds, 60)
+    return f"{int(m)}m {s:.1f}s"
+
+
 def _print_summary(result: Dict):
     o = result["overall"]
+    t = result.get("timing", {})
     sep  = "=" * 65
     dash = "─" * 65
     print(f"\n{sep}")
     print(f"  벤치마크 결과: {result['label']}")
     print(f"  일시: {result['timestamp']}")
+    if t:
+        print(f"  소요시간: 총 {_fmt_time(t['total_elapsed_seconds'])}"
+              f"  (케이스당 평균 {_fmt_time(t['avg_elapsed_seconds'])})")
     print(f"{sep}")
     print(f"  전체  P={o['precision']:.3f}  R={o['recall']:.3f}  F1={o['f1']:.3f}"
           f"  (TP={o['tp']} FP={o['fp']} FN={o['fn']})")
@@ -187,7 +202,8 @@ def _print_summary(result: Dict):
         m   = c["metrics"]
         tag = " ".join(f"[{t}]" for t in c.get("tags", []))
         f1_bar = "█" * int(m["f1"] * 10) + "░" * (10 - int(m["f1"] * 10))
-        print(f"  {c['case_id']:<35} F1={m['f1']:.3f} {f1_bar}  {tag}")
+        elapsed_str = f"  {_fmt_time(c['elapsed_seconds'])}" if "elapsed_seconds" in c else ""
+        print(f"  {c['case_id']:<35} F1={m['f1']:.3f} {f1_bar}{elapsed_str}  {tag}")
         for fp_item in c["false_positives"]:
             print(f"       오탐(FP): [{fp_item['type']}] '{fp_item['value']}'")
         for fn_item in c["false_negatives"]:
@@ -233,9 +249,11 @@ def main():
 
     print(f"케이스 {len(cases)}개 로드. 평가 시작...")
     case_results = []
+    run_t0 = time.perf_counter()
     for case in cases:
         print(f"  평가 중: {case['id']}  - {case.get('description', '')}")
         case_results.append(evaluate_case(case, suppress=not args.verbose))
+    total_elapsed = time.perf_counter() - run_t0
 
     overall, by_type = _aggregate(case_results)
 
@@ -244,6 +262,7 @@ def main():
     label  = args.label or run_id
     safe_label = re.sub(r"[^\w가-힣]", "_", label)
 
+    case_count = len(case_results)
     result = {
         "run_id":    run_id,
         "timestamp": ts.isoformat(),
@@ -252,6 +271,11 @@ def main():
             "ner_enabled":     not args.no_ner and KOBERT_NER_AVAILABLE,
             "active_patterns": active_patterns,
             "note": "ACCOUNT_NO 정규식 제거됨 (날짜/사업자번호 오탐 방지)" if not active_patterns.get("ACCOUNT_NO") else "",
+        },
+        "timing": {
+            "total_elapsed_seconds": round(total_elapsed, 3),
+            "avg_elapsed_seconds":   round(total_elapsed / case_count, 3) if case_count else 0.0,
+            "case_count":            case_count,
         },
         "overall":  overall,
         "by_type":  by_type,
