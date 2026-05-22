@@ -1,6 +1,7 @@
 """
 SQLite database setup and models using SQLAlchemy
 """
+import json
 from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, text, inspect, JSON, ARRAY
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -441,13 +442,21 @@ def init_db():
         # Create default user if not exists
         db = SessionLocal()
         try:
+            _ALL_PII_FIELD_KEYS = json.dumps([
+                "resident_registration_number", "passport_number",
+                "drivers_license_number", "foreigner_registration_number",
+                "phone_number", "bank_account_number", "credit_card_number",
+                "health_insurance_number", "road_name_address", "email_address",
+                "vehicle_number", "business_registration_number", "ip_mac_address",
+            ], ensure_ascii=False)
+
             default_groups = [
                 {
                     "group_key": "default",
                     "group_name": "기본 그룹",
                     "description": "기본 사용자 그룹",
                     "masking_access_level": "masked",
-                    "masking_field_keys": '["title","date","amount","vendor","address","person"]',
+                    "masking_field_keys": _ALL_PII_FIELD_KEYS,
                     "is_system": True,
                 },
                 {
@@ -455,7 +464,7 @@ def init_db():
                     "group_name": "관리자 그룹",
                     "description": "관리자 및 원본 열람 가능 그룹",
                     "masking_access_level": "original",
-                    "masking_field_keys": '["title","date","amount","vendor","address","person"]',
+                    "masking_field_keys": _ALL_PII_FIELD_KEYS,
                     "is_system": True,
                 },
             ]
@@ -480,7 +489,7 @@ def init_db():
                         group_name=existing_user.permission_group,
                         description="기존 사용자 데이터에서 자동 생성된 그룹",
                         masking_access_level=existing_user.masking_access_level or "masked",
-                        masking_field_keys='["title","date","amount","vendor","address","person"]',
+                        masking_field_keys=_ALL_PII_FIELD_KEYS,
                         is_system=False,
                     ))
                     known_groups.add(existing_user.permission_group)

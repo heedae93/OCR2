@@ -230,9 +230,12 @@ export default function EditorPage() {
 
           // OCR 완료 시 자동으로 PII 감지 + 마스킹 PDF 기본 표시
           try {
-            const res = await fetch(
-              `${API_BASE_URL}/api/masking/${jobId}/detect`,
-            );
+            let uid = ''
+            try { uid = JSON.parse(localStorage.getItem('user') || '{}').user_id || '' } catch {}
+            const detectUrl = uid
+              ? `${API_BASE_URL}/api/masking/${jobId}/detect?user_id=${encodeURIComponent(uid)}`
+              : `${API_BASE_URL}/api/masking/${jobId}/detect`
+            const res = await fetch(detectUrl);
             if (res.ok) {
               const data = await res.json();
               setMaskingData(data.masked_boxes || []);

@@ -7,15 +7,32 @@ import io
 import os as _os
 
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Set
 
 import re as _re
 import fitz
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session as DBSession
 from database import get_db
 from config import Config
+
+# permission_groups.masking_field_keys 값 → 내부 PII 타입 매핑
+FIELD_KEY_TO_PII_TYPES: dict[str, set[str]] = {
+    "resident_registration_number":  {"RRN"},
+    "passport_number":               {"PASSPORT_NO"},
+    "drivers_license_number":        {"DRIVERS_LICENSE"},
+    "foreigner_registration_number": {"FOREIGNER_REG_NO"},
+    "phone_number":                  {"PHONE"},
+    "bank_account_number":           {"ACCOUNT_NO"},
+    "credit_card_number":            {"CREDIT_CARD"},
+    "health_insurance_number":       {"HEALTH_INSURANCE_NO"},
+    "road_name_address":             {"ROAD_ADDRESS"},
+    "email_address":                 {"EMAIL"},
+    "vehicle_number":                {"CAR_NO"},
+    "business_registration_number":  {"BUSINESS_REG_NO"},
+    "ip_mac_address":                {"IP_ADDRESS", "MAC_ADDRESS"},
+}
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +201,43 @@ def _enrich_boxes_with_font_info(pdf_path: Path, boxes: list, ocr_data: dict) ->
         doc.close()
     except: pass
 
+def _get_allowed_pii_types(user_id: str, db: DBSession) -> tuple[Optional[Set[str]], str]:
+    """
+    사용자의 permission_group → masking_field_keys → (내부 PII 타입 집합, group_key) 반환.
+    masking_field_keys가 비어 있으면 (None, group_key) 반환 (제한 없음 → 전체 마스킹).
+    """
+    from database import User, PermissionGroup
+
+    user = db.query(User).filter_by(user_id=user_id).first()
+    group_key = "default"
+    if user:
+        group_key = (user.permission_group or "default").strip() or "default"
+
+    group = db.query(PermissionGroup).filter_by(group_key=group_key).first()
+    if not group:
+        return None, group_key
+
+    try:
+        field_keys: list = json.loads(group.masking_field_keys or "[]")
+    except (json.JSONDecodeError, TypeError):
+        field_keys = []
+
+    if not field_keys:
+        return None, group_key  # 제한 없음 → 전체 마스킹
+
+    allowed: Set[str] = set()
+    for key in field_keys:
+        allowed.update(FIELD_KEY_TO_PII_TYPES.get(key, set()))
+    return allowed, group_key
+
+
+def _filter_boxes_by_permission(boxes: list, allowed_types: Optional[Set[str]]) -> list:
+    """allowed_types 에 포함된 PII 타입만 반환. None이면 전체 반환."""
+    if allowed_types is None:
+        return list(boxes)
+    return [b for b in boxes if b.get("type") in allowed_types]
+
+
 def _save_pii_record_to_db(db: DBSession, job_id: str, pii_data: dict) -> None:
     """PII 마스킹 결과를 DB에 저장하거나 업데이트합니다."""
     try:
@@ -214,47 +268,114 @@ def _save_pii_record_to_db(db: DBSession, job_id: str, pii_data: dict) -> None:
         db.rollback()
 
 @router.get("/{job_id}/detect")
-async def detect_pii(job_id: str, db: DBSession = Depends(get_db)):
+async def detect_pii(
+    job_id: str,
+    user_id: str = Query(default="default"),
+    db: DBSession = Depends(get_db),
+):
+    # job 소유자 기준으로 user_id 결정 (명시적 파라미터가 없으면 job owner 사용)
+    from database import Job, PIIRecord
+    job = db.query(Job).filter_by(job_id=job_id).first()
+    effective_user_id = (job.user_id if job and job.user_id else None) or user_id
+
+    allowed_types, _group_key = _get_allowed_pii_types(effective_user_id, db)
+
     pii_path = Config.PROCESSED_DIR / f"{job_id}_pii.json"
     if pii_path.exists():
-        with open(pii_path, "r", encoding="utf-8") as f: cached = json.load(f)
-        cached["masked_boxes"] = [b for b in cached.get("masked_boxes", []) if b.get("masked_value") != b.get("value")]
-        cached["pii_items"] = [item for item in cached.get("pii_items", []) if item.get("masked_value") != item.get("value")]
+        with open(pii_path, "r", encoding="utf-8") as f:
+            cached = json.load(f)
+
+        # all_boxes: 마스킹 값이 변경된 전체 PII (권한 필터 전)
+        all_boxes = cached.get("all_boxes") or cached.get("masked_boxes", [])
+        filtered = _filter_boxes_by_permission(all_boxes, allowed_types)
+        cached["masked_boxes"] = filtered
+        cached["pii_items"] = [
+            {"type": b["type"], "value": b["value"], "masked_value": b["masked_value"]}
+            for b in filtered
+        ]
+
         _ensure_masked_pdf(job_id, cached)
-        # OCR 워커가 이미 저장했을 경우 중복 저장 방지, 미저장 시 fallback
-        from database import PIIRecord
-        if not db.query(PIIRecord).filter(PIIRecord.job_id == job_id).first():
-            _save_pii_record_to_db(db, job_id, cached)
+        _save_pii_record_to_db(db, job_id, cached)
         return cached
 
     from core.pii_extractor import extract_pii_from_pages, mask_value
     ocr_data = _load_ocr(job_id)
-    if not ocr_data: raise HTTPException(status_code=404, detail="OCR not found")
+    if not ocr_data:
+        raise HTTPException(status_code=404, detail="OCR not found")
+
     pii_boxes = extract_pii_from_pages(ocr_data.get("pages", []))
-    for box in pii_boxes: box["masked_value"] = mask_value(box["type"], box["value"])
-    pii_boxes = [b for b in pii_boxes if b.get("masked_value") != b.get("value")]
-    pii_items = [{"type": b["type"], "value": b["value"], "masked_value": b["masked_value"]} for b in pii_boxes]
-    _enrich_boxes_with_font_info(Config.PROCESSED_DIR / f"{job_id}.pdf", pii_boxes, ocr_data)
-    result = {"job_id": job_id, "pii_items": pii_items, "masked_boxes": pii_boxes}
-    with open(pii_path, "w", encoding="utf-8") as f: json.dump(result, f, ensure_ascii=False, indent=2)
+    for box in pii_boxes:
+        box["masked_value"] = mask_value(box["type"], box["value"])
+    # 실제로 마스킹이 적용된 항목만 보관 (원본과 동일한 값은 제외)
+    all_boxes = [b for b in pii_boxes if b.get("masked_value") != b.get("value")]
+
+    _enrich_boxes_with_font_info(Config.PROCESSED_DIR / f"{job_id}.pdf", all_boxes, ocr_data)
+
+    # 권한 필터 적용
+    filtered = _filter_boxes_by_permission(all_boxes, allowed_types)
+    pii_items = [
+        {"type": b["type"], "value": b["value"], "masked_value": b["masked_value"]}
+        for b in filtered
+    ]
+
+    # 캐시에는 전체(all_boxes) 저장 → 나중에 권한이 바뀌어도 재추출 불필요
+    cache_data = {
+        "job_id": job_id,
+        "all_boxes": all_boxes,
+        "pii_items": pii_items,
+        "masked_boxes": filtered,
+    }
+    with open(pii_path, "w", encoding="utf-8") as f:
+        json.dump(cache_data, f, ensure_ascii=False, indent=2)
+
+    result = {"job_id": job_id, "pii_items": pii_items, "masked_boxes": filtered}
     _ensure_masked_pdf(job_id, result)
     _save_pii_record_to_db(db, job_id, result)
     return result
 
 @router.get("/{job_id}/download")
-async def download_masked_pdf(job_id: str, inline: bool = False):
+async def download_masked_pdf(
+    job_id: str,
+    inline: bool = False,
+    user_id: str = Query(default="default"),
+    db: DBSession = Depends(get_db),
+):
     pii_path = Config.PROCESSED_DIR / f"{job_id}_pii.json"
-    if not pii_path.exists(): raise HTTPException(status_code=404, detail="PII not found")
+    if not pii_path.exists():
+        raise HTTPException(status_code=404, detail="PII not found")
 
-    masked_pdf_path = Config.PROCESSED_DIR / f"{job_id}_masked.pdf"
-    if masked_pdf_path.exists():
-        masked_pdf_bytes = masked_pdf_path.read_bytes()
+    # job 소유자 기준 user_id 결정
+    from database import Job
+    job = db.query(Job).filter_by(job_id=job_id).first()
+    effective_user_id = (job.user_id if job and job.user_id else None) or user_id
+    allowed_types, group_key = _get_allowed_pii_types(effective_user_id, db)
+
+    # 그룹별 캐시 파일: {job_id}_masked_{group_key}.pdf
+    cached_pdf_path = Config.PROCESSED_DIR / f"{job_id}_masked_{group_key}.pdf"
+    if cached_pdf_path.exists():
+        masked_pdf_bytes = cached_pdf_path.read_bytes()
     else:
-        with open(pii_path, "r", encoding="utf-8") as f: pii_data = json.load(f)
+        with open(pii_path, "r", encoding="utf-8") as f:
+            pii_data = json.load(f)
+
+        all_boxes = pii_data.get("all_boxes") or pii_data.get("masked_boxes", [])
+        boxes = _filter_boxes_by_permission(all_boxes, allowed_types)
+        boxes = [b for b in boxes if b.get("bbox") and b.get("masked_value") != b.get("value")]
+
         pdf_path = Config.PROCESSED_DIR / f"{job_id}.pdf"
-        if not pdf_path.exists(): raise HTTPException(status_code=404, detail="PDF not found")
-        boxes = [b for b in pii_data.get("masked_boxes", []) if b.get("bbox") and b.get("masked_value") != b.get("value")]
+        if not pdf_path.exists():
+            raise HTTPException(status_code=404, detail="PDF not found")
+
         masked_pdf_bytes = _apply_masking(pdf_path, boxes, _load_ocr(job_id))
+        # 생성된 PDF를 그룹별 캐시로 저장
+        try:
+            cached_pdf_path.write_bytes(masked_pdf_bytes)
+        except Exception as e:
+            logger.warning(f"그룹별 마스킹 PDF 캐시 저장 실패: {e}")
 
     disposition = "inline" if inline else "attachment"
-    return StreamingResponse(io.BytesIO(masked_pdf_bytes), media_type="application/pdf", headers={"Content-Disposition": f'{disposition}; filename="masked_{job_id}.pdf"'})
+    return StreamingResponse(
+        io.BytesIO(masked_pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'{disposition}; filename="masked_{job_id}.pdf"'},
+    )

@@ -88,7 +88,12 @@ async function exportOneJob(
 
   // masked_pdf 는 별도 엔드포인트로 처리
   if (formats.includes('masked_pdf')) {
-    const res = await fetch(`${API_BASE_URL}/api/masking/${jid}/download`)
+    let _uid = ''
+    try { _uid = JSON.parse(localStorage.getItem('user') || '{}').user_id || '' } catch {}
+    const _dlUrl = _uid
+      ? `${API_BASE_URL}/api/masking/${jid}/download?user_id=${encodeURIComponent(_uid)}`
+      : `${API_BASE_URL}/api/masking/${jid}/download`
+    const res = await fetch(_dlUrl)
     if (!res.ok) {
       if (res.status === 404) {
         throw new Error('마스킹 PDF를 찾을 수 없습니다. 에디터에서 먼저 개인정보 감지를 실행해 주세요.')
@@ -270,7 +275,12 @@ export default function ExportModal({
       if (printImages?.jobId === jobId) {
         images = printImages.images
       } else {
-        const res = await fetch(`${API_BASE_URL}/api/masking/${jobId}/download?inline=true`)
+        let _uid2 = ''
+        try { _uid2 = JSON.parse(localStorage.getItem('user') || '{}').user_id || '' } catch {}
+        const _printUrl = _uid2
+          ? `${API_BASE_URL}/api/masking/${jobId}/download?inline=true&user_id=${encodeURIComponent(_uid2)}`
+          : `${API_BASE_URL}/api/masking/${jobId}/download?inline=true`
+        const res = await fetch(_printUrl)
         if (!res.ok) throw new Error('PDF 다운로드 실패')
         const arrayBuffer = await res.arrayBuffer()
 

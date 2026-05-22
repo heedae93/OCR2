@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as DBSession
 
 from api.auth import hash_password
+from config import Config
 from database import CustomMaskingField, PermissionGroup, User, get_db
 
 logger = logging.getLogger(__name__)
@@ -221,6 +222,20 @@ def create_permission_group(body: PermissionGroupCreateRequest, db: DBSession = 
     return serialize_group(group, 0)
 
 
+def _invalidate_group_masked_pdf_cache(group_key: str) -> None:
+    """해당 그룹의 마스킹 PDF 캐시 파일을 전부 삭제한다."""
+    pattern = f"*_masked_{group_key}.pdf"
+    deleted = 0
+    for cached_file in Config.PROCESSED_DIR.glob(pattern):
+        try:
+            cached_file.unlink()
+            deleted += 1
+        except Exception as e:
+            logger.warning(f"캐시 파일 삭제 실패 {cached_file.name}: {e}")
+    if deleted:
+        logger.info(f"그룹 '{group_key}' masking_field_keys 변경 → 캐시 {deleted}개 삭제")
+
+
 @router.put("/admin/permission-groups/{group_key}")
 def update_permission_group(group_key: str, body: PermissionGroupUpdateRequest, db: DBSession = Depends(get_db)):
     group = get_group_or_404(db, group_key)
@@ -233,11 +248,17 @@ def update_permission_group(group_key: str, body: PermissionGroupUpdateRequest, 
         group.masking_access_level = validate_masking_access_level(
             normalize_masking_access_level(body.masking_access_level)
         )
-    if body.masking_field_keys is not None:
+    field_keys_changed = body.masking_field_keys is not None
+    if field_keys_changed:
         group.masking_field_keys = dump_masking_field_keys(body.masking_field_keys)
 
     db.commit()
     db.refresh(group)
+
+    # masking_field_keys 변경 시 해당 그룹의 마스킹 PDF 캐시 삭제
+    if field_keys_changed:
+        _invalidate_group_masked_pdf_cache(group.group_key)
+
     user_count = db.query(User).filter(User.permission_group == group.group_key).count()
     logger.info("Admin updated permission group: %s", group.group_key)
     return serialize_group(group, user_count)
