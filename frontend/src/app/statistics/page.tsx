@@ -63,6 +63,7 @@ export default function StatisticsPage() {
   const [procTime, setProcTime] = useState<ProcessingTimeDist | null>(null)
   const [monthlyPages, setMonthlyPages] = useState<MonthlyPages | null>(null)
   const [sessions, setSessions] = useState<SessionStat[]>([])
+  const [docTypeStats, setDocTypeStats] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [sessionPage, setSessionPage] = useState(0)
   const [sessionPageSize, setSessionPageSize] = useState(10)
@@ -81,13 +82,15 @@ export default function StatisticsPage() {
       fetch(`${base}/processing-time?user_id=${userId}`).then(r => r.json()),
       fetch(`${base}/monthly-pages?user_id=${userId}`).then(r => r.json()),
       fetch(`${base}/sessions?user_id=${userId}`).then(r => r.json()),
-    ]).then(([s, acc, ft, pt, mp, sess]) => {
+      fetch(`${API_BASE_URL}/api/metadata-v3/stats?user_id=${encodeURIComponent(userId || 'default')}`).then(r => r.json()),
+    ]).then(([s, acc, ft, pt, mp, sess, meta]) => {
       setSummary(s)
       setAccuracy(acc)
       setFileTypes(ft)
       setProcTime(pt)
       setMonthlyPages(mp)
       setSessions(sess)
+      setDocTypeStats(meta?.doc_type_dist || {})
       setLoading(false)
     })
   }, [])
@@ -166,9 +169,9 @@ export default function StatisticsPage() {
                   return { ...s, dash, offset, pct: total > 0 ? Math.round(s.value / total * 100) : 0 }
                 })
                 return (
-                  <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-6 flex flex-col sm:flex-row gap-6">
+                  <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-6 flex flex-col sm:flex-row gap-6 items-center">
                     {/* 도넛 차트 */}
-                    <div className="flex flex-col items-center gap-4 shrink-0 w-[260px]">
+                    <div className="flex flex-col items-center gap-4 shrink-0 w-[240px]">
                       <div className="relative w-[160px] h-[160px]">
                         <svg width="160" height="160" className="-rotate-90">
                           {total === 0 ? (
@@ -211,7 +214,7 @@ export default function StatisticsPage() {
                     <div className="hidden sm:block w-px bg-border-light dark:bg-border-dark self-stretch" />
 
                     {/* 나머지 수치 카드들 */}
-                    <div className="grid grid-cols-2 gap-3 content-center shrink-0 w-[340px]">
+                    <div className="grid grid-cols-2 gap-3 shrink-0 w-[320px]">
                       {summaryCards.map(({ label, value, icon, color }) => (
                         <div key={label} className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-white border border-border-light dark:border-border-dark shadow-sm">
                           <span className={`material-symbols-outlined text-2xl ${color}`}>{icon}</span>
@@ -222,6 +225,61 @@ export default function StatisticsPage() {
                         </div>
                       ))}
                     </div>
+
+                    {/* 구분선 */}
+                    <div className="hidden sm:block w-px bg-border-light dark:bg-border-dark self-stretch" />
+
+                    {/* 문서유형별 통계 도넛 (대시보드 동일 스타일) */}
+                    {(() => {
+                      const dtColors = ['#38bdf8', '#34d399', '#a78bfa', '#fb7185', '#fbbf24']
+                      const sorted = Object.entries(docTypeStats)
+                        .map(([label, value]) => ({ label, value: Number(value) || 0 }))
+                        .filter(item => item.value > 0)
+                        .sort((a, b) => b.value - a.value)
+                      const dist = sorted.length > 0
+                        ? [
+                            ...sorted.slice(0, 4).map((item, i) => ({ ...item, color: dtColors[i % dtColors.length] })),
+                            ...(sorted.length > 4 ? [{
+                              label: '기타',
+                              value: sorted.slice(4).reduce((s, x) => s + x.value, 0),
+                              color: dtColors[4],
+                            }] : []),
+                          ]
+                        : []
+                      const dtTotal = Math.max(1, dist.reduce((s, x) => s + x.value, 0))
+                      const gradient = dist.reduce<{ cursor: number; stops: string[] }>((acc, item) => {
+                        const size = (item.value / dtTotal) * 100
+                        acc.stops.push(`${item.color} ${acc.cursor}% ${acc.cursor + size}%`)
+                        acc.cursor += size
+                        return acc
+                      }, { cursor: 0, stops: [] }).stops.join(', ')
+                      return (
+                        <div className="flex-1 flex justify-center">
+                          <div className="flex flex-col items-center gap-4 w-[240px]">
+                            <span className="text-sm font-semibold text-text-primary-light self-start">문서유형별 통계</span>
+                            <div
+                              className="relative w-[160px] h-[160px] shrink-0 rounded-full"
+                              style={{ background: `conic-gradient(${gradient || '#94a3b8 0% 100%'})` }}
+                            >
+                              <div className="absolute inset-[22px] rounded-full bg-surface-light dark:bg-surface-dark" />
+                            </div>
+                            <div className="flex flex-col gap-1.5 w-full">
+                              {dist.length > 0 ? dist.map(item => (
+                                <div key={item.label} className="flex items-center justify-between text-xs">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                                    <span className="text-text-secondary-light">{item.label}</span>
+                                  </div>
+                                  <span className="font-semibold text-text-primary-light tabular-nums">{Math.round(item.value / dtTotal * 100)}%</span>
+                                </div>
+                              )) : (
+                                <p className="text-xs text-center text-text-secondary-light">데이터 없음</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
                 )
               })()}

@@ -124,7 +124,9 @@ wait_for_redis() {
     return 1
 }
 
-if redis_running; then
+if [ "${SKIP_REDIS_CHECK:-false}" = "true" ]; then
+    echo "[OK] Redis check skipped (SKIP_REDIS_CHECK=true)"
+elif redis_running; then
     echo "[OK] Redis is already running"
 
 elif command -v redis-server &>/dev/null; then
