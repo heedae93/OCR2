@@ -717,7 +717,7 @@ export default function OcrWorkPage() {
       addTrackedJobs(queuedJobs)
     }
 
-    setDefaultDocType('미분류')
+    setDefaultDocType('')
     try {
       localStorage.removeItem(`ocr_work_session_name_${userId}`)
     } catch {
@@ -943,9 +943,7 @@ export default function OcrWorkPage() {
                         }}
                         className="w-full cursor-pointer appearance-none rounded-lg border border-border-light bg-background-light py-2 pl-3 pr-9 text-sm text-text-primary-light focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-border-dark dark:bg-background-dark dark:text-text-primary-dark"
                       >
-                        {pendingDocTypesForSidebar.length !== 1 && (
-                          <option value="">유형 선택</option>
-                        )}
+                        <option value="">문서유형선택</option>
                         {allDocTypes.map(type => (
                           <option key={type} value={type}>
                             {type}
