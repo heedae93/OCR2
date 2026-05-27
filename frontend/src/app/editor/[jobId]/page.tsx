@@ -96,9 +96,6 @@ export default function EditorPage() {
   const maskingSuccess = maskingData.filter(
     (b) => b.bbox && b.masked_value && b.masked_value !== b.value,
   );
-  const maskingFail = maskingData.filter(
-    (b) => !b.bbox || !b.masked_value || b.masked_value === b.value,
-  );
   const [isReprocessingPage, setIsReprocessingPage] = useState(false);
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
@@ -116,7 +113,6 @@ export default function EditorPage() {
   const [pageThumbnails, setPageThumbnails] = useState<{
     [key: number]: string;
   }>({});
-  const thumbnailCanvasRefs = useRef<{ [key: number]: HTMLCanvasElement }>({});
   const [totalPdfPages, setTotalPdfPages] = useState(0);
   const [textElements, setTextElements] = useState<TextElement[]>([]);
   const [pageWidth, setPageWidth] = useState(0);
@@ -129,9 +125,10 @@ export default function EditorPage() {
 
   // Auto-save state
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
-  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [, setLastSavedAt] = useState<string | null>(null);
   const [pendingEdits, setPendingEdits] = useState<PendingEdit[]>([]);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const maskingScrollRef = useRef<HTMLDivElement | null>(null);
 
   // 항상 원본 PDF를 표시 — 마스킹은 프론트엔드 오버레이로 처리
   const [pdfVersion, setPdfVersion] = useState(() => Date.now());
@@ -516,9 +513,14 @@ export default function EditorPage() {
     setZoom((prev) => Math.max(10, prev - 5));
   };
 
-  const handleFitToWidth = () => {
-    setFitToWidth((prev) => !prev);
-  };
+  // 페이지 변경 시 마스킹 패널 해당 페이지로 스크롤
+  useEffect(() => {
+    if (!maskingScrollRef.current) return;
+    const target = maskingScrollRef.current.querySelector<HTMLElement>(`[data-masking-page="${currentPage}"]`);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [currentPage]);
 
   // Debug: Log page and PDF state changes
   useEffect(() => {
@@ -1256,7 +1258,7 @@ export default function EditorPage() {
                 {/* Masking Results Panel — PDF 캔버스 오른쪽 */}
                 {showMasking && (
                   <aside
-                    className="h-full flex-shrink-0 flex-col border-l border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark p-4 flex relative"
+                    className="h-full flex-shrink-0 flex-col border-l border-gray-200 bg-white p-4 flex relative"
                     style={{ width: maskingPanelWidth }}
                   >
                     <div
@@ -1264,94 +1266,80 @@ export default function EditorPage() {
                       onMouseDown={handleMaskingResizeStart}
                     />
                     <div className="flex items-center justify-between mb-4">
-                      <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark flex items-center gap-2">
-                        <span className="material-symbols-outlined text-base">
-                          shield_person
-                        </span>
+                      <span className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                        <span className="material-symbols-outlined text-base">shield_person</span>
                         개인정보 마스킹 결과
                       </span>
                       <button
                         onClick={() => setShowMasking(false)}
-                        className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-text-secondary-light dark:text-text-secondary-dark"
+                        className="p-1 rounded-lg hover:bg-gray-100 text-gray-500"
                       >
-                        <span className="material-symbols-outlined text-xl">
-                          close
-                        </span>
+                        <span className="material-symbols-outlined text-xl">close</span>
                       </button>
                     </div>
-                    <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
+                    <div className="flex flex-1 flex-col gap-3 overflow-y-auto">
                   {maskingData.length > 0 ? (
                     <>
-                      <div className="flex flex-col items-center justify-center p-3 rounded-lg bg-primary/10 border border-primary/20 mb-3">
-                        <span className="text-xs text-primary font-medium mb-1">
-                          자동 감지된 개인정보
-                        </span>
-                        <span className="text-2xl font-bold text-primary">
-                          {maskingData.length}
-                          <span className="text-sm font-medium ml-1">건</span>
-                        </span>
+                      {/* 요약 카드 */}
+                      <div className="grid grid-cols-2 gap-2 mb-1">
+                        <div className="flex flex-col items-center justify-center p-2.5 rounded-lg bg-slate-50 border border-slate-200">
+                          <span className="text-[10px] text-slate-500 font-medium mb-0.5">전체</span>
+                          <span className="text-xl font-bold text-slate-700">{maskingData.length}<span className="text-xs font-medium ml-0.5">건</span></span>
+                        </div>
+                        <div className="flex flex-col items-center justify-center p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
+                          <span className="text-[10px] text-emerald-600 font-medium mb-0.5">마스킹 완료</span>
+                          <span className="text-xl font-bold text-emerald-700">{maskingSuccess.length}<span className="text-xs font-medium ml-0.5">건</span></span>
+                        </div>
                       </div>
-                      <div className="flex flex-col gap-1.5 overflow-y-auto">
-                        {maskingData.map((box, idx) => {
-                          const isSuccess = !!(
-                            box.bbox &&
-                            box.masked_value &&
-                            box.masked_value !== box.value
-                          );
-                          return (
-                            <div
-                              key={idx}
-                              className={`flex flex-col gap-0.5 p-2 rounded-md border text-xs ${isSuccess ? "border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10" : "border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10"}`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span
-                                  className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${isSuccess ? "bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300" : "bg-red-100 dark:bg-red-800 text-red-600 dark:text-red-300"}`}
-                                >
-                                  {PII_LABELS[box.type] ?? box.type}
-                                </span>
-                                <span
-                                  className={`text-[10px] ${isSuccess ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}
-                                >
-                                  {isSuccess ? "✓ 마스킹 됨" : "⚠️ 확인 필요"}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1 mt-0.5 text-text-primary-light dark:text-text-primary-dark w-full overflow-hidden">
-                                <span
-                                  className="truncate flex-1 min-w-0"
-                                  title={box.value}
-                                >
-                                  {box.value}
-                                </span>
-                                {box.masked_value &&
-                                  box.masked_value !== box.value && (
+                      <div ref={maskingScrollRef} className="flex flex-col gap-1.5 overflow-y-auto">
+                        {(() => {
+                          const sorted = [...maskingData].sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
+                          const multiPage = new Set(sorted.map(b => b.page)).size > 1;
+                          let lastPage: number | undefined = undefined;
+                          return sorted.flatMap((box, idx) => {
+                            const isSuccess = !!(box.bbox && box.masked_value && box.masked_value !== box.value);
+                            const items = [];
+                            if (multiPage && box.page !== undefined && box.page !== lastPage) {
+                              lastPage = box.page;
+                              items.push(
+                                <div key={`page-${box.page}`} data-masking-page={box.page} className="flex items-center gap-2 mt-1">
+                                  <span className="text-[11px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">{box.page}페이지</span>
+                                  <div className="flex-1 h-px bg-gray-200" />
+                                </div>
+                              );
+                            }
+                            items.push(
+                              <div
+                                key={idx}
+                                className="flex flex-col gap-0.5 p-2 rounded-md border border-gray-200 bg-white text-xs"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600">
+                                    {PII_LABELS[box.type] ?? box.type}
+                                  </span>
+                                  <span className={`text-[10px] font-medium ${isSuccess ? "text-emerald-600" : "text-orange-500"}`}>
+                                    {isSuccess ? "✓ 완료" : "⚠ 확인필요"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1 mt-0.5 text-gray-800 w-full overflow-hidden">
+                                  <span className="truncate flex-1 min-w-0 text-gray-500" title={box.value}>{box.value}</span>
+                                  {box.masked_value && box.masked_value !== box.value && (
                                     <>
-                                      <span className="text-text-secondary-light dark:text-text-secondary-dark flex-shrink-0">
-                                        →
-                                      </span>
-                                      <span
-                                        className="truncate flex-1 min-w-0 font-medium"
-                                        title={box.masked_value}
-                                      >
-                                        {box.masked_value}
-                                      </span>
+                                      <span className="text-gray-400 flex-shrink-0">→</span>
+                                      <span className="truncate flex-1 min-w-0 font-semibold text-red-500" title={box.masked_value}>{box.masked_value}</span>
                                     </>
                                   )}
+                                </div>
                               </div>
-                              {box.page && (
-                                <span className="text-[10px] text-text-secondary-light dark:text-text-secondary-dark">
-                                  {box.page}페이지
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })}
+                            );
+                            return items;
+                          });
+                        })()}
                       </div>
                     </>
                   ) : (
-                    <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-border-light dark:border-border-dark">
-                      <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                        감지된 개인정보가 없습니다
-                      </p>
+                    <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-gray-200">
+                      <p className="text-sm text-gray-500">감지된 개인정보가 없습니다</p>
                     </div>
                   )}
                     </div>
@@ -1360,7 +1348,7 @@ export default function EditorPage() {
                 {/* OCR 편집 패널 */}
                 {showOCRComparison && ocrResults && (
                   <aside
-                    className="h-full flex-shrink-0 flex flex-col border-l border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark relative"
+                    className="h-full flex-shrink-0 flex flex-col border-l border-gray-200 bg-white relative"
                     style={{ width: ocrPanelWidth }}
                   >
                     <div
@@ -1368,21 +1356,21 @@ export default function EditorPage() {
                       onMouseDown={handleOcrPanelResizeStart}
                     />
                     {/* 헤더 */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-border-light dark:border-border-dark flex-shrink-0">
-                      <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark flex items-center gap-2">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
+                      <span className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                         <span className="material-symbols-outlined text-base">edit_note</span>
                         OCR 텍스트 편집
                       </span>
                       <button
                         onClick={() => setShowOCRComparison(false)}
-                        className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-text-secondary-light dark:text-text-secondary-dark"
+                        className="p-1 rounded-lg hover:bg-gray-100 text-gray-500"
                       >
                         <span className="material-symbols-outlined text-xl">close</span>
                       </button>
                     </div>
                     {/* 안내 문구 */}
-                    <div className="px-4 py-2 bg-primary/5 border-b border-border-light dark:border-border-dark flex-shrink-0">
-                      <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                    <div className="px-4 py-2 bg-primary/5 border-b border-gray-200 flex-shrink-0">
+                      <p className="text-xs text-gray-500">
                         텍스트를 클릭하면 수정할 수 있습니다. 수정 후 자동 저장됩니다.
                       </p>
                     </div>
@@ -1392,10 +1380,8 @@ export default function EditorPage() {
                         const currentLines = ocrResults.pages.find(p => p.page_number === currentPage)?.lines ?? [];
                         if (currentLines.length === 0) {
                           return (
-                            <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-border-light dark:border-border-dark">
-                              <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                                이 페이지의 OCR 결과가 없습니다
-                              </p>
+                            <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-gray-200">
+                              <p className="text-sm text-gray-500">이 페이지의 OCR 결과가 없습니다</p>
                             </div>
                           );
                         }
@@ -1409,23 +1395,21 @@ export default function EditorPage() {
                                 isEditing
                                   ? "border-primary bg-primary/5"
                                   : isEdited
-                                  ? "border-green-400 dark:border-green-600 bg-green-50/50 dark:bg-green-900/10"
-                                  : "border-border-light dark:border-border-dark hover:border-primary/50 hover:bg-black/3 dark:hover:bg-white/5"
+                                  ? "border-green-400 bg-green-50"
+                                  : "border-gray-200 hover:border-primary/50 hover:bg-gray-50"
                               }`}
                             >
                               <div className="flex items-center justify-between mb-1">
-                                <span className="text-[10px] text-text-secondary-light dark:text-text-secondary-dark font-medium">
-                                  #{idx + 1}
-                                </span>
+                                <span className="text-[10px] text-gray-500 font-medium">#{idx + 1}</span>
                                 <div className="flex items-center gap-1">
                                   {isEdited && !isEditing && (
-                                    <span className="text-[10px] text-green-600 dark:text-green-400 font-medium">수정됨</span>
+                                    <span className="text-[10px] text-green-600 font-medium">수정됨</span>
                                   )}
                                   {line.confidence !== undefined && (
                                     <span className={`text-[10px] font-medium ${
-                                      (line.confidence ?? 0) > 0.9 ? "text-green-600 dark:text-green-400"
-                                      : (line.confidence ?? 0) > 0.7 ? "text-yellow-600 dark:text-yellow-400"
-                                      : "text-red-500 dark:text-red-400"
+                                      (line.confidence ?? 0) > 0.9 ? "text-green-600"
+                                      : (line.confidence ?? 0) > 0.7 ? "text-yellow-600"
+                                      : "text-red-500"
                                     }`}>
                                       {((line.confidence ?? 0) * 100).toFixed(0)}%
                                     </span>
@@ -1439,7 +1423,7 @@ export default function EditorPage() {
                                     type="text"
                                     value={editingText}
                                     onChange={(e) => setEditingText(e.target.value)}
-                                    className="w-full text-xs p-1.5 rounded border border-primary bg-white dark:bg-gray-800 text-text-primary-light dark:text-text-primary-dark outline-none"
+                                    className="w-full text-xs p-1.5 rounded border border-primary bg-white text-gray-900 outline-none"
                                     onKeyDown={(e) => {
                                       if (e.key === "Enter") {
                                         handleEditOCRText(idx, editingText);
@@ -1458,7 +1442,7 @@ export default function EditorPage() {
                                     </button>
                                     <button
                                       onClick={() => setEditingLineIndex(null)}
-                                      className="flex-1 text-xs py-1 rounded border border-border-light dark:border-border-dark text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
+                                      className="flex-1 text-xs py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-100"
                                     >
                                       취소
                                     </button>
@@ -1466,10 +1450,10 @@ export default function EditorPage() {
                                 </div>
                               ) : (
                                 <p
-                                  className="text-xs text-text-primary-light dark:text-text-primary-dark cursor-pointer leading-relaxed"
+                                  className="text-xs text-gray-900 cursor-pointer leading-relaxed"
                                   onClick={() => { setEditingLineIndex(idx); setEditingText(line.text); }}
                                 >
-                                  {line.text || <span className="text-text-secondary-light dark:text-text-secondary-dark italic">빈 텍스트</span>}
+                                  {line.text || <span className="text-gray-400 italic">빈 텍스트</span>}
                                 </p>
                               )}
                             </div>
@@ -1478,8 +1462,8 @@ export default function EditorPage() {
                       })()}
                     </div>
                     {/* 저장 상태 */}
-                    <div className="flex-shrink-0 px-4 py-2 border-t border-border-light dark:border-border-dark">
-                      <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark text-center">
+                    <div className="flex-shrink-0 px-4 py-2 border-t border-gray-200">
+                      <p className="text-xs text-gray-500 text-center">
                         {saveStatus === "saving" ? "저장 중..." : saveStatus === "saved" ? "자동 저장 완료" : saveStatus === "unsaved" ? "저장 대기 중..." : "저장 실패"}
                       </p>
                     </div>

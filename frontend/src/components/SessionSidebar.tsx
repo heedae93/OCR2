@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { FolderOpen, ChevronDown, ChevronRight, FileText, Download, Merge, Plus, Trash2, PlayCircle, Loader2, RefreshCw, CheckCircle, Clock, AlertCircle, ListTodo, StopCircle, X, FolderPlus, File } from 'lucide-react'
+import { FolderOpen, ChevronDown, ChevronRight, Download, Trash2, Loader2, RefreshCw, CheckCircle, Clock, AlertCircle, StopCircle, FolderPlus, File } from 'lucide-react'
 import SessionExportModal from './SessionExportModal'
 
 interface Document {
@@ -72,7 +71,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
   const [addFileModal, setAddFileModal] = useState<{ sessionId: string } | null>(null)
   const [sidebarSelectedJobs, setSidebarSelectedJobs] = useState<Set<string>>(new Set())
   const [uploadProgress, setUploadProgress] = useState<{[sessionId: string]: {current: number, total: number, filename: string}}>({})
-  const [filter, setFilter] = useState<FilterType>('all')
+  const [filter] = useState<FilterType>('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [navigatingJobId, setNavigatingJobId] = useState<string | null>(null)
 
@@ -106,7 +105,6 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
   const [exportSessionInfo, setExportSessionInfo] = useState<{sessionId: string, sessionName: string} | null>(null)
 
   const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/api`
-  const router = useRouter()
 
   // Initial fetch
   useEffect(() => {
@@ -1106,13 +1104,6 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
     }
   }
 
-  // Count selected docs
-  const selectedCount = selectedDocs.size
-  const selectedQueuedCount = sessions.flatMap(s => s.documents)
-    .filter(d => selectedDocs.has(d.job_id) && d.status === 'queued').length
-  const selectedCompletedCount = sessions.flatMap(s => s.documents)
-    .filter(d => selectedDocs.has(d.job_id) && d.status === 'completed').length
-
   if (loading) {
     return (
       <div className={`${embedded ? 'flex-1' : 'w-72 border-r border-gray-200 dark:border-gray-700'} p-4 flex items-center justify-center`}>
@@ -1124,7 +1115,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
   return (
     <div className={`${embedded ? 'flex flex-col h-full w-full' : 'w-72 border-r border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark flex flex-col h-full'}`}>
       {/* Header */}
-      <div className="px-3 py-3 border-b border-border-light dark:border-border-dark bg-gray-100 dark:bg-gray-700/70">
+      <div className="px-3 py-3 border-b border-border-light dark:border-border-dark bg-white dark:bg-surface-dark">
         <div className="flex items-center justify-between">
           <div className="flex flex-col gap-0.5 min-w-0 flex-1">
             {filterToCurrentSession ? (() => {
@@ -1135,7 +1126,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
                     <div className="flex-shrink-0 w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center">
                       <FolderOpen className="w-3.5 h-3.5 text-primary" />
                     </div>
-                    <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark truncate">
+                    <span className="text-sm font-bold text-gray-900 truncate">
                       {activeSession ? activeSession.session_name : '세션 관리'}
                     </span>
                   </div>
@@ -1143,7 +1134,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
                     <button
                       onClick={() => setAddFileModal({ sessionId: activeSession.session_id })}
                       disabled={uploadingSessions.has(activeSession.session_id)}
-                      className="flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-medium bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800 hover:bg-sky-200 dark:hover:bg-sky-800/50 hover:text-sky-700 dark:hover:text-sky-300 active:bg-sky-300 dark:active:bg-sky-700/50 disabled:opacity-50 transition-colors whitespace-nowrap"
+                      className="flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-500 text-white border border-emerald-600 hover:bg-emerald-600 active:bg-emerald-700 disabled:opacity-50 transition-colors whitespace-nowrap"
                     >
                       파일 추가
                     </button>
@@ -1161,7 +1152,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
       </div>
 
       {/* Processing Queue */}
-      {showQueue && processingQueue.length > 0 && (
+      {false && showQueue && processingQueue.length > 0 && (
         <div className="p-2 border-b border-border-light dark:border-border-dark bg-blue-50 dark:bg-blue-900/20">
           {/* Queue Header with overall progress */}
           <div className="flex items-center justify-between mb-2">
@@ -1312,34 +1303,9 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
                     </p>
                   </div>
                 )}
-                {/* 파일 목록 헤더 + 액션바 */}
-                <div className="px-3 pt-3 pb-1.5">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={filteredDocs.length > 0 && filteredDocs.every(d => sidebarSelectedJobs.has(d.job_id))}
-                        onChange={(e) => {
-                          if (e.target.checked) setSidebarSelectedJobs(new Set(filteredDocs.map(d => d.job_id)))
-                          else setSidebarSelectedJobs(new Set())
-                        }}
-                        className="h-3.5 w-3.5 accent-primary cursor-pointer"
-                      />
-                      <span className="text-[11px] text-gray-500 dark:text-gray-400">전체 선택</span>
-                    </label>
-                    {sidebarSelectedJobs.size > 0 && (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-semibold text-primary">{sidebarSelectedJobs.size}개 선택됨</span>
-                        <button
-                          onClick={() => setSidebarSelectedJobs(new Set())}
-                          className="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                        >
-                          해제
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-1 mb-1">
+                {/* 액션바 */}
+                <div className="px-3 pt-3 pb-2">
+                  <div className="flex gap-1">
                     <button
                       disabled={sidebarSelectedJobs.size === 0}
                       onClick={() => {
@@ -1358,7 +1324,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
                           a.click()
                         })
                       }}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-500 text-white border border-blue-600 hover:bg-blue-600 active:bg-blue-700 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
                     >
                       <Download className="w-3 h-3" />
                       내보내기
@@ -1371,7 +1337,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
                         }
                         fetchSessions()
                       }}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-700 text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/50 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-orange-500 text-white border border-orange-600 hover:bg-orange-600 active:bg-orange-700 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
                     >
                       <RefreshCw className="w-3 h-3" />
                       재처리
@@ -1386,12 +1352,47 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
                         setSidebarSelectedJobs(new Set())
                         fetchSessions()
                       }}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-red-500 text-white border border-red-600 hover:bg-red-600 active:bg-red-700 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
                     >
                       <Trash2 className="w-3 h-3" />
                       삭제
                     </button>
                   </div>
+                </div>
+                {/* 구분선 */}
+                <div className="border-t border-gray-200 mx-3" />
+                {/* 전체 선택 */}
+                <div className="px-3 py-2 flex items-center justify-between">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <button
+                      onClick={() => {
+                        const allSelected = filteredDocs.length > 0 && filteredDocs.every(d => sidebarSelectedJobs.has(d.job_id))
+                        if (!allSelected) setSidebarSelectedJobs(new Set(filteredDocs.map(d => d.job_id)))
+                        else setSidebarSelectedJobs(new Set())
+                      }}
+                      className={`flex h-3.5 w-3.5 items-center justify-center rounded-sm border-2 transition-colors ${
+                        filteredDocs.length > 0 && filteredDocs.every(d => sidebarSelectedJobs.has(d.job_id))
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-gray-400 bg-white hover:border-primary'
+                      }`}
+                    >
+                      {filteredDocs.length > 0 && filteredDocs.every(d => sidebarSelectedJobs.has(d.job_id)) && (
+                        <span className="material-symbols-outlined text-[10px] leading-none">check</span>
+                      )}
+                    </button>
+                    <span className="text-[11px] text-gray-700 font-semibold">전체 선택</span>
+                  </label>
+                  {sidebarSelectedJobs.size > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-semibold text-primary">{sidebarSelectedJobs.size}개 선택됨</span>
+                      <button
+                        onClick={() => setSidebarSelectedJobs(new Set())}
+                        className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                      >
+                        해제
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {/* Documents only */}
                 <div className="py-1">
@@ -1405,30 +1406,35 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
                         key={doc.job_id}
                         className={`flex items-center pl-2 pr-2 py-2 cursor-pointer transition-colors ${
                           currentJobId === doc.job_id
-                            ? 'bg-primary/10 dark:bg-primary/20 border-l-2 border-primary'
-                            : 'hover:bg-gray-50 dark:hover:bg-gray-700/40 border-l-2 border-transparent'
+                            ? 'bg-primary/10 border-l-2 border-primary'
+                            : 'hover:bg-blue-50 border-l-2 border-transparent hover:border-primary/40'
                         } ${navigatingJobId === doc.job_id ? 'animate-pulse' : ''}`}
                         onClick={() => handleDocumentSelect(doc.job_id)}
                       >
-                        <input
-                          type="checkbox"
-                          checked={sidebarSelectedJobs.has(doc.job_id)}
-                          onChange={(e) => {
+                        <button
+                          onClick={(e) => {
                             e.stopPropagation()
                             setSidebarSelectedJobs(prev => {
                               const next = new Set(prev)
-                              e.target.checked ? next.add(doc.job_id) : next.delete(doc.job_id)
+                              next.has(doc.job_id) ? next.delete(doc.job_id) : next.add(doc.job_id)
                               return next
                             })
                           }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="mr-2 h-3.5 w-3.5 flex-shrink-0 accent-primary cursor-pointer rounded"
-                        />
+                          className={`mr-2 flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded-sm border-2 transition-colors ${
+                            sidebarSelectedJobs.has(doc.job_id)
+                              ? 'border-primary bg-primary text-white'
+                              : 'border-gray-400 bg-white hover:border-primary'
+                          }`}
+                        >
+                          {sidebarSelectedJobs.has(doc.job_id) && (
+                            <span className="material-symbols-outlined text-[10px] leading-none">check</span>
+                          )}
+                        </button>
                         {getStatusIcon(doc.status)}
-                        <span className={`text-sm truncate ml-1.5 flex-1 min-w-0 ${
-                          currentJobId === doc.job_id ? 'text-primary font-medium' : 'text-gray-700 dark:text-gray-300'
+                        <span className={`text-sm truncate ml-1.5 flex-1 min-w-0 font-medium ${
+                          currentJobId === doc.job_id ? 'text-primary' : 'text-gray-900'
                         }`}>
-                          {doc.original_filename}
+                          {doc.original_filename.split('/').pop() || doc.original_filename}
                         </span>
                         {doc.status === 'processing' && (
                           <span className="text-[10px] text-blue-500 ml-1 flex-shrink-0 tabular-nums">
@@ -1631,7 +1637,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
               onChange={(e) => setNewSessionName(e.target.value)}
               placeholder="세션 이름"
               className="w-full px-3 py-2 text-sm border border-border-light dark:border-border-dark rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white mb-3"
-              onKeyPress={(e) => e.key === 'Enter' && createNewSession()}
+              onKeyDown={(e) => e.key === 'Enter' && createNewSession()}
               autoFocus
             />
             <div className="flex gap-2 justify-end">
