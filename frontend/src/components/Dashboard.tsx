@@ -260,16 +260,14 @@ export default function Dashboard() {
   return (
     <div className="flex min-h-[calc(100dvh-8rem)] flex-col gap-4 pb-8">
       {/* 검색 */}
-      <section className="rounded-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
-            문서 및 메타데이터 통합 검색
-          </h3>
-        </div>
+      <div>
+        <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark mb-3">
+          문서 및 메타데이터 통합 검색
+        </h3>
         <div className="relative">
           <input
             ref={searchInputRef}
-            className="h-12 w-full rounded-xl border border-border-light bg-[#E8EDF4] px-4 pr-28 text-sm text-text-primary-light shadow-sm outline-none placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+            className="h-12 w-full rounded-xl border-2 border-primary/30 bg-white px-4 pr-28 text-sm text-text-primary-light shadow-sm outline-none placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
             placeholder="문서명, 메타데이터 키워드로 검색..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
@@ -285,7 +283,7 @@ export default function Dashboard() {
             검색
           </button>
         </div>
-      </section>
+      </div>
 
       {/* 통계 카드 */}
       <section>
