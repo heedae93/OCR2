@@ -340,7 +340,7 @@ export default function ExtractionListPage() {
       <main className="flex-1 ml-64 flex flex-col h-[calc(100vh)] overflow-hidden">
         
         {/* Header */}
-        <div className="px-8 py-6 border-b border-border-light dark:border-border-dark bg-surface-light/30 dark:bg-surface-dark/30 backdrop-blur-md flex-shrink-0">
+        <div className="px-8 py-6 bg-surface-light/30 dark:bg-surface-dark/30 backdrop-blur-md flex-shrink-0">
           <div className="flex justify-between items-end">
             <div>
 <h1 className="text-2xl font-black text-text-primary-light dark:text-text-primary-dark tracking-tight flex items-center gap-3">
@@ -364,35 +364,32 @@ export default function ExtractionListPage() {
         </div>
 
         {/* Filters/Search */}
-        <div className="px-8 py-4 border-b border-border-light dark:border-border-dark flex items-center gap-4 bg-surface-light/10 dark:bg-surface-dark/10">
-          <div className="flex-1 max-w-xl flex items-center gap-2">
-            <div className="relative flex-1">
-              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary-light" size={18} />
-              <input 
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="파일명으로 검색..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#E8EDF4] border border-border-light outline-none focus:border-primary/50 text-sm font-medium transition-all"
-              />
-            </div>
+        <div className="px-8 py-4 flex items-center gap-4 bg-surface-light/10 dark:bg-surface-dark/10">
+          <div className="relative w-full">
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') fetchDocs() }}
+              placeholder="파일명으로 검색..."
+              className="h-12 w-full rounded-xl border-2 border-primary/30 bg-white px-4 pr-20 text-sm text-text-primary-light shadow-sm outline-none placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+            />
             <button
               type="button"
               onClick={fetchDocs}
               disabled={loading}
-              className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
-              aria-label="검색"
+              className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary/90 transition-colors disabled:opacity-60"
             >
-              검색
+              <SearchIcon size={14} />검색
             </button>
-          </div>
-          <div className="ml-auto text-xs font-bold text-text-secondary-light">
-             총 <span className="text-primary">{total}</span> 건의 데이터
           </div>
         </div>
 
         {/* Content Table Area */}
         <div className="flex-1 overflow-y-auto bg-bg-light dark:bg-bg-dark p-6">
-           <div className="rounded-2xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark shadow-sm overflow-hidden">
+          <p className="text-sm font-medium text-text-secondary-light mb-3 text-right">
+            총 <span className="text-primary font-bold">{total}</span>건의 데이터
+          </p>
+           <div className="rounded-2xl border border-border-light dark:border-border-dark bg-white dark:bg-white shadow-sm overflow-hidden">
               <table className="w-full text-left border-collapse table-fixed">
                 <colgroup>
                   <col className="w-[26%]" />

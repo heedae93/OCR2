@@ -206,8 +206,8 @@ export default function MetadataV3Page() {
 
         <div className="flex flex-1 overflow-hidden">
           {/* 분류 리스트 */}
-          <div className="w-64 flex-shrink-0 border-r border-border-light flex flex-col bg-surface-light">
-            <div className="px-4 py-3 border-b border-border-light flex justify-between items-center bg-background-light">
+          <div className="w-64 flex-shrink-0 border-r border-border-light flex flex-col bg-white">
+            <div className="px-4 py-3 border-b border-border-light flex justify-between items-center bg-white">
               <span className="text-xs font-bold text-text-secondary-light tracking-wider">
                 문서 카테고리
               </span>
@@ -264,8 +264,8 @@ export default function MetadataV3Page() {
           </div>
 
           {/* 메타데이터 추출 설정 영역 */}
-          <div className="flex-1 flex flex-col bg-background-light">
-            <div className="px-10 py-6 border-b border-border-light bg-surface-light flex items-center justify-between">
+          <div className="flex-1 flex flex-col bg-white">
+            <div className="px-10 py-6 border-b border-border-light bg-white flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-bold flex items-center gap-3 text-text-primary-light tracking-tight">
                    <FileText size={24} className="text-primary" /> {selectedDocType}
@@ -273,9 +273,8 @@ export default function MetadataV3Page() {
                 </h2>
                 <p className="text-sm text-text-secondary-light mt-2 font-medium">이 카테고리로 분류된 문서를 분석할 때, 활성화된 데이터 항목을 자동으로 추출하여 색인화합니다.</p>
               </div>
-              <button onClick={saveRules} disabled={saving || loading} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 shadow-md transition-all active:scale-95 disabled:opacity-50">
-                {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
-                추출 설정 저장
+              <button onClick={() => setIsAddingField(true)} className="flex items-center gap-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 px-4 py-2 rounded-full transition-colors shadow-sm">
+                <Plus size={16} /> 커스텀 추출 필드 추가
               </button>
             </div>
 
@@ -290,8 +289,9 @@ export default function MetadataV3Page() {
                     <h3 className="text-base font-bold text-text-primary-light dark:text-text-primary-dark tracking-widest uppercase">
                       추출 필드 설정
                     </h3>
-                    <button onClick={() => setIsAddingField(true)} className="flex items-center gap-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 px-4 py-2 rounded-full transition-colors shadow-sm">
-                      <Plus size={16} /> 커스텀 추출 필드 추가
+                    <button onClick={saveRules} disabled={saving || loading} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 shadow-md transition-all active:scale-95 disabled:opacity-50">
+                      {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+                      추출 설정 저장
                     </button>
                   </div>
 
@@ -300,7 +300,7 @@ export default function MetadataV3Page() {
                       const enabled = currentPiiTypes.includes(item.key)
                       
                       return (
-                        <div key={item.key} className={`group relative flex flex-col text-left p-5 rounded-2xl border transition-all duration-200 ease-out bg-white ${enabled ? `${ACTIVE_FIELD_CARD_COLOR} shadow-md` : 'border-border-light hover:border-slate-300 opacity-80 hover:opacity-100 hover:shadow-sm'}`}>
+                        <div key={item.key} className={`group relative flex flex-col text-left p-5 rounded-2xl border transition-all duration-200 ease-out ${enabled ? `bg-primary/[0.03] ${ACTIVE_FIELD_CARD_COLOR} shadow-md` : 'bg-slate-50/60 border-border-light hover:border-slate-300 opacity-80 hover:opacity-100 hover:shadow-sm'}`}>
                           
                           {/* 삭제 버튼 - 커스텀 필드일때만 등장 */}
                           {item.isCustom && item.id && (

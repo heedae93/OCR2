@@ -161,7 +161,13 @@ async def get_masking_history(
         if not source_items:
             continue
 
-        sd = db.query(SessionDocument).filter(SessionDocument.job_id == job.job_id).first()
+        # 실제 세션(non-default) 우선, 없으면 default 세션 사용
+        sd = db.query(SessionDocument).filter(
+            SessionDocument.job_id == job.job_id,
+            SessionDocument.session_id != "default"
+        ).first()
+        if not sd:
+            sd = db.query(SessionDocument).filter(SessionDocument.job_id == job.job_id).first()
         session_name = None
         if sd:
             sess = db.query(DBSession).filter(DBSession.session_id == sd.session_id).first()

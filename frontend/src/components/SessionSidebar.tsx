@@ -1054,7 +1054,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
       const formData = new FormData()
       formData.append('file', file)
 
-      const uploadResponse = await fetch(`${API_BASE}/upload`, {
+      const uploadResponse = await fetch(`${API_BASE}/upload?session_id=${encodeURIComponent(sessionId)}`, {
         method: 'POST',
         body: formData
       })

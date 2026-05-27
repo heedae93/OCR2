@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { API_BASE_URL } from '@/lib/api'
 
@@ -115,6 +115,8 @@ export default function HistoryPage() {
   const [jobs, setJobs] = useState<{job_id: string, filename: string}[]>([])
   const [viewingDownload, setViewingDownload] = useState<DownloadRecord | null>(null)
   const [selectedMaskingRecord, setSelectedMaskingRecord] = useState<MaskingRecord | null>(null)
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set())
+  const [maskingSessions, setMaskingSessions] = useState<{session_id: string, session_name: string}[]>([])
   const [isAdmin, setIsAdmin] = useState(false)
 
   const getUserId = () => {
@@ -150,11 +152,13 @@ export default function HistoryPage() {
         const res = await fetch(`${API_BASE_URL}/api/history/downloads?user_id=${userId}`)
         setDownloads(res.ok ? await res.json() : [])
       } else {
-        const url = adminFlag
+        const maskingUrl = adminFlag
           ? `${API_BASE_URL}/api/jobs/masking-history?all_users=true`
           : `${API_BASE_URL}/api/jobs/masking-history?user_id=${userId}`
-        const res = await fetch(url)
-        setMasking(res.ok ? await res.json() : [])
+        const sessionsUrl = `${API_BASE_URL}/api/jobs/statistics/sessions?user_id=${userId}&include_empty=false`
+        const [maskingRes, sessionsRes] = await Promise.all([fetch(maskingUrl), fetch(sessionsUrl)])
+        setMasking(maskingRes.ok ? await maskingRes.json() : [])
+        setMaskingSessions(sessionsRes.ok ? await sessionsRes.json() : [])
       }
     } finally {
       setLoading(false)
@@ -257,6 +261,36 @@ export default function HistoryPage() {
   const filteredDownloads = downloads
   const filteredMasking = masking
 
+  // 마스킹 레코드를 session_id 기준으로 묶기
+  const _maskingBySessionId: Record<string, MaskingRecord[]> = {}
+  for (const m of filteredMasking) {
+    const key = m.session_id ?? '__none__'
+    if (!_maskingBySessionId[key]) _maskingBySessionId[key] = []
+    _maskingBySessionId[key].push(m)
+  }
+  // 세션 API 순서 기준으로 정렬 (작업내역과 동일한 순서)
+  const knownSessionIds = new Set(maskingSessions.map(s => s.session_id))
+  const maskingBySession: [string, string, MaskingRecord[]][] = []
+  for (const sess of maskingSessions) {
+    const records = _maskingBySessionId[sess.session_id]
+    if (records?.length) maskingBySession.push([sess.session_id, sess.session_name, records])
+  }
+  // 세션 API에 없는 레코드 (session_id 미등록)
+  for (const [sid, records] of Object.entries(_maskingBySessionId)) {
+    if (!knownSessionIds.has(sid)) {
+      const label = sid === '__none__' ? '세션 없음' : (records[0].session_name ?? sid)
+      maskingBySession.push([sid, label, records])
+    }
+  }
+
+  const toggleSession = (key: string) => {
+    setExpandedSessions(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+
   const versionTotalPages = Math.max(1, Math.ceil(filteredVersions.length / VERSION_PAGE_SIZE))
   const paginatedVersions = filteredVersions.slice((versionPage - 1) * VERSION_PAGE_SIZE, versionPage * VERSION_PAGE_SIZE)
 
@@ -265,13 +299,6 @@ export default function HistoryPage() {
 
   const allVersionsSelected = paginatedVersions.length > 0 && paginatedVersions.every(v => selectedVersionIds.has(v.version_id))
   const allDownloadsSelected = filteredDownloads.length > 0 && filteredDownloads.every(d => selectedDownloadIds.has(d.id))
-
-  const maskingBySession: Record<string, MaskingRecord[]> = {}
-  for (const m of filteredMasking) {
-    const key = m.session_name ?? m.session_id ?? '세션 없음'
-    if (!maskingBySession[key]) maskingBySession[key] = []
-    maskingBySession[key].push(m)
-  }
 
   return (
     <div className="bg-slate-50 dark:bg-slate-50 min-h-screen">
@@ -331,7 +358,7 @@ export default function HistoryPage() {
           )}
 
           {/* 콘텐츠 */}
-          <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
+          <div className="overflow-hidden rounded-2xl border border-border-light bg-white dark:bg-white">
             {loading ? (
               <div className="flex items-center justify-center p-16">
                 <span className="material-symbols-outlined animate-spin text-primary text-4xl">progress_activity</span>
@@ -370,7 +397,7 @@ export default function HistoryPage() {
                           <tr
                             key={v.version_id}
                             onClick={() => openEditModal(v)}
-                            className={`cursor-pointer transition-colors ${isSelected ? 'bg-primary/5' : 'hover:bg-primary/5'}`}
+                            className={`cursor-pointer transition-colors ${isSelected ? 'bg-primary/5' : 'hover:bg-background-light dark:hover:bg-background-dark'}`}
                           >
                             <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
                               <CustomCheckbox
@@ -487,7 +514,7 @@ export default function HistoryPage() {
                           <tr
                             key={d.id}
                             onClick={() => setViewingDownload(d)}
-                            className={`cursor-pointer transition-colors ${isSelected ? 'bg-primary/5' : 'hover:bg-primary/5'}`}
+                            className={`cursor-pointer transition-colors ${isSelected ? 'bg-primary/5' : 'hover:bg-background-light dark:hover:bg-background-dark'}`}
                           >
                             <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
                               <CustomCheckbox
@@ -565,44 +592,82 @@ export default function HistoryPage() {
               filteredMasking.length === 0 ? (
                 <div className="p-16 text-center text-text-secondary-light dark:text-text-secondary-dark">마스킹 처리 이력이 없습니다</div>
               ) : (
-                <div className="divide-y divide-border-light dark:divide-border-dark">
-                  {Object.entries(maskingBySession).map(([sessionName, records]) => {
-                    const totalMasked = records.reduce((s, r) => s + r.total_masked, 0)
-                    return (
-                      <div key={sessionName}>
-                        <div className="flex items-center gap-3 px-5 py-3 bg-background-light dark:bg-background-dark">
-                          <div className="p-1.5 rounded-lg bg-primary/10 text-primary shrink-0">
-                            <span className="material-symbols-outlined text-base leading-none">folder_open</span>
-                          </div>
-                          <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">{sessionName}</span>
-                          <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{records.length}개 문서</span>
-                          <span className="ml-1 px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500 text-white">
-                            총 {totalMasked}건 마스킹
-                          </span>
-                        </div>
-                        {records.map(record => (
-                          <div
-                            key={record.job_id}
-                            className="flex items-center gap-3 px-8 py-3 hover:bg-background-light dark:hover:bg-background-dark cursor-pointer transition-colors"
-                            onClick={() => setSelectedMaskingRecord(record)}
-                          >
-                            <div className="p-1.5 rounded-lg bg-primary/10 text-primary shrink-0">
-                              <span className="material-symbols-outlined text-base leading-none">description</span>
-                            </div>
-                            <span className="text-sm text-text-primary-light hover:underline max-w-[300px] truncate text-left" title={record.filename}>
-                              {record.filename}
-                            </span>
-                            <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500 text-white whitespace-nowrap ml-auto">
-                              {record.total_masked}건
-                            </span>
-                            <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark whitespace-nowrap">
-                              {formatDate(record.processed_at)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )
-                  })}
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="border-b border-primary/20 dark:border-primary/20 bg-primary/10 dark:bg-primary/10">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-text-secondary-light w-[40%]">작업명</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-text-secondary-light">문서</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-text-secondary-light">마스킹 건수</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-text-secondary-light">처리일시</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-light dark:divide-border-dark">
+                      {maskingBySession.map(([sessionId, sessionName, records]) => {
+                        const isOpen = expandedSessions.has(sessionId)
+                        const totalMasked = records.reduce((s: number, r: MaskingRecord) => s + r.total_masked, 0)
+                        const latestDate = records.reduce((latest: string, r: MaskingRecord) =>
+                          r.processed_at > latest ? r.processed_at : latest, records[0].processed_at)
+                        return (
+                          <React.Fragment key={sessionId}>
+                            {/* 작업(세션) 행 */}
+                            <tr
+                              onClick={() => toggleSession(sessionId)}
+                              className="cursor-pointer transition-colors hover:bg-primary/5 dark:hover:bg-primary/10"
+                            >
+                              <td className="px-4 py-4">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`material-symbols-outlined text-base text-primary shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}>
+                                    chevron_right
+                                  </span>
+                                  <span className="material-symbols-outlined text-base text-primary shrink-0">folder_open</span>
+                                  <span className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark truncate">{sessionName}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-4 text-sm text-text-primary-light dark:text-text-primary-dark">
+                                {records.length}개
+                              </td>
+                              <td className="px-4 py-4">
+                                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500 text-white whitespace-nowrap">
+                                  총 {totalMasked}건
+                                </span>
+                              </td>
+                              <td className="px-4 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark whitespace-nowrap">
+                                {formatDate(latestDate)}
+                              </td>
+                            </tr>
+
+                            {/* 문서 서브행 */}
+                            {isOpen && records.map((record: MaskingRecord) => (
+                              <tr
+                                key={record.job_id}
+                                onClick={(e) => { e.stopPropagation(); setSelectedMaskingRecord(record) }}
+                                className="cursor-pointer transition-colors bg-white hover:bg-primary/5 dark:hover:bg-primary/10 border-t border-border-light dark:border-border-dark"
+                              >
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-2 min-w-0 pl-10">
+                                    <span className="material-symbols-outlined text-base shrink-0 text-primary">description</span>
+                                    <span className="text-sm text-text-primary-light dark:text-text-primary-dark truncate" title={record.filename}>
+                                      {record.filename.split('/').pop() || record.filename}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">-</td>
+                                <td className="px-4 py-3">
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-700 whitespace-nowrap">
+                                    {record.total_masked}건
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark whitespace-nowrap">
+                                  {formatDate(record.processed_at)}
+                                </td>
+                              </tr>
+                            ))}
+                          </React.Fragment>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )
             )}

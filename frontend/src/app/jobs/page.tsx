@@ -461,67 +461,41 @@ function JobsPageInner() {
       <Sidebar />
       <main className="ml-64 p-6 lg:p-10">
         <div className="w-full max-w-7xl mx-auto">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-8">
+          <div className="flex items-center justify-between mb-6 gap-4">
             <div>
               <h1 className="text-3xl font-bold text-text-primary-light">
                 작업 내역
               </h1>
-              <p className="mt-2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+              <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
                 작업을 선택하면 해당 작업의 파일 목록을 확인할 수 있습니다.
               </p>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-            <SummaryCard
-              icon="folder_open"
-              label="총 작업"
-              value={`${totals.sessions}개`}
-            />
-            <SummaryCard
-              icon="description"
-              label="총 문서"
-              value={`${totals.totalDocuments}개`}
-              subValue={`${totals.totalPages}p`}
-            />
-            <SummaryCard
-              icon="sync"
-              label="진행/대기"
-              value={`${totals.active}개`}
-            />
-            <SummaryCard
-              icon="check_circle"
-              label="완료율"
-              value={`${totals.completionRate}%`}
-              subValue={`완료 ${totals.completed}개`}
-            />
-          </div>
-
-          <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-4 mb-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  placeholder="문서명, 메타데이터 키워드로 검색..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSearch();
-                  }}
-                  className="h-12 w-full rounded-xl border border-border-light bg-[#E8EDF4] px-4 pr-28 text-sm text-text-primary-light shadow-sm outline-none placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                />
-                <button
-                  onClick={handleSearch}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary/90 transition-colors"
-                >
-                  <span className="material-symbols-outlined text-sm">
-                    search
-                  </span>
-                  검색
-                </button>
-              </div>
-
+            <div className="flex items-center gap-2 shrink-0">
+              <SummaryCard icon="folder_open" label="총 작업" value={`${totals.sessions}개`} />
+              <SummaryCard icon="description" label="총 문서" value={`${totals.totalDocuments}개`} subValue={`${totals.totalPages}p`} />
+              <SummaryCard icon="sync" label="진행/대기" value={`${totals.active}개`} />
+              <SummaryCard icon="check_circle" label="완료율" value={`${totals.completionRate}%`} subValue={`완료 ${totals.completed}개`} />
             </div>
+          </div>
+
+          <div className="relative mb-4">
+            <input
+              type="text"
+              placeholder="문서명, 메타데이터 키워드로 검색..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSearch();
+              }}
+              className="h-12 w-full rounded-xl border-2 border-primary/30 bg-white px-4 pr-28 text-sm text-text-primary-light shadow-sm outline-none placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+            />
+            <button
+              onClick={handleSearch}
+              className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary/90 transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">search</span>
+              검색
+            </button>
           </div>
 
           {searchQuery && (
@@ -667,7 +641,7 @@ function JobsPageInner() {
             </div>
           ) : (
             <>
-              <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
+              <div className="bg-white dark:bg-white rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[1080px] table-fixed">
                     <colgroup>
@@ -721,8 +695,6 @@ function JobsPageInner() {
                       {paginatedSessions.map((session) => {
                         const status = getSessionStatus(session);
                         const activeCount = getActiveCount(session);
-                        const isFocused =
-                          focusSessionName === session.session_name;
                         const isOsMatch = osMatchedSessionIds.has(
                           session.session_id,
                         );
@@ -902,22 +874,12 @@ function SummaryCard({
   subValue?: string;
 }) {
   return (
-    <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-3">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-            {label}
-          </p>
-          <p className="mt-0.5 text-lg font-bold text-text-primary-light dark:text-text-primary-dark">
-            {value}
-          </p>
-          {subValue && (
-            <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-              {subValue}
-            </p>
-          )}
-        </div>
-        <span className="material-symbols-outlined text-base text-primary">{icon}</span>
+    <div className="bg-white border border-border-light rounded-xl px-3 py-2 flex items-center gap-2 w-32">
+      <span className="material-symbols-outlined text-base text-primary shrink-0">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-[11px] text-text-secondary-light leading-none">{label}</p>
+        <p className="text-sm font-bold text-text-primary-light leading-tight mt-0.5">{value}</p>
+        <p className="text-[11px] text-text-secondary-light leading-none mt-0.5">{subValue ?? ' '}</p>
       </div>
     </div>
   );
