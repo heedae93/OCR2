@@ -425,6 +425,7 @@ def init_db():
             migration_statements.append(
                 text("ALTER TABLE users ADD COLUMN masking_access_level VARCHAR(20) DEFAULT 'masked'")
             )
+        job_columns = {column["name"] for column in inspector.get_columns("jobs")}
         group_columns = {column["name"] for column in inspector.get_columns("permission_groups")}
         if "masking_field_keys" not in group_columns:
             with engine.begin() as connection:

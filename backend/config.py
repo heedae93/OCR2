@@ -344,6 +344,15 @@ class Config:
             db_config = config_data["database"]
             cls.DATABASE_URL = db_config.get("url", cls.DATABASE_URL)
 
+        # Update OpenSearch settings
+        if "opensearch" in config_data:
+            os_cfg = config_data["opensearch"]
+            cls.OS_HOST = os_cfg.get("host", cls.OS_HOST)
+            cls.OS_PORT = int(os_cfg.get("port", cls.OS_PORT))
+            cls.OS_USER = os_cfg.get("user", cls.OS_USER)
+            cls.OS_PASS = os_cfg.get("pass", cls.OS_PASS)
+            cls.OS_INDEX_NAME = os_cfg.get("index_name", cls.OS_INDEX_NAME)
+
         # Update Redis settings
         if "redis" in config_data:
             cls.REDIS_URL = config_data["redis"].get("url", cls.REDIS_URL)

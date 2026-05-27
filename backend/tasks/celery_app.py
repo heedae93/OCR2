@@ -11,7 +11,7 @@ REDIS_URL = os.environ.get('REDIS_URL', Config.REDIS_URL)
 celery_app = Celery(
     'bbocr',
     broker=REDIS_URL,
-    include=['tasks.ocr_worker']
+    include=['tasks.ocr_worker', 'tasks.opensearch_worker']
 )
 
 celery_app.conf.update(
@@ -23,11 +23,12 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     task_track_started=True,
     # Fail fast if Redis is down
-    broker_connection_retry_on_startup=False,
+   broker_connection_retry_on_startup=False,
     broker_connection_max_retries=0,
     broker_connection_timeout=1, 
     task_routes={
         'ocr.process': {'queue': 'ocr'},
         'tika.process': {'queue': 'tika'},
+        'opensearch.index_document': {'queue': 'opensearch'},
     },
 )

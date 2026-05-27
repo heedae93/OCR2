@@ -3,12 +3,13 @@
 이 문서는 팀원이 저장소를 `git pull` 받은 뒤, 로컬에서 이 프로젝트를 정상 실행하기 위한 설치/실행 가이드입니다.
 
 이 프로젝트의 `OCR 작업하기` 기능은 이제 단순히 프론트와 백엔드만 띄워서는 동작하지 않습니다.
-아래 4개가 모두 실행되어야 합니다.
+아래 5개가 모두 실행되어야 합니다.
 
 - Frontend (`Next.js`)
 - Backend (`FastAPI`)
 - Redis
-- Celery Worker
+- Celery OCR Worker (`ocr` 큐 — OCR 처리 전담)
+- Celery OpenSearch Worker (`opensearch` 큐 — 검색 색인 전담)
 
 Redis 또는 Celery Worker가 없으면 `OCR 시작하기` 시 아래와 같은 문제가 발생할 수 있습니다.
 
@@ -212,7 +213,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 6015
 curl http://localhost:6015/docs
 ```
 
-### 5-3. Celery Worker 실행
+### 5-3. Celery OCR Worker 실행
 
 새 PowerShell 창:
 
@@ -226,7 +227,7 @@ python -m celery -A tasks.ocr_worker worker -Q ocr --loglevel=info --pool=solo
 중요:
 
 - Windows에서는 `--pool=solo`가 필요합니다.
-- Worker는 OCR 큐(`ocr`)를 소비합니다.
+- OCR 처리(`ocr.process`) 태스크만 소비합니다.
 - Worker가 안 떠 있으면 작업은 `queued`에 머물 수 있습니다.
 
 정상 로그 예시:
@@ -234,7 +235,29 @@ python -m celery -A tasks.ocr_worker worker -Q ocr --loglevel=info --pool=solo
 - `Task received`
 - `Task completed`
 
-### 5-4. Frontend 실행
+### 5-4. Celery OpenSearch Worker 실행
+
+새 PowerShell 창:
+
+```powershell
+cd <프로젝트-루트>
+.venv\Scripts\Activate.ps1
+cd backend
+python -m celery -A tasks.ocr_worker worker -Q opensearch --loglevel=info --pool=solo
+```
+
+중요:
+
+- OCR 완료 후 자동 디스패치되는 검색 색인 태스크(`opensearch.index_document`)를 소비합니다.
+- 이 Worker가 없어도 OCR 자체는 정상 동작하지만, 검색 색인이 쌓이지 않습니다.
+- OCR Worker와 독립적으로 실행되므로 OCR 처리 속도에 영향을 주지 않습니다.
+
+정상 로그 예시:
+
+- `Task received`
+- `OpenSearch indexed`
+
+### 5-5. Frontend 실행
 
 새 PowerShell 창:
 
@@ -254,7 +277,8 @@ npm run dev
 
 - Redis 실행 중
 - Backend 실행 중
-- Celery Worker 실행 중
+- Celery OCR Worker 실행 중 (`ocr` 큐)
+- Celery OpenSearch Worker 실행 중 (`opensearch` 큐)
 - Frontend 실행 중
 
 정상 동작 확인:
@@ -346,8 +370,9 @@ Claude / Codex가 빠르게 참고할 수 있도록 핵심만 요약합니다.
 
 1. Redis
 2. Backend
-3. Celery Worker
-4. Frontend
+3. Celery OCR Worker (`ocr` 큐)
+4. Celery OpenSearch Worker (`opensearch` 큐)
+5. Frontend
 
 ### Windows 기준 실행 명령
 
@@ -360,13 +385,22 @@ cd backend
 python -m uvicorn main:app --host 0.0.0.0 --port 6015
 ```
 
-Worker:
+OCR Worker:
 
 ```powershell
 cd <프로젝트-루트>
 .venv\Scripts\Activate.ps1
 cd backend
-python -m celery -A ocr_worker worker -Q ocr --loglevel=info --pool=solo
+python -m celery -A tasks.ocr_worker worker -Q ocr --loglevel=info --pool=solo
+```
+
+OpenSearch Worker:
+
+```powershell
+cd <프로젝트-루트>
+.venv\Scripts\Activate.ps1
+cd backend
+python -m celery -A tasks.ocr_worker worker -Q opensearch --loglevel=info --pool=solo
 ```
 
 Frontend:
@@ -386,7 +420,8 @@ docker run -d --name bbocr-redis -p 6379:6379 redis:7
 
 - Backend와 Worker는 같은 Python 환경 사용
 - Redis 없으면 OCR 시작 안 됨
-- Worker 없으면 작업이 큐에만 쌓임
+- OCR Worker 없으면 작업이 큐에만 쌓임
+- OpenSearch Worker 없으면 OCR은 되지만 검색 색인이 누락됨
 - `No module named 'celery'`가 뜨면 Python 환경이 잘못된 것
 
 ## 9. 권장 실행 요청 예시

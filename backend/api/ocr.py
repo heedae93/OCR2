@@ -1989,33 +1989,6 @@ async def get_job_status(job_id: str):
                         except Exception as _e:
                             logger.warning(f"[{job_id}] PII DB fallback 저장 실패: {_e}")
 
-                # OpenSearch 인덱싱 fallback (OS에 없으면 DB 데이터로 저장)
-                try:
-                    from core.search_engine import search_engine
-                    from database import SessionDocument
-                    if not search_engine.client.exists(index=search_engine.index_name, id=job_id):
-                        _session_docs = db.query(SessionDocument).filter_by(job_id=job_id).all()
-                        _os_session_id = ""
-                        if _session_docs:
-                            _real = [d.session_id for d in _session_docs if d.session_id != "default"]
-                            _os_session_id = _real[0] if _real else _session_docs[0].session_id
-                        import json as _json2
-                        _os_keywords = []
-                        try:
-                            _os_keywords = _json2.loads(db_job.keywords) if db_job.keywords else []
-                        except Exception:
-                            pass
-                        search_engine.add_document(
-                            job_id=job_id,
-                            text=db_job.full_text or "",
-                            summary=db_job.summary or "",
-                            keywords=_os_keywords,
-                            session_id=_os_session_id,
-                            filename=db_job.original_filename or "",
-                        )
-                        logger.info(f"[{job_id}] OpenSearch 문서 저장 완료 (status fallback)")
-                except Exception as _search_err:
-                    logger.warning(f"[{job_id}] OpenSearch 저장 실패 (status fallback): {_search_err}")
 
             return build_response(
                 job_id_value=db_job.job_id,

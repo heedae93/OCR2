@@ -418,18 +418,17 @@ def update_job_ocr_results(
                         _raw_lines.append(_t)
             _os_text = " ".join(_raw_lines)
 
-        # OpenSearch 인덱싱 — 메타데이터 추출 성공·실패 무관하게 항상 실행
+        # OCR Task 완료 직후 OpenSearch 색인 태스크를 비동기 디스패치
         try:
-            from core.search_engine import search_engine
             from database import SessionDocument
             session_docs = db.query(SessionDocument).filter_by(job_id=job_id).all()
             os_session_id = ""
             if session_docs:
-                # "default"가 아닌 실제 생성된 세션 ID를 우선적으로 선택
                 real_sessions = [doc.session_id for doc in session_docs if doc.session_id != "default"]
                 os_session_id = real_sessions[0] if real_sessions else session_docs[0].session_id
-                
-            search_engine.add_document(
+
+            from tasks.opensearch_worker import index_document_task
+            index_document_task.delay(
                 job_id=job_id,
                 text=_os_text,
                 summary=job.summary or "",
@@ -437,9 +436,9 @@ def update_job_ocr_results(
                 session_id=os_session_id,
                 filename=job.original_filename or "",
             )
-            logger.info(f"[{job_id}] OpenSearch 문서 저장 완료 (filename={job.original_filename})")
+            logger.info(f"[{job_id}] OpenSearch 색인 태스크 디스패치 완료")
         except Exception as search_err:
-            logger.warning(f"[{job_id}] OpenSearch 저장 실패 (검색 기능에만 영향): {search_err}")
+            logger.warning(f"[{job_id}] OpenSearch 색인 태스크 디스패치 실패 (검색 기능에만 영향): {search_err}")
 
         db.close()
         return True
