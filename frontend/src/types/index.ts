@@ -9,6 +9,16 @@ export interface Job {
   pdf_url?: string
   filename?: string
   raw_file_url?: string
+  created_at?: string
+  updated_at?: string
+  completed_at?: string
+  processing_time_seconds?: number
+  total_text_blocks?: number
+  average_confidence?: number
+  is_double_column?: boolean
+  doc_type?: string
+  session_id?: string
+  user_id?: string
 }
 
 export interface OCRWord {

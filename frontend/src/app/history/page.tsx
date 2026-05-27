@@ -141,6 +141,7 @@ export default function HistoryPage() {
   const loadData = async () => {
     setLoading(true)
     const userId = getUserId()
+    const adminFlag = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}').type === 'A' } catch { return false } })()
     try {
       if (tab === 'versions') {
         const res = await fetch(`${API_BASE_URL}/api/history/versions?user_id=${userId}`)
@@ -149,7 +150,10 @@ export default function HistoryPage() {
         const res = await fetch(`${API_BASE_URL}/api/history/downloads?user_id=${userId}`)
         setDownloads(res.ok ? await res.json() : [])
       } else {
-        const res = await fetch(`${API_BASE_URL}/api/jobs/masking-history?user_id=${userId}`)
+        const url = adminFlag
+          ? `${API_BASE_URL}/api/jobs/masking-history?all_users=true`
+          : `${API_BASE_URL}/api/jobs/masking-history?user_id=${userId}`
+        const res = await fetch(url)
         setMasking(res.ok ? await res.json() : [])
       }
     } finally {

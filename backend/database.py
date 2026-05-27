@@ -27,6 +27,7 @@ else:
     engine_args["max_overflow"] = 20     # 초과 허용 커넥션 수
     engine_args["pool_timeout"] = 30     # 커넥션 대기 타임아웃(초)
     engine_args["pool_use_lifo"] = True  # 가장 최근에 사용된 커넥션 우선 재사용 (방치 시간 최소화)
+    engine_args["connect_args"] = {"connect_timeout": 10}  # DB 연결 타임아웃 10초
 
 engine = create_engine(DATABASE_URL, **engine_args)
 

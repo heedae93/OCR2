@@ -3,7 +3,7 @@ setlocal
 title BBOCR GPU Starter
 
 :: Set Python Path
-set PYTHON_EXE=C:\Users\USER\anaconda3\envs\bbocr\python.exe
+set PYTHON_EXE=C:\Users\glgld\.conda\envs\bbocr\python.exe
 
 echo ========================================
 echo   BBOCR Integrated Starter (GPU)
@@ -21,7 +21,17 @@ if exist "frontend\.next" (
     rmdir /s /q "frontend\.next"
 )
 
-:: 3. Start Tika Java Extract Server
+:: 3. Start Redis Server
+echo [3/6] Starting Redis...
+tasklist /FI "IMAGENAME eq redis-server.exe" 2>nul | find /I "redis-server.exe" >nul
+if errorlevel 1 (
+    start "BBOCR-Redis" /min "C:\Program Files\Redis\redis-server.exe"
+    echo [OK] Redis started
+) else (
+    echo [OK] Redis already running
+)
+
+:: 4. Start Tika Java Extract Server
 echo [3/5] Starting Tika Java Extract Server...
 set TIKA_JAVA_PORT=9090
 set TIKA_JAVA_JAR=
@@ -35,8 +45,8 @@ if defined TIKA_JAVA_JAR (
     echo        Build: cd tika-server ^&^& mvn package -q ^&^& cd ..
 )
 
-:: 4. Start Backend and Worker
-echo [4/5] Starting Backend and Worker (GPU)...
+:: 5. Start Backend and Worker
+echo [5/6] Starting Backend and Worker (GPU)...
 set PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
 set KMP_DUPLICATE_LIB_OK=True
 set CUDA_VISIBLE_DEVICES=0
@@ -49,8 +59,8 @@ cd backend
 start "BBOCR-Worker" /min cmd /c "set TIKA_JAVA_SERVER_URL=%TIKA_JAVA_SERVER_URL% && set PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True && "%PYTHON_EXE%" -m celery -A tasks.celery_app worker -Q ocr,tika --loglevel=info --pool=solo"
 cd ..
 
-:: 5. Start Frontend
-echo [5/5] Starting Frontend...
+:: 6. Start Frontend
+echo [6/6] Starting Frontend...
 cd frontend
 start "BBOCR-Frontend" /min cmd /c "npm run dev"
 cd ..

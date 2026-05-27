@@ -123,6 +123,7 @@ async def list_jobs(
 async def get_masking_history(
     user_id: str = "default",
     session_id: Optional[str] = None,
+    all_users: bool = False,
     db: Session = Depends(get_db),
 ):
     """
@@ -131,7 +132,9 @@ async def get_masking_history(
     """
     from config import Config
 
-    query = db.query(Job).filter(Job.user_id == user_id, Job.status == "completed")
+    query = db.query(Job).filter(Job.status == "completed")
+    if not all_users:
+        query = query.filter(Job.user_id == user_id)
     if session_id:
         job_ids = [
             r.job_id for r in

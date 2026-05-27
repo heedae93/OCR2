@@ -20,6 +20,8 @@ interface Job {
   pdf_url?: string | null;
   message?: string | null;
   added_at: string;
+  updated_at?: string | null;
+  completed_at?: string | null;
 }
 
 interface SessionDetail {
