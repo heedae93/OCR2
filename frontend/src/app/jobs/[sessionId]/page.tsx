@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import Sidebar from "@/components/Sidebar";
 import PipelineProgress from "@/components/PipelineProgress";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
@@ -266,17 +265,16 @@ export default function SessionDetailPage() {
 
   if (loading && !session) {
     return (
-      <div className="bg-slate-50 dark:bg-slate-50 min-h-screen flex items-center justify-center">
+      <main className="ml-64 flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-50">
         <span className="material-symbols-outlined animate-spin text-primary text-4xl">
           progress_activity
         </span>
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="bg-slate-50 dark:bg-slate-50 min-h-screen text-text-primary-light dark:text-text-primary-dark">
-      <Sidebar />
+    <>
       <main className="ml-64 p-8 lg:p-12 transition-all duration-300">
         <div className="max-w-6xl mx-auto">
           {/* Breadcrumbs */}
@@ -508,6 +506,6 @@ export default function SessionDetailPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

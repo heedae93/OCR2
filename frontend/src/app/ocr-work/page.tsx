@@ -8,11 +8,9 @@ import Sidebar from '@/components/Sidebar'
 import { useOcrActivity } from '@/contexts/OcrActivityContext'
 import {
   AlertCircle,
-  CheckCircle,
   ChevronDown,
   Loader2,
   Trash2,
-  Upload,
   X,
   FolderOpen,
   StopCircle,
@@ -46,6 +44,7 @@ interface QueueFile {
   sourceType: SourceType
   sessionName: string
   sessionKey?: string
+  completedAt?: string
   failedStage?: number
   trackedOnly?: boolean
   /** Tika 텍스트 추적 안내 (OCR 오류와 별개) */
@@ -58,6 +57,11 @@ function makeSessionKey(sessionName: string, sessionId: string): string {
   return `${sessionName}${SESSION_KEY_SEP}${sessionId}`
 }
 
+function getSessionIdFromKey(sessionKey: string): string | null {
+  const idx = sessionKey.indexOf(SESSION_KEY_SEP)
+  return idx >= 0 ? sessionKey.slice(idx + SESSION_KEY_SEP.length) || null : null
+}
+
 function displaySessionName(sessionKeyOrName: string): string {
   const idx = sessionKeyOrName.indexOf(SESSION_KEY_SEP)
   return idx >= 0 ? sessionKeyOrName.slice(0, idx) : sessionKeyOrName
@@ -67,6 +71,29 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatCompletedAt(value?: string): string {
+  if (!value) return ''
+
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T')
+  const date = new Date(normalized)
+  if (Number.isNaN(date.getTime())) return value
+
+  return date.toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function getCompletedTimeValue(value?: string): number {
+  if (!value) return 0
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T')
+  const time = new Date(normalized).getTime()
+  return Number.isNaN(time) ? 0 : time
 }
 
 function queueStatusLabel(status: FileStatus): string {
@@ -99,13 +126,13 @@ export default function OcrWorkPage() {
   const [queue, setQueue] = useState<QueueFile[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitMessage, setSubmitMessage] = useState('')
-  const [queueWarning, setQueueWarning] = useState('')
   /** 문서 작업 시작하기 이후 일괄 문서 유형 변경 금지 */
   const [bulkDocTypeLocked, setBulkDocTypeLocked] = useState(false)
   const [draftSessionNonce, setDraftSessionNonce] = useState(() => `${Date.now()}-${Math.random()}`)
   const [expandedSessions, setExpandedSessions] = useState<Record<string, boolean>>({})
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({})
   const [restartingSessionKeys, setRestartingSessionKeys] = useState<Set<string>>(new Set())
+  const [queueStatusTab, setQueueStatusTab] = useState<'active' | 'completed'>('active')
   const [sessionPage, setSessionPage] = useState(1)
   const SESSIONS_PER_PAGE = 6
 
@@ -164,10 +191,15 @@ export default function OcrWorkPage() {
                       : 'queued'
 
           const progress = Number(data?.progress_percent ?? item.progress ?? 0)
+          const completedAt = data?.completed_at ?? data?.completedAt
           return {
             ...item,
             status: mappedStatus,
             progress: mappedStatus === 'completed' ? 100 : Math.round(progress),
+            completedAt:
+              mappedStatus === 'completed'
+                ? completedAt || item.completedAt || new Date().toISOString()
+                : undefined,
             error:
               mappedStatus === 'failed'
                 ? (data?.message || (rawStatus === 'cancelled' ? '사용자가 중지했습니다.' : item.error))
@@ -234,12 +266,6 @@ export default function OcrWorkPage() {
   }, [submitMessage])
 
   useEffect(() => {
-    if (sessionName.trim() || queue.length === 0) {
-      setQueueWarning('')
-    }
-  }, [sessionName, queue.length])
-
-  useEffect(() => {
     if (queue.length === 0) {
       setBulkDocTypeLocked(false)
     }
@@ -283,6 +309,7 @@ export default function OcrWorkPage() {
           sourceType: job.sourceType,
           sessionName: job.sessionName || UNNAMED_SESSION_LABEL,
           sessionKey: job.sessionKey,
+          completedAt: job.completedAt,
           trackedOnly: true,
           error: job.message,
           tikaUserMessage: job.tikaUserMessage,
@@ -352,9 +379,6 @@ export default function OcrWorkPage() {
   const addFiles = useCallback(
     (files: File[], sourceType: SourceType) => {
       if (isSubmitting) return
-      if (sessionName.trim()) {
-        setQueueWarning('')
-      }
       const items = createQueueItems(files, sourceType)
       if (items.length === 0) return
       setSubmitMessage('')
@@ -398,10 +422,10 @@ export default function OcrWorkPage() {
     if (isSubmitting) return
     setQueue([])
     setSubmitMessage('')
-    setQueueWarning('')
     setSessionName('')
     setExpandedSessions({})
     setVisibleCounts({})
+    setDefaultDocType('')
     setBulkDocTypeLocked(false)
     setDraftSessionNonce(`${Date.now()}-${Math.random()}`)
     clearAllTrackedJobs()
@@ -488,7 +512,6 @@ export default function OcrWorkPage() {
     // 사용자가 눌렀다는 즉시 피드백(버튼 로딩/비활성화)이 보이도록
     setIsSubmitting(true)
     setSubmitMessage('')
-    setQueueWarning('')
 
     // Redis 상태 확인
     try {
@@ -507,20 +530,6 @@ export default function OcrWorkPage() {
     }
 
     setBulkDocTypeLocked(true)
-
-    // 워커 상태 확인 (Windows + solo pool 환경에서는 ping 실패가 자주 발생할 수 있음)
-    try {
-      const workerRes = await fetch(`${API_BASE}/worker/health`)
-      if (workerRes.ok) {
-        const workerData = await workerRes.json()
-        if (!workerData.available) {
-          setQueueWarning('워커 상태 확인이 불안정합니다. 작업은 계속 시도합니다.')
-        }
-      }
-    } catch {
-      // 백엔드/워커 헬스 조회 실패 시에도 등록은 시도
-      setQueueWarning('워커 상태를 확인하지 못했습니다. 작업 등록을 계속 시도합니다.')
-    }
 
     const user = JSON.parse(localStorage.getItem('user') || '{}')
     const userId = user.user_id || 'default'
@@ -745,6 +754,12 @@ export default function OcrWorkPage() {
 
   const needsSessionName = !sessionName.trim() && pendingUploadCount > 0
 
+  useEffect(() => {
+    if (pendingUploadCount === 0) {
+      setDefaultDocType('')
+    }
+  }, [pendingUploadCount])
+
   /** 현재 작업명으로 묶인 대기(업로드 전) 파일들의 문서 유형 — 왼쪽 일괄 셀렉트용 */
   const pendingDocTypesForSidebar = useMemo(() => {
     const pending = queue.filter(file => file.status === 'pending' && !file.jobId && !file.trackedOnly)
@@ -801,25 +816,81 @@ export default function OcrWorkPage() {
       if (!groups[sName]) groups[sName] = []
       groups[sName].push(file)
     })
-    const getSessionTimestamp = (files: QueueFile[]) => {
+
+    return Object.entries(groups)
+  }, [queue, resolveQueueSessionName])
+
+  const getSessionTimestamp = useCallback((files: QueueFile[]) => {
       const nonTracked = files.filter(f => !f.trackedOnly)
       const candidates = (nonTracked.length ? nonTracked : files)
         .map(f => f.createdAt)
         .filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
       if (candidates.length === 0) return 0
       return Math.max(...candidates)
-    }
+  }, [])
 
-    return Object.entries(groups)
-      .sort((a, b) => getSessionTimestamp(b[1]) - getSessionTimestamp(a[1]))
-  }, [queue, resolveQueueSessionName])
+  const getActiveGroupPriority = useCallback((files: QueueFile[]) => {
+    if (files.some(file => file.status === 'processing' || file.status === 'uploading')) return 0
+    if (files.some(file => file.status === 'queued')) return 1
+    if (files.some(file => file.status === 'failed')) return 2
+    return 3
+  }, [])
+
+  const groupedQueueByStatus = useMemo(() => {
+    const isCompletedGroup = ([, files]: [string, QueueFile[]]) =>
+      files.length > 0 && files.every(file => file.status === 'completed')
+
+    const sortActiveGroups = (groups: [string, QueueFile[]][]) =>
+      [...groups].sort((a, b) => {
+        const priorityDiff = getActiveGroupPriority(a[1]) - getActiveGroupPriority(b[1])
+        if (priorityDiff !== 0) return priorityDiff
+        return getSessionTimestamp(b[1]) - getSessionTimestamp(a[1])
+      })
+
+    return {
+      active: sortActiveGroups(groupedQueueArray.filter(group => !isCompletedGroup(group))),
+      completed: groupedQueueArray
+        .filter(isCompletedGroup)
+        .sort((a, b) => getSessionTimestamp(b[1]) - getSessionTimestamp(a[1])),
+    }
+  }, [getActiveGroupPriority, getSessionTimestamp, groupedQueueArray])
+
+  const selectedQueueGroups = groupedQueueByStatus[queueStatusTab]
 
   const paginatedGroups = useMemo(() => {
     const start = (sessionPage - 1) * SESSIONS_PER_PAGE
-    return groupedQueueArray.slice(start, start + SESSIONS_PER_PAGE)
-  }, [groupedQueueArray, sessionPage])
+    return selectedQueueGroups.slice(start, start + SESSIONS_PER_PAGE)
+  }, [selectedQueueGroups, sessionPage])
 
-  const totalSessionPages = Math.ceil(groupedQueueArray.length / SESSIONS_PER_PAGE)
+  const totalSessionPages = Math.ceil(selectedQueueGroups.length / SESSIONS_PER_PAGE)
+
+  const currentActiveSummary = useMemo(() => {
+    const statusPriority: FileStatus[] = ['processing', 'uploading']
+
+    for (const status of statusPriority) {
+      for (const [sessionKey, files] of groupedQueueByStatus.active) {
+        const file = files.find(item => item.status === status)
+        if (!file) continue
+
+        const tracked = file.jobId ? trackedJobs.find(job => job.jobId === file.jobId) : undefined
+        return {
+          sessionKey,
+          sessionName: displaySessionName(sessionKey),
+          file,
+          status: file.status,
+          progress: tracked?.progressPercent ?? file.progress ?? 0,
+          subStage: tracked?.subStage,
+          failedStage: file.failedStage,
+        }
+      }
+    }
+
+    return null
+  }, [groupedQueueByStatus.active, trackedJobs])
+
+  useEffect(() => {
+    setSessionPage(1)
+  }, [queueStatusTab])
 
   useEffect(() => {
     if (sessionPage > 1 && sessionPage > totalSessionPages) {
@@ -830,7 +901,7 @@ export default function OcrWorkPage() {
   return (
     <div className="bg-slate-50 dark:bg-slate-50 min-h-screen">
       <Sidebar />
-      <main className="flex-1 ml-64 mt-14 flex flex-col p-6 lg:p-10 min-w-0">
+      <main className="flex-1 ml-64 flex flex-col p-6 lg:p-10 min-w-0">
         <div className="w-full max-w-7xl mx-auto flex flex-col gap-6">
           <div className="flex items-start justify-between">
             <div className="flex-1 min-w-0 pr-4">
@@ -838,28 +909,15 @@ export default function OcrWorkPage() {
                 문서 작업하기
               </h1>
             </div>
-            
-            <div className="flex items-center gap-3">
-              {submitMessage && (
-                <Link 
-                  href="/jobs"
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 transition-all animate-in fade-in slide-in-from-right-2 duration-300 group"
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  <span className="text-xs font-bold">{submitMessage}</span>
-                  <span className="material-symbols-outlined !text-xs group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
-                </Link>
-              )}
-            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[360px_minmax(0,1fr)] xl:items-stretch">
-            <aside className="flex min-h-0 flex-col gap-3 xl:col-start-1 xl:h-[calc(100vh-9rem)] xl:overflow-y-auto xl:sticky xl:top-6">
-              <div className="shrink-0 rounded-xl border border-border-light bg-surface-light p-4 dark:border-border-dark dark:bg-surface-dark xl:p-3.5 flex flex-col gap-4">
+            <aside className="flex min-h-0 flex-col gap-3 xl:col-start-1 xl:h-[calc(100vh-9rem)] xl:sticky xl:top-6">
+              <div className="flex min-h-[620px] flex-1 flex-col gap-3 rounded-xl border border-border-light bg-surface-light p-4 dark:border-border-dark dark:bg-surface-dark xl:h-full xl:min-h-0 xl:p-3.5 [@media(max-height:760px)]:gap-2 [@media(max-height:760px)]:p-2.5">
 
                 {/* 작업명 */}
-                <div>
-                  <label className="block text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark mb-2 uppercase tracking-wider">
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/20 [@media(max-height:760px)]:p-3">
+                  <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark [@media(max-height:760px)]:mb-1">
                     작업명
                   </label>
                   <input
@@ -872,44 +930,39 @@ export default function OcrWorkPage() {
                     disabled={isSubmitting}
                     aria-invalid={needsSessionName}
                     aria-describedby={needsSessionName ? 'ocr-work-session-name-hint' : undefined}
-                    className={`w-full px-3 py-2 text-sm border rounded-lg bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all ${
+                    className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-text-primary-light transition-all focus:outline-none focus:ring-2 focus:ring-primary/50 dark:bg-background-dark dark:text-text-primary-dark [@media(max-height:760px)]:h-9 ${
                       needsSessionName
                         ? 'border-amber-500/90 ring-2 ring-amber-500/20 dark:border-amber-500 dark:ring-amber-500/25'
                         : 'border-border-light dark:border-border-dark'
                     }`}
                   />
+                  <p className="mt-2 text-[11px] leading-snug text-text-secondary-light dark:text-text-secondary-dark [@media(max-height:760px)]:mt-1 [@media(max-height:760px)]:text-[10px]">
+                    입력한 작업명으로 파일들이 하나의 작업에 묶입니다.
+                  </p>
                   {needsSessionName && (
                     <div
                       id="ocr-work-session-name-hint"
                       role="alert"
-                      className="mt-2.5 flex gap-2.5 rounded-lg border border-orange-400 bg-orange-500 px-3 py-2.5 shadow-sm"
+                      className="mt-2 flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 shadow-sm [@media(max-height:760px)]:mt-1 [@media(max-height:760px)]:px-2 [@media(max-height:760px)]:py-1.5"
                     >
                       <AlertCircle
-                        className="mt-0.5 h-4 w-4 shrink-0 text-white"
+                        className="h-4 w-4 shrink-0 text-orange-600"
                         aria-hidden
                       />
                       <div className="min-w-0">
-                        <p className="text-xs font-semibold text-white">
+                        <p className="text-xs font-bold text-orange-800">
                           작업명을 입력해 주세요
-                        </p>
-                        <p className="mt-1 text-[11px] leading-snug text-white/90">
-                          등록·목록에서 작업을 구분하려면 이름이 필요합니다. 입력하면 아래 대기 파일이 이 이름으로 묶입니다.
                         </p>
                       </div>
                     </div>
                   )}
-                  <p className={`mt-2 text-[11px] text-text-secondary-light dark:text-text-secondary-dark ${needsSessionName ? 'opacity-80' : ''}`}>
-                    선택/업로드한 파일은 현재 작업명으로 작업 내역에 묶여 등록됩니다.
-                  </p>
                 </div>
 
-                <div className="h-px bg-border-light dark:bg-border-dark" />
-
                 {/* 문서 유형 일괄 선택 */}
-                <div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/20 [@media(max-height:760px)]:p-3">
                   <label
                     htmlFor="ocr-work-bulk-doc-type"
-                    className="mb-2 block text-xs font-bold uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark xl:mb-1.5"
+                    className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark [@media(max-height:760px)]:mb-1"
                   >
                     문서 유형 일괄 선택
                   </label>
@@ -919,7 +972,7 @@ export default function OcrWorkPage() {
                         id="ocr-work-bulk-doc-type"
                         disabled
                         value=""
-                        className="w-full cursor-not-allowed appearance-none rounded-lg border border-border-light bg-background-light py-2 pl-3 pr-9 text-sm text-text-secondary-light opacity-60 dark:border-border-dark dark:bg-background-dark dark:text-text-secondary-dark"
+                        className="h-10 w-full cursor-not-allowed appearance-none rounded-lg border border-border-light bg-white pl-3 pr-9 text-sm text-text-secondary-light opacity-60 dark:border-border-dark dark:bg-background-dark dark:text-text-secondary-dark [@media(max-height:760px)]:h-9"
                       >
                         <option value="">파일을 추가하면 선택할 수 있습니다</option>
                       </select>
@@ -941,7 +994,7 @@ export default function OcrWorkPage() {
                             setDefaultDocType(v)
                           }
                         }}
-                        className="w-full cursor-pointer appearance-none rounded-lg border border-border-light bg-background-light py-2 pl-3 pr-9 text-sm text-text-primary-light focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-border-dark dark:bg-background-dark dark:text-text-primary-dark"
+                        className="h-10 w-full cursor-pointer appearance-none rounded-lg border border-border-light bg-white pl-3 pr-9 text-sm text-text-primary-light focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-border-dark dark:bg-background-dark dark:text-text-primary-dark [@media(max-height:760px)]:h-9"
                       >
                         <option value="">문서유형선택</option>
                         {allDocTypes.map(type => (
@@ -956,42 +1009,55 @@ export default function OcrWorkPage() {
                       />
                     </div>
                   )}
+                  <p className="mt-2 text-[11px] leading-snug text-text-secondary-light dark:text-text-secondary-dark [@media(max-height:760px)]:mt-1 [@media(max-height:760px)]:text-[10px]">
+                    문서 유형별 메타데이터 추출 기준이 적용됩니다.
+                  </p>
                 </div>
 
-                <div className="h-px bg-border-light dark:bg-border-dark" />
-
                 {/* 파일 추가 */}
-              <div className="flex min-h-0 flex-1 flex-col gap-3">
-              <div className="flex flex-col xl:min-h-0">
+              <div className="flex min-h-0 flex-1 flex-col gap-3 [@media(max-height:760px)]:gap-2">
+              <div className="flex min-h-0 flex-1 flex-col">
                 <input {...getInputProps()} />
-                <div className="mt-2 grid w-full grid-cols-2 gap-2">
-                  <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-slate-500 px-3 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-slate-600 active:scale-[0.98]">
-                    <Upload className="w-3.5 h-3.5" />
-                    파일 선택
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.hwp,.hwpx,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.HWP,.HWPX,application/pdf,image/png,image/jpeg,image/tiff,image/webp,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.hancom.hwp,application/vnd.hancom.hwpx,application/x-hwp"
-                      className="hidden"
-                      disabled={isSubmitting}
-                      onChange={event => handleFileSelect(event, 'file')}
-                    />
-                  </label>
-                  <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-slate-500 px-3 py-2 text-xs font-bold text-white transition-all hover:bg-slate-600 active:scale-[0.98]">
-                    <FolderOpen className="w-3.5 h-3.5" />
-                    폴더 선택
-                    <input
-                      ref={folderInputRef}
-                      type="file"
-                      multiple
-                      className="hidden"
-                      disabled={isSubmitting}
-                      // @ts-expect-error webkitdirectory is supported by Chromium-based browsers
-                      webkitdirectory=""
-                      onChange={event => handleFileSelect(event, 'folder')}
-                    />
-                  </label>
+                <div className="flex min-h-[190px] flex-1 flex-col justify-center rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/20 [@media(max-height:760px)]:min-h-[150px] [@media(max-height:760px)]:p-3">
+                  <div className="mb-4 text-center [@media(max-height:760px)]:mb-2">
+                    <p className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">
+                      파일 또는 폴더 추가
+                    </p>
+                    <p className="mt-1 text-[11px] leading-snug text-text-secondary-light dark:text-text-secondary-dark [@media(max-height:760px)]:text-[10px]">
+                      선택한 항목은 오른쪽 작업 목록에 추가됩니다.
+                    </p>
+                    <p className="mt-1 text-[10px] leading-snug text-slate-400">
+                      지원 형식: PDF, 이미지, HWP/HWPX, TXT, DOC/XLS/PPT
+                    </p>
+                  </div>
+                  <div className="grid w-full grid-cols-1 gap-2 [@media(max-height:760px)]:gap-1.5">
+                  <label className="flex h-11 cursor-pointer items-center justify-center rounded-xl bg-slate-700 px-3 text-sm font-bold text-white shadow-sm transition-all active:scale-[0.98] [@media(max-height:760px)]:h-9">
+                      파일 선택
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.hwp,.hwpx,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.HWP,.HWPX,application/pdf,image/png,image/jpeg,image/tiff,image/webp,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.hancom.hwp,application/vnd.hancom.hwpx,application/x-hwp"
+                        className="hidden"
+                        disabled={isSubmitting}
+                        onChange={event => handleFileSelect(event, 'file')}
+                      />
+                    </label>
+                  <label className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition-all active:scale-[0.98] dark:border-slate-300 dark:bg-white [@media(max-height:760px)]:h-9">
+                      <FolderOpen className="h-4 w-4" />
+                      폴더 선택
+                      <input
+                        ref={folderInputRef}
+                        type="file"
+                        multiple
+                        className="hidden"
+                        disabled={isSubmitting}
+                        // @ts-expect-error webkitdirectory is supported by Chromium-based browsers
+                        webkitdirectory=""
+                        onChange={event => handleFileSelect(event, 'folder')}
+                      />
+                    </label>
+                  </div>
                 </div>
               </div>
 
@@ -999,7 +1065,7 @@ export default function OcrWorkPage() {
                 type="button"
                 onClick={() => void startProcessing()}
                 disabled={isSubmitting || pendingUploadCount === 0 || !sessionName.trim()}
-                className="flex w-full shrink-0 items-center justify-center gap-2.5 rounded-xl bg-primary px-6 py-4 text-[15px] font-bold leading-tight text-white shadow-md shadow-primary/20 transition-all hover:bg-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 xl:py-[1.125rem]"
+                className="flex h-16 w-full shrink-0 items-center justify-center gap-2.5 rounded-xl bg-primary px-6 text-[15px] font-bold leading-tight text-white shadow-md shadow-primary/20 transition-all hover:bg-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 [@media(max-height:760px)]:h-12"
               >
                 {isSubmitting ? (
                   <>
@@ -1102,64 +1168,161 @@ export default function OcrWorkPage() {
                     </button>
                   </div>
                 </div>
-                {queueWarning && (
-                  <div className="flex gap-2.5 border-b border-amber-200/80 bg-amber-50/95 px-4 py-2.5 dark:border-amber-900/50 dark:bg-amber-950/45 sm:px-5">
-                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
-                    <p className="min-w-0 text-xs font-medium leading-snug text-amber-900 dark:text-amber-100">
-                      {queueWarning}
-                    </p>
-                  </div>
-                )}
-
                 {queue.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full py-20 text-text-secondary-light dark:text-text-secondary-dark">
-                    <FileText className="w-12 h-12 mb-3 opacity-20" />
-                    <p className="text-sm">선택한 파일 목록이 여기에 표시됩니다</p>
-                    <p className="mt-2 text-xs font-medium text-primary">이 영역으로 파일을 드래그해서 업로드할 수 있습니다</p>
+                  <div className="flex h-full items-stretch p-2 sm:p-3">
+                    <div
+                      className={`flex min-h-[360px] w-full flex-col items-center justify-center rounded-3xl border-2 border-dashed px-6 py-12 text-center transition-all duration-200 ${
+                        isDragActive
+                          ? 'border-primary bg-primary/10 shadow-lg shadow-primary/10 ring-4 ring-primary/10'
+                          : 'border-slate-300 bg-white/70 shadow-sm shadow-slate-900/5 dark:border-slate-300 dark:bg-white/70'
+                      }`}
+                    >
+                      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">
+                        <FileText className="h-8 w-8" />
+                      </div>
+                      <p className="text-base font-bold text-slate-700">
+                        선택한 파일 목록이 여기에 표시됩니다
+                      </p>
+                      <p className="mt-2 text-sm font-medium text-primary">
+                        이 영역으로 파일을 드래그해서 업로드할 수 있습니다
+                      </p>
+                      <p className="mt-3 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                        PDF, 이미지, HWP, Office 문서를 끌어다 놓아 작업 목록에 추가하세요.
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex flex-col h-full min-h-0 overflow-hidden">
+                  <div className="border-b border-border-light bg-white/80 px-3 py-2 dark:border-border-light dark:bg-white/80">
+                    <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200/80">
+                      {[
+                        {
+                          key: 'active' as const,
+                          label: '진행 중인 작업',
+                          count: groupedQueueByStatus.active.length,
+                        },
+                        {
+                          key: 'completed' as const,
+                          label: '완료된 작업',
+                          count: groupedQueueByStatus.completed.length,
+                        },
+                      ].map(tab => {
+                        const active = queueStatusTab === tab.key
+                        return (
+                          <button
+                            key={tab.key}
+                            type="button"
+                            onClick={() => setQueueStatusTab(tab.key)}
+                            className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-extrabold transition-all ${
+                              active
+                                ? 'bg-white text-primary shadow-sm ring-1 ring-primary/15'
+                                : 'text-slate-500 hover:text-slate-700'
+                            }`}
+                          >
+                            {tab.label}
+                            <span
+                              className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                                active ? 'bg-primary/10 text-primary' : 'bg-white/80 text-slate-500'
+                              }`}
+                            >
+                              {tab.count}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {queueStatusTab === 'active' && currentActiveSummary && (
+                    <div className="border-b border-border-light bg-white/90 px-3 py-2.5 dark:border-border-light dark:bg-white/90">
+                      <div className="rounded-xl border border-primary/15 bg-primary/[0.03] p-3 shadow-sm">
+                        <div className="mb-2 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-black uppercase tracking-wide text-primary">
+                              현재 작업
+                            </p>
+                            <p className="mt-0.5 truncate text-sm font-extrabold text-slate-700">
+                              {currentActiveSummary.sessionName}
+                            </p>
+                            <p className="mt-0.5 truncate text-[11px] font-semibold text-text-secondary-light dark:text-text-secondary-dark">
+                              {currentActiveSummary.file.displayName}
+                            </p>
+                          </div>
+                          <span className="inline-flex shrink-0 items-center justify-center rounded-full bg-white px-2.5 py-1 text-[10px] font-black text-primary ring-1 ring-primary/20">
+                            {queueStatusLabel(currentActiveSummary.status)}
+                          </span>
+                        </div>
+                        <PipelineProgress
+                          compact
+                          status={currentActiveSummary.status}
+                          progress={currentActiveSummary.progress}
+                          subStage={currentActiveSummary.subStage}
+                          failedStage={currentActiveSummary.failedStage}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Grouped Session List — 패널(흰색)과 카드 구분용 캔버스 */}
                   <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable] space-y-3 bg-surface-alt-light p-2.5 dark:bg-surface-alt-light sm:p-3">
-                    {paginatedGroups.map(([sName, files]) => {
-                      const isExpanded = expandedSessions[sName] ?? true
+                    {paginatedGroups.length === 0 ? (
+                      <div
+                        className={`flex h-full min-h-[360px] flex-1 flex-col items-center justify-center rounded-3xl px-6 py-10 text-center transition-all ${
+                          queueStatusTab === 'active'
+                            ? isDragActive
+                              ? 'border-2 border-dashed border-primary bg-primary/10 shadow-lg shadow-primary/10 ring-4 ring-primary/10'
+                              : 'border-2 border-dashed border-primary/35 bg-white shadow-sm shadow-slate-900/5 ring-1 ring-primary/10'
+                            : 'border border-dashed border-slate-300 bg-white/70'
+                        }`}
+                      >
+                        <div
+                          className={`mb-4 flex h-16 w-16 items-center justify-center rounded-2xl ${
+                            queueStatusTab === 'active'
+                              ? 'bg-primary/10 text-primary ring-1 ring-primary/15'
+                              : 'bg-slate-100 text-slate-300'
+                          }`}
+                        >
+                          <FileText className="h-8 w-8" />
+                        </div>
+                        <p className="text-sm font-bold text-slate-600">
+                          {queueStatusTab === 'active' ? '진행 중인 작업이 없습니다' : '완료된 작업이 없습니다'}
+                        </p>
+                        {queueStatusTab === 'active' && (
+                          <p className="mt-2 text-sm font-bold text-primary">
+                            이 영역으로 파일을 드래그해서 업로드할 수 있습니다
+                          </p>
+                        )}
+                        <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                          {queueStatusTab === 'active'
+                            ? '파일을 드래그해서 업로드하거나 새 작업을 시작하면 이 탭에 표시됩니다.'
+                            : 'OCR 처리가 완료된 작업은 이 탭에 모입니다.'}
+                        </p>
+                      </div>
+                    ) : (
+                    paginatedGroups.map(([sName, files]) => {
+                      const isCompletedTab = queueStatusTab === 'completed'
+                      const isExpanded = expandedSessions[sName] ?? !isCompletedTab
                       const renderedSessionName = displaySessionName(sName)
                       const isUnnamedSession = renderedSessionName === UNNAMED_SESSION_LABEL
+                      const sessionIdForLink = getSessionIdFromKey(sName)
                       // status는 백엔드 동기화(syncStatuses)의 결과인 file.status를 기준으로 표시
                       const pendingInSession = files.filter(f => f.status === 'pending').length
                       const workingInSession = files.filter(f => f.status === 'uploading' || f.status === 'queued' || f.status === 'processing').length
                       const doneInSession = files.filter(f => f.status === 'completed').length
                       const failedInSession = files.filter(f => f.status === 'failed').length
+                      const sessionCompletedAt =
+                        isCompletedTab
+                          ? files.reduce<string | undefined>((latest, file) => {
+                              const tracked = file.jobId ? trackedJobs.find(tj => tj.jobId === file.jobId) : undefined
+                              const candidate = tracked?.completedAt || file.completedAt
+                              return getCompletedTimeValue(candidate) > getCompletedTimeValue(latest) ? candidate : latest
+                            }, undefined)
+                          : undefined
+                      const sessionCompletedAtText = formatCompletedAt(sessionCompletedAt)
                       
                       const visibleLimit = visibleCounts[sName] || 20
                       const visibleFiles = files.slice(0, visibleLimit)
                       const hasMore = files.length > visibleLimit
-
-                      const primaryWorkingFile =
-                        files.find(f => f.status === 'processing') ||
-                        files.find(f => f.status === 'queued') ||
-                        files.find(f => f.status === 'uploading') ||
-                        null
-                      const primaryTracked = primaryWorkingFile?.jobId
-                        ? trackedJobs.find(tj => tj.jobId === primaryWorkingFile.jobId)
-                        : undefined
-
-                      let sessionBarStatus: string
-                      let sessionBarProgress: number
-                      let sessionBarSubStage: string | null | undefined
-                      let sessionBarFailedStage: number | undefined
-                      if (primaryWorkingFile) {
-                        sessionBarStatus = primaryWorkingFile.status
-                        sessionBarProgress = primaryWorkingFile.progress || 0
-                        sessionBarSubStage = primaryTracked?.subStage
-                        sessionBarFailedStage = undefined
-                      } else {
-                        sessionBarStatus = 'pending'
-                        sessionBarProgress = 0
-                        sessionBarSubStage = undefined
-                        sessionBarFailedStage = undefined
-                      }
 
                       return (
                         <div
@@ -1187,30 +1350,26 @@ export default function OcrWorkPage() {
                                       <FolderOpen className="h-3.5 w-3.5" />
                                     </span>
                                     {!isUnnamedSession ? (
-                                      <span className="truncate rounded-md bg-black/[0.03] px-1.5 py-0.5 text-sm font-bold tracking-tight text-slate-600 dark:bg-white/[0.06] dark:text-slate-600">
-                                        {renderedSessionName}
-                                      </span>
+                                      isCompletedTab && sessionIdForLink ? (
+                                        <Link
+                                          href={`/jobs/${sessionIdForLink}`}
+                                          onClick={event => event.stopPropagation()}
+                                          className="truncate rounded-md bg-black/[0.03] px-1.5 py-0.5 text-sm font-bold tracking-tight text-slate-600 underline-offset-2 hover:underline dark:bg-white/[0.06] dark:text-slate-600"
+                                        >
+                                          {renderedSessionName}
+                                        </Link>
+                                      ) : (
+                                        <span className="truncate rounded-md bg-black/[0.03] px-1.5 py-0.5 text-sm font-bold tracking-tight text-slate-600 dark:bg-white/[0.06] dark:text-slate-600">
+                                          {renderedSessionName}
+                                        </span>
+                                      )
                                     ) : (
                                       <span className="sr-only">
                                         작업 이름이 비어 있습니다. 왼쪽 패널에서 작업 이름을 입력하세요.
                                       </span>
                                     )}
-                                  </div>
-                                  <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-                                    <div className="flex max-w-md min-w-0 flex-1 items-center gap-1.5">
-                                      <div className="h-1.5 min-w-[48px] flex-1 overflow-hidden rounded-full bg-gray-200/90 ring-1 ring-black/5 dark:bg-slate-700 dark:ring-white/10">
-                                        <div
-                                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500"
-                                          style={{
-                                            width: `${files.length ? Math.round((doneInSession / files.length) * 100) : 0}%`,
-                                          }}
-                                        />
-                                      </div>
-                                      <span className="shrink-0 text-[10px] font-bold tabular-nums text-text-secondary-light dark:text-text-secondary-dark">
-                                        {doneInSession}/{files.length}
-                                      </span>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-1">
+                                    {!isCompletedTab && (
+                                      <div className="flex flex-wrap items-center gap-1">
                                       {pendingInSession > 0 && (
                                         <span className="inline-flex items-center rounded-full bg-orange-500 px-1.5 py-px text-[9px] font-bold text-white">
                                           대기 {pendingInSession}
@@ -1231,12 +1390,13 @@ export default function OcrWorkPage() {
                                           실패 {failedInSession}
                                         </span>
                                       )}
-                                    </div>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               </button>
 
-                              <div className="flex shrink-0 items-start justify-end lg:pt-0.5">
+                              <div className="flex shrink-0 items-center justify-end gap-1 lg:pt-0.5">
                                 {failedInSession > 0 && (
                                   <button
                                     type="button"
@@ -1308,6 +1468,14 @@ export default function OcrWorkPage() {
                                     실패 항목 전체 재시작
                                   </button>
                                 )}
+                                {sessionCompletedAtText && (
+                                  <span className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-500">
+                                    <span className="material-symbols-outlined !text-[12px] text-slate-400">
+                                      event_available
+                                    </span>
+                                    {sessionCompletedAtText}
+                                  </span>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => removeSession(sName)}
@@ -1324,45 +1492,6 @@ export default function OcrWorkPage() {
                           {/* File List for Session */}
                           {isExpanded && (
                             <div className="bg-gradient-to-b from-gray-50/50 to-white p-1 dark:from-gray-50/50 dark:to-white sm:p-1.5">
-                              <div className="mb-1 rounded-lg border border-border-light/90 bg-white/90 px-1.5 py-1.5 shadow-sm dark:border-border-light/90 dark:bg-white/90 sm:px-2">
-                                {primaryWorkingFile ? (
-                                  <>
-                                    <div className="mb-1 flex min-w-0 items-center gap-1.5">
-                                      <span className="material-symbols-outlined shrink-0 !text-base text-primary">motion_mode</span>
-                                      <p className="min-w-0 text-[11px] font-bold leading-snug">
-                                        <span className="text-primary">진행</span>
-                                        <span className="mx-1 text-text-secondary-light">·</span>
-                                        <span className="font-semibold text-slate-600 break-words" title={primaryWorkingFile.displayName}>
-                                          {primaryWorkingFile.displayName}
-                                        </span>
-                                      </p>
-                                    </div>
-                                    <PipelineProgress
-                                      compact
-                                      status={sessionBarStatus}
-                                      progress={sessionBarProgress}
-                                      subStage={sessionBarSubStage}
-                                      failedStage={sessionBarFailedStage}
-                                    />
-                                  </>
-                                ) : (
-                                  <>
-                                    <p className="mb-1 text-[10px] font-bold">
-                                      <span className="text-orange-500">대기 중</span>
-                                      <span className="mx-1 text-text-secondary-light">·</span>
-                                      <span className="text-text-secondary-light">아래 목록 참고</span>
-                                    </p>
-                                    <PipelineProgress
-                                      compact
-                                      status={sessionBarStatus}
-                                      progress={sessionBarProgress}
-                                      subStage={sessionBarSubStage}
-                                      failedStage={sessionBarFailedStage}
-                                    />
-                                  </>
-                                )}
-                              </div>
-
                               <p className="mt-1.5 mb-1 px-0.5 text-[10px] font-bold uppercase tracking-wide text-text-secondary-light dark:text-text-secondary-dark">
                                 파일 목록
                               </p>
@@ -1372,7 +1501,9 @@ export default function OcrWorkPage() {
                                   const effectiveStatus = file.status
                                   const errorMessage = tracked?.message || file.error
                                   const tikaHint = tracked?.tikaUserMessage || file.tikaUserMessage
-                                  const isCurrentWork = !!primaryWorkingFile && primaryWorkingFile.id === file.id
+                                  const isCurrentWork =
+                                    currentActiveSummary?.sessionKey === sName &&
+                                    currentActiveSummary.file.id === file.id
                                   const statusLabelBg =
                                     effectiveStatus === 'completed' ? 'bg-emerald-500 text-white' :
                                     effectiveStatus === 'failed' ? 'bg-red-500 text-white' :
@@ -1383,14 +1514,14 @@ export default function OcrWorkPage() {
                                   return (
                                     <li
                                       key={file.id}
-                                      className={`group/item flex items-center gap-2 rounded-md border bg-white/95 px-2 py-1.5 shadow-sm transition-all hover:shadow dark:bg-white/95 ${
+                                      className={`group/item flex flex-col gap-2 rounded-md border bg-white/95 px-2 py-1.5 shadow-sm transition-all hover:shadow dark:bg-white/95 sm:flex-row sm:items-center sm:gap-2 ${
                                         isCurrentWork
                                           ? 'border-primary/50 ring-1 ring-primary/25 hover:border-primary/60 dark:border-primary/50 dark:hover:border-primary/60'
                                           : 'border-border-light/80 hover:border-primary/25 dark:border-border-light/80 dark:hover:border-primary/25'
                                       }`}
                                     >
                                       {/* 1. 문서유형선택 */}
-                                      <div className="w-[7rem] shrink-0 mr-2">
+                                      <div className="w-full shrink-0 sm:mr-2 sm:w-[7rem]">
                                         {file.status === 'pending' && !isSubmitting ? (
                                           <div className="relative">
                                             <select
@@ -1459,14 +1590,12 @@ export default function OcrWorkPage() {
                                         )}
                                       </div>
 
-                                      {/* 3. 파일크기 */}
-                                      <div className="w-14 shrink-0 text-right text-[11px] font-medium text-text-secondary-light dark:text-text-secondary-dark">
-                                        {file.trackedOnly ? '진행' : formatBytes(file.fileSize)}
-                                      </div>
-
-                                      {/* 4. 상태 */}
-                                      <div className="flex w-16 shrink-0 flex-col items-center gap-0.5">
-                                        <span className={`rounded px-1 py-px text-[9px] font-extrabold leading-tight tracking-wide ${statusLabelBg}`}>
+                                      {/* 3. 상태/액션 */}
+                                      <div className="flex w-full shrink-0 items-center justify-end gap-1.5 sm:w-auto">
+                                        <span className="mr-auto text-[11px] font-medium text-text-secondary-light dark:text-text-secondary-dark sm:mr-1">
+                                          {file.trackedOnly ? '작업 중' : formatBytes(file.fileSize)}
+                                        </span>
+                                        <span className={`inline-flex min-w-[2.5rem] items-center justify-center rounded px-1.5 py-0.5 text-[9px] font-extrabold leading-tight tracking-wide ${statusLabelBg}`}>
                                           {queueStatusLabel(effectiveStatus)}
                                         </span>
                                         {effectiveStatus === 'failed' && file.jobId && (
@@ -1494,10 +1623,10 @@ export default function OcrWorkPage() {
                                                 })
                                               }
                                             }}
-                                            className="inline-flex items-center gap-0.5 rounded border border-blue-200 bg-blue-50 px-1 py-px text-[9px] font-bold text-blue-700 transition-all hover:bg-blue-100"
+                                            className="inline-flex h-7 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] font-bold text-blue-700 transition-all hover:bg-blue-100"
                                             title="재시작"
                                           >
-                                            <span className="material-symbols-outlined !text-[10px] leading-none">refresh</span>
+                                            <span className="material-symbols-outlined !text-[12px] leading-none">refresh</span>
                                             재시작
                                           </button>
                                         )}
@@ -1546,28 +1675,24 @@ export default function OcrWorkPage() {
                                                 ),
                                               )
                                             }}
-                                            className="inline-flex items-center gap-0.5 rounded border border-red-200 bg-red-50 px-1 py-px text-[9px] font-bold text-red-700 transition-all hover:bg-red-100"
+                                            className="inline-flex h-7 items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 text-[10px] font-bold text-red-700 transition-all hover:bg-red-100"
                                             title="중지"
                                           >
-                                            <StopCircle className="h-2.5 w-2.5" />
+                                            <StopCircle className="h-3 w-3" />
                                             중지
                                           </button>
                                         )}
+                                        {!isCompletedTab && (file.status === 'pending' || effectiveStatus === 'failed' || effectiveStatus === 'completed') && !isSubmitting ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => removeFile(file.id)}
+                                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border-light bg-surface-light text-text-secondary-light shadow-sm transition-all hover:border-red-300 hover:bg-red-50 hover:text-red-500 dark:border-border-dark dark:bg-surface-dark dark:hover:border-red-800 dark:hover:bg-red-500/10"
+                                            title="삭제"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        ) : null}
                                       </div>
-
-                                      {/* 5. 삭제버튼 */}
-                                      {(file.status === 'pending' || effectiveStatus === 'failed' || effectiveStatus === 'completed') && !isSubmitting ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => removeFile(file.id)}
-                                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border-light bg-surface-light text-text-secondary-light shadow-sm transition-all hover:border-red-300 hover:bg-red-50 hover:text-red-500 dark:border-border-dark dark:bg-surface-dark dark:hover:border-red-800 dark:hover:bg-red-500/10"
-                                          title="삭제"
-                                        >
-                                          <X className="h-3 w-3" />
-                                        </button>
-                                      ) : (
-                                        <div className="h-7 w-7 shrink-0" />
-                                      )}
                                     </li>
                                   )
                                 })}
@@ -1585,7 +1710,7 @@ export default function OcrWorkPage() {
                           )}
                         </div>
                       )
-                    })}
+                    }))}
                   </div>
 
                   {/* Session Pagination Controls */}

@@ -1,7 +1,6 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
-import Sidebar from "@/components/Sidebar";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL, searchDocuments } from "@/lib/api";
 
@@ -457,8 +456,6 @@ function JobsPageInner() {
     );
 
   return (
-    <div className="bg-slate-50 dark:bg-slate-50 min-h-screen">
-      <Sidebar />
       <main className="ml-64 p-6 lg:p-10">
         <div className="w-full max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-6 gap-4">
@@ -729,9 +726,10 @@ function JobsPageInner() {
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-2 min-w-0">
                                     <button
-                                      onClick={() =>
-                                        openSession(session.session_id)
-                                      }
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        openSession(session.session_id);
+                                      }}
                                       className="truncate text-left text-sm font-semibold text-text-primary-light dark:text-text-primary-dark hover:text-primary hover:underline transition-colors"
                                     >
                                       {session.session_name}
@@ -858,7 +856,6 @@ function JobsPageInner() {
           )}
         </div>
       </main>
-    </div>
   );
 }
 
@@ -956,7 +953,7 @@ export default function JobsPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex items-center justify-center min-h-screen">
+        <div className="ml-64 flex items-center justify-center min-h-screen">
           <span className="material-symbols-outlined animate-spin text-primary text-4xl">
             progress_activity
           </span>

@@ -117,6 +117,20 @@ def process_ocr_task(self, job_id: str):
             pass
         return
 
+    try:
+        from api.ocr import job_manager
+        from utils.job_manager import JobStatus
+        from utils.db_helper import update_job_status
+        job_manager.update_job(
+            job_id,
+            status=JobStatus.PROCESSING,
+            progress_percent=1.0,
+            sub_stage="워커가 작업을 시작했습니다",
+        )
+        update_job_status(job_id, "processing", progress=1.0)
+    except Exception as e:
+        logger.warning(f"[Worker] Failed to mark job as processing early for {job_id}: {e}")
+
     timeout_seconds = Config.JOB_TIMEOUT_SECONDS
     from api.ocr import process_job_task
 

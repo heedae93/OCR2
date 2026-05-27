@@ -753,6 +753,13 @@ def process_job(job_id: str):
             job_manager.update_job(job_id, status=JobStatus.FAILED, message=f"Redis 서버 연결 실패: {str(redis_err)}")
             raise HTTPException(status_code=503, detail="Redis 큐 서버가 비정상입니다. (연결 오류)")
             
+        # 작업 전달 전에 QUEUED로 전환한다.
+        # send_task 직후 워커가 빠르게 PROCESSING을 기록할 수 있으므로,
+        # dispatch 이후에 queued를 다시 쓰면 processing 상태를 덮어쓸 수 있다.
+        from utils.db_helper import update_job_status as _db_update_status
+        _db_update_status(job_id, "queued", progress=0.0)
+        job_manager.update_job(job_id, status=JobStatus.QUEUED, progress_percent=0.0)
+
         # Celery Worker에 작업 전달 (Redis 큐를 통해)
         try:
             from tasks.celery_app import celery_app as _celery
@@ -766,13 +773,6 @@ def process_job(job_id: str):
             except Exception as tika_err:
                 # Tika 트랙은 비필수: 디스패치 실패해도 OCR은 계속 진행
                 logger.warning(f"Failed to dispatch job {job_id} to Tika queue: {tika_err}")
-            
-            # 작업이 성공적으로 전달된 경우에만 상태를 QUEUED로 전환
-            # 세션/목록 화면은 DB 상태를 기준으로 읽기 때문에 DB도 즉시 갱신해야
-            # 재실행 직후 completed -> queued 전이가 지연되지 않는다.
-            from utils.db_helper import update_job_status as _db_update_status
-            _db_update_status(job_id, "queued", progress=0.0)
-            job_manager.update_job(job_id, status=JobStatus.QUEUED, progress_percent=0.0)
             
         except Exception as celery_err:
             logger.error(f"Failed to dispatch job {job_id} to Celery: {celery_err}")
