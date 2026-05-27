@@ -194,7 +194,10 @@ export default function PDFViewer({
 
         // Always load PDF with PDF.js (we need it for rendering)
         const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+          "pdfjs-dist/build/pdf.worker.min.js",
+          import.meta.url,
+        ).toString();
 
         // Optimized loading for large PDFs
         const loadingTask = pdfjsLib.getDocument({
