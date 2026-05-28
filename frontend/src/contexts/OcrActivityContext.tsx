@@ -50,6 +50,7 @@ interface AddTrackedJobInput {
 }
 
 interface OcrActivityContextValue {
+  isReady: boolean
   trackedJobs: TrackedJob[]
   activeJobs: TrackedJob[]
   addTrackedJobs: (jobs: AddTrackedJobInput[]) => void
@@ -64,6 +65,17 @@ const OcrActivityContext = createContext<OcrActivityContextValue | undefined>(un
 
 function isActiveStatus(status: TrackedJobStatus) {
   return status === 'pending' || status === 'uploaded' || status === 'queued' || status === 'processing'
+}
+
+function isFreshRestoredJob(job: TrackedJob) {
+  if (!isActiveStatus(job.status)) return true
+  if (job.status === 'processing') return true
+
+  const timestamp = Date.parse(job.queuedAt || job.createdAt || '')
+  if (!Number.isFinite(timestamp)) return false
+
+  // 브라우저 재시작 후 오래된 대기 상태가 먼저 렌더링되는 것을 막는다.
+  return Date.now() - timestamp < QUEUED_TIMEOUT_MS
 }
 
 export function OcrActivityProvider({ children }: { children: ReactNode }) {
@@ -92,6 +104,9 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
+
+    const restoreTrackedJobs = async () => {
     try {
       const userId = getCurrentUserId()
       setCurrentUserId(userId)
@@ -101,13 +116,58 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
       if (saved) {
         const parsed = JSON.parse(saved) as TrackedJob[]
         if (Array.isArray(parsed)) {
-          setTrackedJobs(parsed.map(job => ({ ...job, userId: job.userId || userId })))
+          const restored: TrackedJob[] = parsed
+            .map(job => ({ ...job, userId: job.userId || userId }))
+            .filter(isFreshRestoredJob)
+
+          const reconciled: Array<TrackedJob | null> = await Promise.all(
+            restored.map(async (job): Promise<TrackedJob | null> => {
+              if (!isActiveStatus(job.status)) return job
+
+              try {
+                const response = await fetch(`${API_BASE}/status/${job.jobId}`)
+                if (!response.ok) return null
+                const data = await response.json()
+                const rawStatus = data.status as TrackedJobStatus
+                const nextStatus: TrackedJobStatus = rawStatus === 'cancelled' ? 'failed' : rawStatus
+
+                return {
+                  ...job,
+                  status: nextStatus,
+                  progressPercent: nextStatus === 'completed' ? 100 : Number(data.progress_percent ?? job.progressPercent ?? 0),
+                  subStage: data.sub_stage as string | undefined,
+                  message: data.message as string | undefined,
+                  error:
+                    nextStatus === 'failed'
+                      ? data.message || (rawStatus === 'cancelled' ? '사용자가 중지했습니다.' : job.error)
+                      : undefined,
+                  completedAt:
+                    nextStatus === 'completed' || nextStatus === 'failed'
+                      ? job.completedAt || new Date().toISOString()
+                      : undefined,
+                } satisfies TrackedJob
+              } catch {
+                return job.status === 'processing' ? job : null
+              }
+            }),
+          )
+
+          if (!cancelled) {
+            setTrackedJobs(reconciled.filter((job): job is TrackedJob => Boolean(job)))
+          }
         }
       }
     } catch (error) {
       console.warn('Failed to restore OCR activity state:', error)
     } finally {
-      setIsReady(true)
+      if (!cancelled) setIsReady(true)
+    }
+    }
+
+    void restoreTrackedJobs()
+
+    return () => {
+      cancelled = true
     }
   }, [getCurrentUserId])
 
@@ -300,6 +360,7 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
+      isReady,
       trackedJobs,
       activeJobs,
       addTrackedJobs,
@@ -310,6 +371,7 @@ export function OcrActivityProvider({ children }: { children: ReactNode }) {
       cancelAllJobs,
     }),
     [
+      isReady,
       activeJobs,
       addTrackedJobs,
       removeTrackedJobs,

@@ -119,7 +119,7 @@ import PipelineProgress from '@/components/PipelineProgress'
 
 
 export default function OcrWorkPage() {
-  const { addTrackedJobs, trackedJobs, removeTrackedJobs, clearAllTrackedJobs } = useOcrActivity()
+  const { isReady: isOcrActivityReady, addTrackedJobs, trackedJobs, removeTrackedJobs, clearAllTrackedJobs } = useOcrActivity()
   const [sessionName, setSessionName] = useState('')
   const [defaultDocType, setDefaultDocType] = useState('')
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
@@ -134,7 +134,7 @@ export default function OcrWorkPage() {
   const [restartingSessionKeys, setRestartingSessionKeys] = useState<Set<string>>(new Set())
   const [queueStatusTab, setQueueStatusTab] = useState<'active' | 'completed'>('active')
   const [sessionPage, setSessionPage] = useState(1)
-  const SESSIONS_PER_PAGE = 6
+  const SESSIONS_PER_PAGE = 8
 
   const jobIdsKey = useMemo(() => {
     const ids = queue.map(q => q.jobId).filter((id): id is string => Boolean(id))
@@ -271,54 +271,60 @@ export default function OcrWorkPage() {
     }
   }, [queue.length])
 
+  const mapTrackedJobToQueueFile = useCallback((job: (typeof trackedJobs)[number]): QueueFile => ({
+    id: `tracked-${job.jobId}`,
+    displayName: job.filename,
+    docType: defaultDocType,
+    createdAt: Date.parse(job.createdAt || '') || Date.now(),
+    status:
+      job.status === 'failed'
+        ? 'failed'
+        : job.status === 'cancelled'
+          ? 'failed'
+        : job.status === 'completed'
+          ? 'completed'
+          : job.status === 'processing'
+            ? 'processing'
+            : job.status === 'uploaded'
+              ? 'queued'
+              : job.status === 'pending'
+                ? 'pending'
+                : 'queued',
+    progress: job.progressPercent ?? 0,
+    fileSize: 0,
+    jobId: job.jobId,
+    sourceType: job.sourceType,
+    sessionName: job.sessionName || UNNAMED_SESSION_LABEL,
+    sessionKey: job.sessionKey,
+    completedAt: job.completedAt,
+    trackedOnly: true,
+    error: job.message,
+    tikaUserMessage: job.tikaUserMessage,
+    tikaTrackStatus: job.tikaTrackStatus,
+  }), [defaultDocType])
+
   useEffect(() => {
+    if (!isOcrActivityReady) return
+
+    const trackedByJobId = new Map(trackedJobs.map(job => [job.jobId, job]))
+
     setQueue(prev => {
-      const existingJobIds = new Set(
-        prev
-          .map(item => item.jobId)
-          .filter((jobId): jobId is string => Boolean(jobId)),
-      )
+      const next = prev
+        .filter(item => !item.trackedOnly || (item.jobId && trackedByJobId.has(item.jobId)))
+        .map(item => {
+          if (!item.trackedOnly || !item.jobId) return item
+          const tracked = trackedByJobId.get(item.jobId)
+          return tracked ? mapTrackedJobToQueueFile(tracked) : item
+        })
 
-      // 이미 queue에 있는 tracked item은 덮어쓰지 말고(동기화된 file.status를 유지)
-      // 백엔드 동기화가 status를 올바르게 세팅한 뒤 UI가 보여주도록 한다.
+      const existingJobIds = new Set(next.map(item => item.jobId).filter((jobId): jobId is string => Boolean(jobId)))
       const trackedAddedItems = trackedJobs
-        .filter(job => ['pending', 'uploaded', 'queued', 'processing', 'completed', 'failed', 'cancelled'].includes(job.status))
         .filter(job => !existingJobIds.has(job.jobId))
-        .map<QueueFile>(job => ({
-          id: `tracked-${job.jobId}`,
-          displayName: job.filename,
-          docType: defaultDocType,
-          createdAt: Date.parse(job.createdAt || '') || Date.now(),
-          status:
-            job.status === 'failed'
-              ? 'failed'
-              : job.status === 'cancelled'
-                ? 'failed'
-              : job.status === 'completed'
-                ? 'completed'
-                : job.status === 'processing'
-                  ? 'processing'
-                  : job.status === 'uploaded'
-                    ? 'queued'
-                    : job.status === 'pending'
-                      ? 'pending'
-                      : 'queued',
-          progress: job.progressPercent ?? 0,
-          fileSize: 0,
-          jobId: job.jobId,
-          sourceType: job.sourceType,
-          sessionName: job.sessionName || UNNAMED_SESSION_LABEL,
-          sessionKey: job.sessionKey,
-          completedAt: job.completedAt,
-          trackedOnly: true,
-          error: job.message,
-          tikaUserMessage: job.tikaUserMessage,
-          tikaTrackStatus: job.tikaTrackStatus,
-        }))
+        .map(mapTrackedJobToQueueFile)
 
-      return [...prev, ...trackedAddedItems]
+      return [...next, ...trackedAddedItems]
     })
-  }, [trackedJobs, defaultDocType])
+  }, [isOcrActivityReady, mapTrackedJobToQueueFile, trackedJobs])
 
   useEffect(() => {
     const savedUser = localStorage.getItem('user')
