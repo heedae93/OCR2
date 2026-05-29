@@ -17,6 +17,8 @@ interface NavItem {
 
 const baseNavItems: NavItem[] = [
   { href: "/dashboard", icon: "dashboard", label: "대시보드" },
+  { href: '/ocr-work', icon: 'document_scanner', label: '문서 작업하기' },
+  { href: '/jobs', icon: 'history', label: '작업내역' },
   {
     href: "/metadata-management",
     icon: "schema",
@@ -35,8 +37,6 @@ const baseNavItems: NavItem[] = [
     ],
   },
   { href: '/search', icon: 'manage_search', label: '통합검색' },
-  { href: '/ocr-work', icon: 'document_scanner', label: '문서 작업하기' },
-  { href: '/jobs', icon: 'history', label: '작업내역' },
   { href: '/history', icon: 'manage_history', label: '이력관리' },
   { href: '/statistics', icon: 'bar_chart', label: '통계' },
 ];
@@ -53,10 +53,6 @@ const adminNavItems: NavItem[] = [
       { href: "/admin/groups", icon: "groups", label: "그룹관리" },
     ],
   },
-];
-
-const bottomNavItems: NavItem[] = [
-  { href: "/settings", icon: "settings", label: "설정" },
 ];
 
 export default function Sidebar() {
@@ -103,7 +99,7 @@ export default function Sidebar() {
 
   const navItems =
     user?.type === "A"
-      ? [...baseNavItems, ...adminNavItems, ...bottomNavItems, helpNavItem]
+      ? [...baseNavItems, ...adminNavItems, helpNavItem]
       : [...baseNavItems, helpNavItem];
 
   const isActive = (path: string) =>

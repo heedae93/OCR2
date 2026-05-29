@@ -53,6 +53,7 @@ from api import metadata_settings
 from api import metadata_v2
 from api import metadata_v3
 from api import history
+from api import my_dashboard
 
 
 # CTC patch는 paddleocr 임포트 이후에 적용 (paddlex 재초기화 충돌 방지)
@@ -119,6 +120,7 @@ app.include_router(metadata_v3.router, prefix="/api", tags=["MetadataV3"])
 app.include_router(history.router, prefix="/api", tags=["History"])
 app.include_router(search.router, tags=["Search"])
 app.include_router(tika.router, prefix="/api", tags=["Tika"])
+app.include_router(my_dashboard.router, tags=["MyDashboard"])
 
 # Mount static files
 try:

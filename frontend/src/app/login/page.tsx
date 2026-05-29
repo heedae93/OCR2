@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { API_BASE_URL } from '@/lib/api'
 
 export default function LoginPage() {
@@ -132,10 +131,6 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="text-center text-sm text-text-secondary-light dark:text-text-secondary-dark mt-6">
-          계정이 없으신가요?{' '}
-          <Link href="/join" className="text-primary font-semibold hover:underline">회원가입</Link>
-        </p>
       </div>
 
       {/* 비밀번호 찾기 모달 */}
