@@ -64,7 +64,7 @@ function formatDate(raw: string | null) {
 /* ── 메인 페이지 ── */
 export default function SearchPage() {
   return (
-    <div className="min-h-screen bg-background-light">
+    <div className="h-screen bg-background-light overflow-y-scroll">
       <Suspense fallback={
         <div className="flex items-center justify-center h-64">
           <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
@@ -157,15 +157,11 @@ function SearchContent() {
               <span className="material-symbols-outlined text-lg">arrow_back</span>
             </button>
 
-            {/* 타이틀 / 초기화 버튼 */}
-            <button
-              onClick={reset}
-              className="flex items-center gap-2 hover:opacity-70 transition-opacity"
-              title="검색 초기화"
-            >
+            {/* 타이틀 */}
+            <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-2xl">manage_search</span>
               <span className="text-lg font-bold text-text-primary-light">통합검색</span>
-            </button>
+            </div>
 
             {hasQuery && (
               <span className="text-sm text-text-secondary-light">
@@ -434,16 +430,13 @@ function ResultCard({ item }: { item: SearchResult }) {
         </div>
       )}
 
-      {/* 세션 링크 */}
+      {/* 세션 정보 */}
       {item.session_id && (
         <div className="px-5 pb-3 flex items-center gap-1.5 border-t border-slate-100 pt-2">
           <span className="material-symbols-outlined text-sm text-slate-400">folder</span>
-          <Link
-            href={`/ocr-work?session=${item.session_id}`}
-            className="text-xs text-text-secondary-light hover:text-primary transition-colors truncate"
-          >
+          <span className="text-xs text-text-secondary-light truncate">
             세션: {item.session_id}
-          </Link>
+          </span>
         </div>
       )}
     </div>
