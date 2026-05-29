@@ -127,6 +127,23 @@ def _parse_extracted_fields(value: Optional[str]) -> List[dict]:
         return []
 
 
+def _field_key(item: dict) -> str:
+    value = item.get("key") or item.get("entity_type") or ""
+    return str(value)
+
+
+def _get_allowed_field_keys(db: Session, user_id: str, doc_type: Optional[str]) -> set:
+    if not doc_type:
+        return set()
+
+    rules = db.query(ExtractionRule).filter_by(
+        user_id=user_id,
+        doc_type=doc_type,
+        is_active=True,
+    ).all()
+    return {rule.field.field_key for rule in rules if rule.field}
+
+
 def _build_fallback_extracted_fields(job: Job) -> List[dict]:
     items: List[dict] = []
 
@@ -194,11 +211,11 @@ def _job_to_meta(job: Job, chunk_count: int, db: Optional[Session] = None,
     elif extracted_fields_json:
         raw_fields = extracted_fields_json
     else:
-        raw_fields = _build_fallback_extracted_fields(job)
+        raw_fields = []
 
     # 추출 설정에 정의된 필드만 표시 (allowed_field_keys 가 전달된 경우)
     if allowed_field_keys is not None:
-        raw_fields = [f for f in raw_fields if f.get("key") in allowed_field_keys]
+        raw_fields = [f for f in raw_fields if _field_key(f) in allowed_field_keys]
 
     return {
         "job_id": job.job_id,
@@ -329,10 +346,7 @@ def list_documents(
             allowed_by_doc_type.setdefault(rule.doc_type, set()).add(rule.field.field_key)
 
     def _allowed_keys(doc_type: Optional[str]) -> Optional[set]:
-        if doc_type and doc_type in allowed_by_doc_type:
-            return allowed_by_doc_type[doc_type]
-        # 설정된 규칙이 없으면 None → 필터링 안 함
-        return None
+        return allowed_by_doc_type.get(doc_type or "", set())
 
     items = [_job_to_meta(j, chunk_counts.get(j.job_id, 0), db, _allowed_keys(j.doc_type)) for j in jobs]
 
@@ -371,7 +385,7 @@ def get_document(
         for c in chunks
     ]
 
-    data = _job_to_meta(job, len(chunks), db=db)
+    data = _job_to_meta(job, len(chunks), db=db, allowed_field_keys=_get_allowed_field_keys(db, user_id, job.doc_type))
     data["full_text"] = (job.full_text or "")[:500] + "..." if job.full_text and len(job.full_text) > 500 else (job.full_text or "")
     data["chunks"] = chunk_list
     return data
@@ -418,7 +432,7 @@ def patch_document(
     db.refresh(job)
 
     chunks = db.query(DocumentChunk).filter(DocumentChunk.job_id == job_id).count()
-    return _job_to_meta(job, chunks, db=db)
+    return _job_to_meta(job, chunks, db=db, allowed_field_keys=_get_allowed_field_keys(db, user_id, job.doc_type))
 
 
 # ============================================================
@@ -444,12 +458,52 @@ def _ensure_default_fields(user_id: str, db: Session):
 
 def _ensure_default_categories(user_id: str, db: Session):
     """Ensure default categories exist"""
-    defaults = ["공문서", "계약서", "보고서", "학술논문", "법령문서", "회의록", "영수증", "신분증", "기타", "미분류"]
+    defaults = ["공문서", "계약서", "보고서", "학술논문", "법령문서", "회의록", "영수증", "신분증", "기타"]
     for name in defaults:
         exists = db.query(DocumentCategory).filter_by(user_id=user_id, name=name).first()
         if not exists:
             db.add(DocumentCategory(user_id=user_id, name=name))
     db.commit()
+
+
+def _ensure_default_extraction_rules(user_id: str, db: Session):
+    """Persist the UI's initial "all fields selected" state for never-saved categories."""
+    field_defs = db.query(MetadataFieldDefinition).filter_by(user_id=user_id).all()
+    if not field_defs:
+        return
+
+    categories = db.query(DocumentCategory).filter_by(user_id=user_id).all()
+    visible_doc_types = [
+        c.name
+        for c in categories
+        if _is_korean_doc_category(c.name) and c.name != "미분류"
+    ]
+    default_field_keys = [field.field_key for field in field_defs]
+
+    changed = False
+    for doc_type in visible_doc_types:
+        saved_marker = db.query(MaskingRuleModel).filter_by(user_id=user_id, doc_type=doc_type).first()
+        existing_rule = db.query(ExtractionRule.id).filter_by(
+            user_id=user_id,
+            doc_type=doc_type,
+            is_active=True,
+        ).first()
+
+        if saved_marker or existing_rule:
+            continue
+
+        for field_def in field_defs:
+            db.add(ExtractionRule(user_id=user_id, doc_type=doc_type, field_id=field_def.id))
+        db.add(MaskingRuleModel(
+            user_id=user_id,
+            doc_type=doc_type,
+            pii_types=json.dumps(default_field_keys, ensure_ascii=False),
+            updated_at=datetime.now(),
+        ))
+        changed = True
+
+    if changed:
+        db.commit()
 
 
 def _is_korean_doc_category(name: str) -> bool:
@@ -469,6 +523,8 @@ def get_masking_rules(
 ):
     """문서 유형별 추출 필드 목록 전체 조회 (신규 테이블 기반)"""
     _ensure_default_fields(user_id, db)
+    _ensure_default_categories(user_id, db)
+    _ensure_default_extraction_rules(user_id, db)
     
     # 1. 모든 규칙 조회
     rules = db.query(ExtractionRule).filter_by(user_id=user_id, is_active=True).all()
@@ -495,6 +551,17 @@ def upsert_masking_rule(
     
     # 1. 기존 해당 doc_type의 모든 규칙 삭제 (단순화를 위해)
     db.query(ExtractionRule).filter_by(user_id=user_id, doc_type=body.doc_type).delete()
+    saved_marker = db.query(MaskingRuleModel).filter_by(user_id=user_id, doc_type=body.doc_type).first()
+    if saved_marker:
+        saved_marker.pii_types = json.dumps(body.pii_types, ensure_ascii=False)
+        saved_marker.updated_at = datetime.now()
+    else:
+        db.add(MaskingRuleModel(
+            user_id=user_id,
+            doc_type=body.doc_type,
+            pii_types=json.dumps(body.pii_types, ensure_ascii=False),
+            updated_at=datetime.now(),
+        ))
     
     # 2. 새 필드 리스트를 바탕으로 규칙 생성
     for field_key in body.pii_types:
@@ -543,7 +610,7 @@ def get_categories(user_id: str = Query(...), db: Session = Depends(get_db)):
     """사용자가 추가한 커스텀 카테고리 목록 조회"""
     _ensure_default_categories(user_id, db)
     cats = db.query(DocumentCategory).filter_by(user_id=user_id).order_by(DocumentCategory.created_at).all()
-    cats = [c for c in cats if _is_korean_doc_category(c.name)]
+    cats = [c for c in cats if _is_korean_doc_category(c.name) and c.name != "미분류"]
     return [{"id": c.id, "name": c.name} for c in cats]
 
 @router.post("/metadata-v3/categories")
@@ -595,6 +662,12 @@ def create_custom_field(body: CustomFieldCreate, user_id: str = Query(...), db: 
         description=body.description
     )
     db.add(cf)
+    db.add(MetadataFieldDefinition(
+        user_id=user_id,
+        field_key=field_key,
+        label=body.label,
+        description=body.description,
+    ))
     db.commit()
     db.refresh(cf)
     return {

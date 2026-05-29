@@ -334,17 +334,16 @@ def update_job_ocr_results(
                 # 1. 문서 유형에 맞는 추출 규칙(ExtractionRule) 찾기
                 current_doc_type = job.doc_type or ""
                 rules = db.query(ExtractionRule).filter_by(user_id=job.user_id, doc_type=current_doc_type, is_active=True).all()
+                db.query(DocumentMetadataValue).filter_by(job_id=job_id).delete()
+                job.extracted_fields = json.dumps([], ensure_ascii=False)
 
-                if not rules:
-                    logger.info(f"[{job_id}] No extraction rules found for user {job.user_id} and doc_type '{current_doc_type}'")
-
-                if rules and getattr(Config, "LLM_ENABLED", False) and meta.get("full_text"):
+                if rules:
                     fields_to_extract = {}
                     for rule in rules:
                         if rule.field:
                             fields_to_extract[rule.field.field_key] = rule.field.label
 
-                    if fields_to_extract:
+                    if fields_to_extract and getattr(Config, "LLM_ENABLED", False) and meta.get("full_text"):
                         from utils.llm_client import process_metadata_with_llm
                         logger.info(f"[{job_id}] LLM 기반 동적 메타데이터 추출 시작 (항목: {list(fields_to_extract.values())})")
 
@@ -373,8 +372,13 @@ def update_job_ocr_results(
 
                         job.extracted_fields = json.dumps(legacy_format, ensure_ascii=False)
                         logger.info(f"[{job_id}] LLM 동적 메타데이터 추출 성공: {len(legacy_format)} 항목 저장됨")
+                    elif fields_to_extract:
+                        logger.warning(
+                            f"[{job_id}] Extraction rules exist for doc_type '{current_doc_type}', "
+                            "but LLM is disabled or full_text is empty. Configured metadata fields were not extracted."
+                        )
                 elif getattr(settings, "extract_ner", False):
-                    # 규칙이 없거나 LLM이 비활성화되어 있고, 기존 NER 설정이 켜져있을 경우의 폴백
+                    # 문서 유형별 추출 규칙이 없을 때만 기존 NER 결과를 폴백으로 사용
                     from utils.ner_extractor import get_ner_extractor
                     extractor = get_ner_extractor()
                     if extractor.is_available:
@@ -391,6 +395,8 @@ def update_job_ocr_results(
                                 confidence=item.get("score"),
                                 page_number=item.get("page_number")
                             ))
+                else:
+                    logger.info(f"[{job_id}] No extraction rules found for user {job.user_id} and doc_type '{current_doc_type}'")
             except Exception as extract_err:
                 logger.error(f"[{job_id}] 동적 메타데이터 추출 실패: {extract_err}")
 

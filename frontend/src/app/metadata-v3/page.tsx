@@ -7,7 +7,8 @@ import {
   CheckCircle2, AlertCircle, RefreshCw, Save, Plus, Trash2, Tag, X, FileText
 } from 'lucide-react'
 
-const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타', '미분류']
+const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타']
+const HIDDEN_DOC_TYPES = ['미분류']
 const ACTIVE_FIELD_CARD_COLOR = 'border-primary/35 ring-2 ring-primary/10'
 
 const DEFAULT_METADATA_FIELDS = [
@@ -68,9 +69,10 @@ export default function MetadataV3Page() {
       setCategories(cats)
       setCustomFields(custom)
 
+      const visibleCategories = cats.filter(c => !HIDDEN_DOC_TYPES.includes(c.name))
       const docTypesList = [
         ...DEFAULT_DOC_TYPES,
-        ...cats.map(c => c.name).filter(name => !DEFAULT_DOC_TYPES.includes(name)),
+        ...visibleCategories.map(c => c.name).filter(name => !DEFAULT_DOC_TYPES.includes(name)),
       ]
       const allFieldKeys = [
         ...DEFAULT_METADATA_FIELDS.map(f => f.key),
@@ -146,9 +148,10 @@ export default function MetadataV3Page() {
     } catch (e) {}
   }
 
+  const visibleCategories = categories.filter(c => !HIDDEN_DOC_TYPES.includes(c.name))
   const allDocTypes = [
     ...DEFAULT_DOC_TYPES,
-    ...categories.map(c => c.name).filter(name => !DEFAULT_DOC_TYPES.includes(name)),
+    ...visibleCategories.map(c => c.name).filter(name => !DEFAULT_DOC_TYPES.includes(name)),
   ]
   const currentPiiTypes = rules[selectedDocType] ?? []
 

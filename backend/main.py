@@ -1,8 +1,12 @@
 """
 FastAPI main application for BBOCR
 """
+import asyncio
 import os
 import logging
+import subprocess
+import sys
+from pathlib import Path
 
 # Load config first to get GPU settings
 from config import Config
@@ -67,6 +71,89 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+BACKEND_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BACKEND_DIR.parent
+LOG_DIR = PROJECT_ROOT / "logs"
+WORKER_SUPERVISOR_PID_PATH = LOG_DIR / "worker_supervisor.pid"
+WORKER_PID_PATH = LOG_DIR / "worker.pid"
+WORKER_WATCHDOG_TASK: asyncio.Task | None = None
+
+
+def _pid_running(pid: int) -> bool:
+    if os.name == "nt":
+        try:
+            result = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            return f'"{pid}"' in result.stdout
+        except Exception:
+            return False
+
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+    except Exception:
+        return False
+
+
+def _pid_file_running(path: Path) -> tuple[bool, int | None]:
+    try:
+        if not path.exists():
+            return False, None
+        pid = int(path.read_text(encoding="utf-8").strip())
+        return _pid_running(pid), pid
+    except Exception:
+        return False, None
+
+
+def _start_worker_supervisor_if_needed(reason: str) -> bool:
+    running, pid = _pid_file_running(WORKER_SUPERVISOR_PID_PATH)
+    if running:
+        return False
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+    env.setdefault("KMP_DUPLICATE_LIB_OK", "True")
+    env.setdefault("PYTHONUNBUFFERED", "1")
+    env.setdefault("WORKER_QUEUES", "ocr,tika")
+
+    creationflags = 0
+    if os.name == "nt":
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+
+    log = (LOG_DIR / "worker_supervisor_autostart.log").open("a", encoding="utf-8", buffering=1)
+    process = subprocess.Popen(
+        [sys.executable, "scripts/worker_supervisor.py", "--queues", env["WORKER_QUEUES"]],
+        cwd=str(BACKEND_DIR),
+        env=env,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        creationflags=creationflags,
+    )
+    WORKER_SUPERVISOR_PID_PATH.write_text(str(process.pid), encoding="utf-8")
+    logger.warning(
+        "Worker supervisor was not running%s. Started PID=%s%s",
+        f" (stale PID={pid})" if pid else "",
+        process.pid,
+        f" after {reason}" if reason else "",
+    )
+    return True
+
+
+async def _worker_supervisor_watchdog():
+    while True:
+        try:
+            _start_worker_supervisor_if_needed("backend-watchdog")
+        except Exception as exc:
+            logger.error("Worker supervisor watchdog failed: %s", exc)
+        await asyncio.sleep(15)
 
 # Create FastAPI app
 app = FastAPI(
@@ -137,6 +224,7 @@ except Exception as e:
 @app.on_event("startup")
 async def startup_event():
     """Application startup"""
+    global WORKER_WATCHDOG_TASK
     logger.info("=" * 60)
     logger.info("BBOCR API Starting...")
     logger.info(f"Backend URL: http://{Config.BACKEND_HOST}:{Config.BACKEND_PORT}")
@@ -177,6 +265,14 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to inspect active jobs on startup: {e}")
 
+    try:
+        _start_worker_supervisor_if_needed("api-startup")
+        if WORKER_WATCHDOG_TASK is None or WORKER_WATCHDOG_TASK.done():
+            WORKER_WATCHDOG_TASK = asyncio.create_task(_worker_supervisor_watchdog())
+            logger.info("Worker supervisor watchdog started")
+    except Exception as e:
+        logger.error(f"Failed to start worker supervisor watchdog: {e}")
+
     # Pre-load OCR models for all GPUs at startup
     logger.info("=" * 60)
     logger.info("Pre-loading OCR models for faster processing...")
@@ -193,7 +289,11 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Application shutdown"""
+    global WORKER_WATCHDOG_TASK
     logger.info("BBOCR API shutting down...")
+    if WORKER_WATCHDOG_TASK:
+        WORKER_WATCHDOG_TASK.cancel()
+        WORKER_WATCHDOG_TASK = None
     from database import engine
     engine.dispose()
     logger.info("Database connections closed.")
@@ -223,6 +323,7 @@ async def health_check():
 async def worker_health():
     """Celery 워커 상태 확인"""
     try:
+        supervisor_started = _start_worker_supervisor_if_needed("worker-health")
         from tasks.celery_app import celery_app
         inspector = celery_app.control.inspect(timeout=4.0)
 
@@ -245,6 +346,18 @@ async def worker_health():
         workers = sorted(worker_names)
         if workers:
             return {"available": True, "workers": workers, "source": "fallback"}
+
+        supervisor_running, supervisor_pid = _pid_file_running(WORKER_SUPERVISOR_PID_PATH)
+        worker_running, worker_pid = _pid_file_running(WORKER_PID_PATH)
+        if supervisor_running or worker_running:
+            return {
+                "available": True,
+                "workers": [],
+                "source": "pid-file",
+                "supervisor_pid": supervisor_pid,
+                "worker_pid": worker_pid,
+                "started_supervisor": supervisor_started,
+            }
 
         return {"available": False, "workers": [], "source": "none"}
     except Exception as e:

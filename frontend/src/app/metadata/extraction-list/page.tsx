@@ -42,6 +42,16 @@ interface MetaDoc {
   notes?: string
 }
 
+const HIDDEN_FIELD_TYPES = new Set(['문서유형', '언어', '키워드', 'DOC_TYPE', 'LANGUAGE', 'KEYWORD', 'keyword'])
+
+const isVisibleExtractedField = (field: MetaDoc['extracted_fields'][0]) =>
+  Boolean(
+    field.value &&
+    !HIDDEN_FIELD_TYPES.has(field.entity_type_ko || '') &&
+    !HIDDEN_FIELD_TYPES.has(field.entity_type || '') &&
+    !HIDDEN_FIELD_TYPES.has(field.key || '')
+  )
+
 // ─── Slide-over edit panel ───────────────────────────────────────────
 interface EditPanelProps {
   doc: MetaDoc
@@ -56,7 +66,7 @@ function EditPanel({ doc, userId, categories, onClose, onSaved }: EditPanelProps
   const [summary, setSummary] = useState(doc.summary || '')
   const [fields, setFields] = useState(
     doc.extracted_fields?.length
-      ? doc.extracted_fields.map(f => ({
+      ? doc.extracted_fields.filter(isVisibleExtractedField).map(f => ({
           ...f,
           entity_type_ko: f.entity_type_ko?.trim() 
             ? f.entity_type_ko 
@@ -326,8 +336,6 @@ export default function ExtractionListPage() {
 
   const totalPages = Math.ceil(total / pageSize)
 
-  const HIDDEN_TYPES = new Set(['문서유형', '언어', 'DOC_TYPE', 'LANGUAGE'])
-
   const fieldLabel = (f: MetaDoc['extracted_fields'][0]) => {
     const ko = f.entity_type_ko?.trim()
     if (ko && !/^[a-zA-Z_]+$/.test(ko)) return ko
@@ -429,9 +437,7 @@ export default function ExtractionListPage() {
                     </tr>
                   ) : (
                     docs.map((doc) => {
-                      const visibleFields = (doc.extracted_fields || []).filter(
-                        f => f.value && !HIDDEN_TYPES.has(f.entity_type_ko || '') && !HIDDEN_TYPES.has(f.entity_type || '')
-                      )
+                      const visibleFields = (doc.extracted_fields || []).filter(isVisibleExtractedField)
                       return (
                         <tr key={doc.job_id} className="hover:bg-primary/5 transition-colors group cursor-default">
                           {/* 문서 정보 */}
