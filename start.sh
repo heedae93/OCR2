@@ -309,9 +309,9 @@ cd backend
 PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
 TIKA_SERVER_URL="${TIKA_SERVER_URL:-}" \
 TIKA_JAVA_SERVER_URL="${TIKA_JAVA_SERVER_URL:-}" \
-WORKER_QUEUES="${WORKER_QUEUES:-ocr,tika}" \
+WORKER_QUEUES="${WORKER_QUEUES:-ocr,tika,opensearch}" \
 nohup "$PYTHON_BIN" scripts/worker_supervisor.py \
-    --queues "${WORKER_QUEUES:-ocr,tika}" \
+    --queues "${WORKER_QUEUES:-ocr,tika,opensearch}" \
     > ../logs/worker_supervisor.log 2>&1 &
 WORKER_SUPERVISOR_PID=$!
 echo "$WORKER_SUPERVISOR_PID" > ../logs/worker_supervisor.pid

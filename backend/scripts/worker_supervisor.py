@@ -233,7 +233,7 @@ def stop_worker(process: subprocess.Popen | None) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="BBOCR Celery worker supervisor")
-    parser.add_argument("--queues", default=os.environ.get("WORKER_QUEUES", "ocr,tika"))
+    parser.add_argument("--queues", default=os.environ.get("WORKER_QUEUES", "ocr,tika,opensearch"))
     parser.add_argument("--worker-name", default=os.environ.get("WORKER_NAME", "ocr_worker@%h"))
     parser.add_argument("--pool", default=os.environ.get("WORKER_POOL", "solo"))
     parser.add_argument("--loglevel", default=os.environ.get("WORKER_LOGLEVEL", "info"))

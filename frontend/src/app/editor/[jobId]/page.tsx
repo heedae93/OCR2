@@ -128,8 +128,6 @@ export default function EditorPage() {
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'files' | 'pages'>('pages');
   const [showSmartTools, setShowSmartTools] = useState(false);
-  const [editorUser, setEditorUser] = useState<{ name: string; username: string } | null>(null);
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const displayZoom = Math.round((zoom / BASELINE_RENDER_ZOOM) * 100);
 
   // Auto-save state
@@ -174,11 +172,6 @@ export default function EditorPage() {
   }, [pendingEdits, ocrResults, jobId]);
 
   // Auto-save effect with debounce
-  useEffect(() => {
-    const stored = localStorage.getItem('user')
-    if (stored) setEditorUser(JSON.parse(stored))
-  }, [])
-
   useEffect(() => {
     if (pendingEdits.length === 0) return;
 
@@ -934,87 +927,14 @@ export default function EditorPage() {
 
   return (
     <>
-      <div className="flex h-screen w-full flex-col bg-background-light dark:bg-background-dark">
-        {/* Header */}
-        <header className="flex h-16 w-full flex-shrink-0 items-center justify-between border-b border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark px-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push("/")}
-              className="flex items-center gap-2 text-primary hover:opacity-80 transition-opacity"
-            >
-              <span className="material-symbols-outlined text-3xl">
-                document_scanner
-              </span>
-              <h1 className="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">
-                AI Doc Intelligence
-              </h1>
-            </button>
-          </div>
-          <div className="flex flex-1 items-center justify-end gap-3 sm:gap-4">
-            {/* <div className="flex items-center gap-1 sm:gap-2">
-              <button className="group flex h-9 w-9 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-transparent text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 relative">
-                <span className="material-symbols-outlined text-xl">undo</span>
-                <span className="absolute bottom-[-24px] group-hover:bottom-1.5 transition-all duration-200 text-xs bg-gray-700 text-white px-1.5 py-0.5 rounded-sm whitespace-nowrap">
-                  Ctrl+Z
-                </span>
-              </button>
-              <button className="group flex h-9 w-9 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-transparent text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 relative">
-                <span className="material-symbols-outlined text-xl">redo</span>
-                <span className="absolute bottom-[-24px] group-hover:bottom-1.5 transition-all duration-200 text-xs bg-gray-700 text-white px-1.5 py-0.5 rounded-sm whitespace-nowrap">
-                  Ctrl+Y
-                </span>
-              </button>
-            </div> */}
-            <div className="relative">
-              <button
-                onClick={() => setUserMenuOpen(v => !v)}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-              >
-                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center text-white text-xs font-bold shadow-sm">
-                  {(editorUser?.name || editorUser?.username || 'U')[0].toUpperCase()}
-                </div>
-                <span className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark hidden sm:block">
-                  {editorUser?.name || editorUser?.username || '사용자'}
-                </span>
-                <span className={`material-symbols-outlined text-sm text-text-secondary-light dark:text-text-secondary-dark transition-transform duration-200 ${userMenuOpen ? 'rotate-180' : ''}`}>
-                  expand_more
-                </span>
-              </button>
-              {userMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setUserMenuOpen(false)} />
-                  <div className="absolute right-0 top-full mt-1.5 w-40 z-20 rounded-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark shadow-lg overflow-hidden">
-                    <button
-                      onClick={() => { setUserMenuOpen(false); router.push('/mypage') }}
-                      className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-text-primary-light dark:text-text-primary-dark hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                    >
-                      <span className="material-symbols-outlined text-base">manage_accounts</span>
-                      마이페이지
-                    </button>
-                    <button
-                      onClick={() => router.push('/logout')}
-                      className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                    >
-                      <span className="material-symbols-outlined text-base">logout</span>
-                      로그아웃
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="flex min-h-0 flex-1 w-full overflow-hidden">
-          <div className="flex min-h-0 w-full h-full">
+      <div className="flex h-screen w-full bg-background-light dark:bg-background-dark">
             {/* Unified Left Sidebar */}
             <aside className={`relative flex h-full flex-shrink-0 flex-col border-r border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark transition-all duration-300 ${previewCollapsed ? "w-14" : "w-72"}`}>
               {previewCollapsed ? (
                 /* 접힌 상태: 탭 아이콘 */
                 <div className="flex flex-col items-center h-full">
                   {/* 탭바와 높이 맞춤 헤더 */}
-                  <div className="w-full flex items-center justify-center py-[9px] px-1.5 border-b border-border-light dark:border-border-dark flex-shrink-0">
+                  <div className="h-11 w-full flex items-center justify-center px-1.5 border-b border-border-light dark:border-border-dark flex-shrink-0">
                     <button
                       onClick={() => setPreviewCollapsed(false)}
                       className="p-1.5 flex items-center justify-center rounded-xl text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
@@ -1040,7 +960,7 @@ export default function EditorPage() {
               ) : (
                 <div className="flex flex-col h-full min-h-0">
                   {/* Header */}
-                  <div className="flex items-center gap-1 p-1.5 border-b border-border-light dark:border-border-dark flex-shrink-0">
+                  <div className="h-11 flex items-center gap-1 px-1.5 border-b border-border-light dark:border-border-dark flex-shrink-0">
                     <div className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium bg-primary/15 text-primary">
                       <span className="material-symbols-outlined text-[15px]">auto_awesome_mosaic</span>
                       미리 보기
@@ -1131,6 +1051,129 @@ export default function EditorPage() {
 
             {/* Center - PDF Viewer */}
             <section className="relative flex min-h-0 flex-1 flex-col bg-background-light dark:bg-background-dark overflow-hidden">
+              {/* 툴바 */}
+              <header className="flex h-11 w-full flex-shrink-0 items-center border-b border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark">
+                <div className="flex w-full items-center justify-center gap-1 px-3 overflow-x-auto">
+                  {/* 줌 */}
+                  <div className="flex shrink-0 items-center rounded-lg border border-border-light dark:border-border-dark bg-background-light/60 dark:bg-background-dark/60 px-0.5">
+                    <button onClick={handleZoomOut} className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors" title="축소">
+                      <span className="material-symbols-outlined text-[18px]">zoom_out</span>
+                    </button>
+                    <span className="min-w-[3rem] text-center text-xs font-bold text-text-primary-light dark:text-text-primary-dark select-none tabular-nums">
+                      {displayZoom}%
+                    </span>
+                    <button onClick={handleZoomIn} className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors" title="확대">
+                      <span className="material-symbols-outlined text-[18px]">zoom_in</span>
+                    </button>
+                  </div>
+
+                  <div className="mx-1 h-5 w-px shrink-0 bg-border-light dark:bg-border-dark" />
+
+                  {/* 페이지 네비게이션 */}
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <button
+                      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                      className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-30"
+                      disabled={currentPage <= 1}
+                      title="이전 페이지"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+                    </button>
+                    <div className="flex items-center gap-1 rounded-md border border-border-light dark:border-border-dark px-2.5 py-1">
+                      <span className="text-xs font-medium text-text-primary-light dark:text-text-primary-dark tabular-nums">{currentPage}</span>
+                      <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">/</span>
+                      <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark tabular-nums">
+                        {ocrResults?.page_count || totalPdfPages || 1}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setCurrentPage(Math.min(ocrResults?.page_count || totalPdfPages || 1, currentPage + 1))}
+                      className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-30"
+                      disabled={currentPage >= (ocrResults?.page_count || totalPdfPages || 1)}
+                      title="다음 페이지"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">chevron_right</span>
+                    </button>
+                  </div>
+
+                  <div className="mx-1 h-5 w-px shrink-0 bg-border-light dark:bg-border-dark" />
+
+                  {/* 뷰/분석 도구 버튼들 */}
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <button
+                      onClick={() => setShowOCRComparison(!showOCRComparison)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        showOCRComparison ? "bg-primary text-white shadow-sm" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
+                      }`}
+                      title="OCR 비교"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">compare_arrows</span>
+                      <span className="hidden lg:inline whitespace-nowrap">OCR 비교</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowTextLayer(!showTextLayer)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        showTextLayer ? "bg-primary text-white shadow-sm" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
+                      }`}
+                      title="텍스트 레이어"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">visibility</span>
+                      <span className="hidden lg:inline whitespace-nowrap">텍스트 레이어</span>
+                    </button>
+
+                    {hasOCRResults && (
+                      <button
+                        onClick={reprocessCurrentPage}
+                        disabled={isReprocessingPage}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-40"
+                        title={`현재 페이지(${currentPage}) OCR 재처리`}
+                      >
+                        {isReprocessingPage ? (
+                          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <span className="material-symbols-outlined text-[18px]">refresh</span>
+                        )}
+                        <span className="hidden lg:inline whitespace-nowrap">
+                          {isReprocessingPage ? "재처리 중..." : "현재 페이지 재처리"}
+                        </span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => setShowMasking(!showMasking)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        showMasking ? "bg-primary text-white shadow-sm" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
+                      }`}
+                      title="개인정보 마스킹"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">gpp_maybe</span>
+                      <span className="hidden lg:inline whitespace-nowrap">개인정보 마스킹</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowAccuracy(!showAccuracy)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        showAccuracy ? "bg-primary text-white shadow-sm" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
+                      }`}
+                      title="정확도 시각화"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">verified</span>
+                      <span className="hidden lg:inline whitespace-nowrap">정확도 시각화</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowDataViewer(true)}
+                      disabled={!ocrResults}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="현재 파일 데이터"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">data_object</span>
+                      <span className="hidden lg:inline whitespace-nowrap">현재 파일 데이터</span>
+                    </button>
+                  </div>
+                </div>
+              </header>
               {/* PDF 뷰어 + 마스킹 패널 */}
               <div className="relative flex min-h-0 flex-1 overflow-hidden">
                 <div className="min-h-0 flex-1 overflow-hidden">
@@ -1142,136 +1185,6 @@ export default function EditorPage() {
                     fitToWidth={fitToWidth}
                     fitToPage={fitToWidth}
                     onZoomChange={setZoom}
-                    topToolbar={
-                      <div className="pointer-events-auto flex max-w-full items-center gap-1.5 overflow-x-auto rounded-2xl border border-border-light/80 bg-surface-light/95 px-2 py-1.5 shadow-lg shadow-slate-900/10 backdrop-blur-md dark:border-border-dark/80 dark:bg-surface-dark/95">
-                        <div className="flex shrink-0 items-center rounded-xl bg-background-light/80 px-1 dark:bg-background-dark/80">
-                          <button
-                            onClick={handleZoomOut}
-                            className="p-1.5 rounded-lg text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
-                            title="축소"
-                          >
-                            <span className="material-symbols-outlined text-[18px]">zoom_out</span>
-                          </button>
-                          <span className="min-w-[3rem] text-center text-xs font-bold text-text-primary-light dark:text-text-primary-dark select-none tabular-nums">
-                            {displayZoom}%
-                          </span>
-                          <button
-                            onClick={handleZoomIn}
-                            className="p-1.5 rounded-lg text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
-                            title="확대"
-                          >
-                            <span className="material-symbols-outlined text-[18px]">zoom_in</span>
-                          </button>
-                        </div>
-
-                        <div className="flex shrink-0 items-center gap-1">
-                          <div className="mx-0.5 h-5 w-px bg-border-light dark:bg-border-dark" />
-
-                          <button
-                            onClick={() => setShowOCRComparison(!showOCRComparison)}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm transition-colors ${
-                              showOCRComparison ? "bg-primary text-white shadow-sm" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
-                            }`}
-                            title="OCR 비교"
-                          >
-                            <span className="material-symbols-outlined text-[20px]">compare_arrows</span>
-                            <span className="hidden lg:inline whitespace-nowrap">OCR 비교</span>
-                          </button>
-
-                          <button
-                            onClick={() => setShowTextLayer(!showTextLayer)}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm transition-colors ${
-                              showTextLayer ? "bg-primary text-white shadow-sm" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
-                            }`}
-                            title="텍스트 레이어"
-                          >
-                            <span className="material-symbols-outlined text-[20px]">visibility</span>
-                            <span className="hidden lg:inline whitespace-nowrap">텍스트 레이어</span>
-                          </button>
-
-                          {hasOCRResults && (
-                            <button
-                              onClick={reprocessCurrentPage}
-                              disabled={isReprocessingPage}
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-40"
-                              title={`현재 페이지(${currentPage}) OCR 재처리`}
-                            >
-                              {isReprocessingPage ? (
-                                <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                              ) : (
-                                <span className="material-symbols-outlined text-[20px]">refresh</span>
-                              )}
-                              <span className="hidden lg:inline whitespace-nowrap">
-                                {isReprocessingPage ? "재처리 중..." : "현재 페이지 재처리"}
-                              </span>
-                            </button>
-                          )}
-
-                          <button
-                            onClick={() => setShowMasking(!showMasking)}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm transition-colors ${
-                              showMasking ? "bg-primary text-white shadow-sm" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
-                            }`}
-                            title="개인정보 마스킹"
-                          >
-                            <span className="material-symbols-outlined text-[20px]">gpp_maybe</span>
-                            <span className="hidden lg:inline whitespace-nowrap">개인정보 마스킹</span>
-                          </button>
-
-                          <button
-                            onClick={() => setShowAccuracy(!showAccuracy)}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm transition-colors ${
-                              showAccuracy ? "bg-primary text-white shadow-sm" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
-                            }`}
-                            title="정확도 시각화"
-                          >
-                            <span className="material-symbols-outlined text-[20px]">verified</span>
-                            <span className="hidden lg:inline whitespace-nowrap">정확도 시각화</span>
-                          </button>
-                          <button
-                            onClick={() => setShowDataViewer(true)}
-                            disabled={!ocrResults}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm transition-colors text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="현재 파일 데이터"
-                          >
-                            <span className="material-symbols-outlined text-[20px]">data_object</span>
-                            <span className="hidden lg:inline whitespace-nowrap">현재 파일 데이터</span>
-                          </button>
-                        </div>
-                      </div>
-                    }
-                    pageNavigation={
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                          className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-30"
-                          disabled={currentPage <= 1}
-                          title="이전 페이지"
-                        >
-                          <span className="material-symbols-outlined text-[20px]">chevron_left</span>
-                        </button>
-                        <div className="flex items-center gap-1 rounded-md border border-border-light dark:border-border-dark px-2.5 py-1">
-                          <input
-                            className="w-6 text-center border-0 bg-transparent text-xs font-medium text-text-primary-light dark:text-text-primary-dark outline-none"
-                            type="text"
-                            value={currentPage}
-                            readOnly
-                          />
-                          <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">/</span>
-                          <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                            {ocrResults?.page_count || totalPdfPages || 1}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => setCurrentPage(Math.min(ocrResults?.page_count || totalPdfPages || 1, currentPage + 1))}
-                          className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-30"
-                          disabled={currentPage >= (ocrResults?.page_count || totalPdfPages || 1)}
-                          title="다음 페이지"
-                        >
-                          <span className="material-symbols-outlined text-[20px]">chevron_right</span>
-                        </button>
-                      </div>
-                    }
                     ocrResults={ocrResults}
                     showTextLayer={showTextLayer}
                     showOCRComparison={showOCRComparison}
@@ -1296,19 +1209,6 @@ export default function EditorPage() {
                     />
                   </PDFViewer>
                 </div>
-
-                <aside className="flex h-full w-72 flex-shrink-0 flex-col border-l border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark">
-                  <SessionSidebar
-                    currentJobId={jobId}
-                    filterToCurrentSession={true}
-                    embedded={true}
-                    onDocumentSelect={(newJobId) => router.push(`/editor/${newJobId}`)}
-                    onOpenExportModal={(ids) => {
-                      setExportSidebarJobIds(ids);
-                      setShowExportModal(true);
-                    }}
-                  />
-                </aside>
 
                 {/* Masking Results Inspector */}
                 {showMasking && (
@@ -1857,8 +1757,20 @@ export default function EditorPage() {
                 </div>
               </aside>
             )}
-          </div>
-        </main>
+
+            {/* SessionSidebar - 항상 화면 제일 우측 고정 */}
+            <aside className="flex h-full w-72 flex-shrink-0 flex-col border-l border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark">
+              <SessionSidebar
+                currentJobId={jobId}
+                filterToCurrentSession={true}
+                embedded={true}
+                onDocumentSelect={(newJobId) => router.push(`/editor/${newJobId}`)}
+                onOpenExportModal={(ids) => {
+                  setExportSidebarJobIds(ids);
+                  setShowExportModal(true);
+                }}
+              />
+            </aside>
       </div>
 
       {/* Export Modal */}

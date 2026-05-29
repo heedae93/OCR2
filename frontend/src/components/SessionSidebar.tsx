@@ -1115,8 +1115,8 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
   return (
     <div className={`${embedded ? 'flex flex-col h-full w-full' : 'w-72 border-r border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark flex flex-col h-full'}`}>
       {/* Header */}
-      <div className="px-3 py-3 border-b border-border-light dark:border-border-dark bg-white dark:bg-surface-dark">
-        <div className="flex items-center justify-between">
+      <div className="h-11 px-3 flex items-center border-b border-border-light dark:border-border-dark bg-white dark:bg-surface-dark">
+        <div className="flex items-center justify-between w-full">
           <div className="flex flex-col gap-0.5 min-w-0 flex-1">
             {filterToCurrentSession ? (() => {
               const activeSession = sessions.find(s => s.documents.some(d => d.job_id === currentJobId))
@@ -1130,15 +1130,6 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
                       {activeSession ? activeSession.session_name : '세션 관리'}
                     </span>
                   </div>
-                  {activeSession && (
-                    <button
-                      onClick={() => setAddFileModal({ sessionId: activeSession.session_id })}
-                      disabled={uploadingSessions.has(activeSession.session_id)}
-                      className="flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-500 text-white border border-emerald-600 hover:bg-emerald-600 active:bg-emerald-700 disabled:opacity-50 transition-colors whitespace-nowrap"
-                    >
-                      파일 추가
-                    </button>
-                  )}
                 </div>
               )
             })() : (
