@@ -2169,7 +2169,10 @@ async def reprocess_single_page(job_id: str, payload: dict):
             _fd = _fitz_check.open(str(input_file))
             try:
                 if page_number - 1 < _fd.page_count:
-                    _use_fitz = len(_fd[page_number - 1].get_text("text").strip()) > 20
+                    _pg = _fd[page_number - 1]
+                    _has_text = len(_pg.get_text("text").strip()) > 20
+                    _has_image = bool(_pg.get_images())
+                    _use_fitz = _has_text and not _has_image
             finally:
                 _fd.close()
         except Exception:
@@ -2338,6 +2341,15 @@ async def reprocess_single_page(job_id: str, payload: dict):
                 pass
     except Exception as e:
         logger.warning(f"[PDF-REGEN] FAILED page={page_number}: {e}")
+
+    # 페이지 OCR이 바뀌었으므로 PII 캐시 무효화 → 다음 detect 시 재분석
+    pii_cache = Config.PROCESSED_DIR / f"{job_id}_pii.json"
+    if pii_cache.exists():
+        try:
+            pii_cache.unlink()
+            logger.info(f"[reprocess-page] PII 캐시 삭제: {pii_cache.name}")
+        except Exception:
+            pass
 
     return new_page.model_dump()
 

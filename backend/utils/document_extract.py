@@ -227,7 +227,8 @@ def detect_pdf_type(raw_path: Path) -> dict:
         page_types: List[str] = []
         for i in range(total):
             compact = "".join((doc[i].get_text("text") or "").split())
-            page_types.append("text" if len(compact) >= min_chars else "scan")
+            _has_image = bool(doc[i].get_images())
+            page_types.append("text" if (len(compact) >= min_chars and not _has_image) else "scan")
     finally:
         doc.close()
 
