@@ -34,6 +34,7 @@ const baseNavItems: NavItem[] = [
       },
     ],
   },
+  { href: '/search', icon: 'manage_search', label: '통합검색' },
   { href: '/ocr-work', icon: 'document_scanner', label: '문서 작업하기' },
   { href: '/jobs', icon: 'history', label: '작업내역' },
   { href: '/history', icon: 'manage_history', label: '이력관리' },
