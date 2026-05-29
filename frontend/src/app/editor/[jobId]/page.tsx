@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   API_BASE_URL,
   getJobStatus,
   getOCRResults,
   getProcessedFileUrl,
+  getMaskedFileUrl,
   processJob,
   exportDocument,
   getJSONDownloadUrl,
@@ -61,7 +62,9 @@ const MAX_DISPLAY_ZOOM = 300;
 export default function EditorPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const jobId = params.jobId as string;
+  const isViewerMode = searchParams.get('mode') === 'viewer';
 
   const [job, setJob] = useState<Job | null>(null);
   const [ocrResults, setOcrResults] = useState<OCRResult | null>(null);
@@ -136,11 +139,12 @@ export default function EditorPage() {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const maskingScrollRef = useRef<HTMLDivElement | null>(null);
 
-  // 항상 원본 PDF를 표시 — 마스킹은 프론트엔드 오버레이로 처리
   const [pdfVersion, setPdfVersion] = useState(() => Date.now());
   const pdfUrl = useMemo(
-    () => `${getProcessedFileUrl(jobId)}?v=${pdfVersion}`,
-    [jobId, pdfVersion],
+    () => isViewerMode
+      ? `${getMaskedFileUrl(jobId)}?v=${pdfVersion}`
+      : `${getProcessedFileUrl(jobId)}?v=${pdfVersion}`,
+    [jobId, pdfVersion, isViewerMode],
   );
 
   // Debounced auto-save function
@@ -849,6 +853,84 @@ export default function EditorPage() {
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
   };
+
+  if (isViewerMode) {
+    const viewerTotalPages = totalPdfPages || 1;
+    return (
+      <div className="flex h-screen w-full flex-col bg-background-light dark:bg-background-dark">
+        <header className="flex h-14 w-full flex-shrink-0 items-center gap-3 border-b border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark px-4 sm:px-6">
+          {/* 뒤로가기 */}
+          <button
+            onClick={() => router.back()}
+            className="flex shrink-0 items-center gap-1.5 text-text-secondary-light hover:text-primary transition-colors"
+          >
+            <span className="material-symbols-outlined text-xl">arrow_back</span>
+            <span className="text-sm hidden sm:inline">검색으로 돌아가기</span>
+          </button>
+
+          <div className="mx-1 h-5 w-px bg-border-light dark:bg-border-dark shrink-0" />
+
+          {/* 파일명 */}
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="material-symbols-outlined text-text-secondary-light text-base shrink-0">description</span>
+            <span className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark truncate">
+              {job?.original_filename || jobId}
+            </span>
+            <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">마스킹됨</span>
+          </div>
+
+          {/* 줌 컨트롤 */}
+          <div className="flex shrink-0 items-center rounded-xl bg-background-light/80 dark:bg-background-dark/80 border border-border-light dark:border-border-dark px-1">
+            <button onClick={handleZoomOut} className="p-1.5 rounded-lg text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors" title="축소">
+              <span className="material-symbols-outlined text-[18px]">zoom_out</span>
+            </button>
+            <span className="min-w-[3rem] text-center text-xs font-bold text-text-primary-light dark:text-text-primary-dark select-none tabular-nums">{displayZoom}%</span>
+            <button onClick={handleZoomIn} className="p-1.5 rounded-lg text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors" title="확대">
+              <span className="material-symbols-outlined text-[18px]">zoom_in</span>
+            </button>
+          </div>
+
+          <div className="mx-1 h-5 w-px bg-border-light dark:bg-border-dark shrink-0" />
+
+          {/* 페이지 네비게이션 */}
+          <div className="flex shrink-0 items-center gap-1">
+            <button onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-30" disabled={currentPage <= 1} title="이전 페이지">
+              <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+            </button>
+            <div className="flex items-center gap-1 rounded-md border border-border-light dark:border-border-dark px-2.5 py-1">
+              <span className="text-xs font-medium text-text-primary-light dark:text-text-primary-dark tabular-nums">{currentPage}</span>
+              <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">/</span>
+              <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark tabular-nums">{viewerTotalPages}</span>
+            </div>
+            <button onClick={() => setCurrentPage(Math.min(viewerTotalPages, currentPage + 1))} className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-30" disabled={currentPage >= viewerTotalPages} title="다음 페이지">
+              <span className="material-symbols-outlined text-[20px]">chevron_right</span>
+            </button>
+          </div>
+        </header>
+
+        <main className="flex min-h-0 flex-1 overflow-hidden">
+          <PDFViewer
+            pdfUrl={pdfUrl}
+            currentPage={currentPage}
+            onPageChange={setCurrentPage}
+            zoom={zoom}
+            fitToWidth={fitToWidth}
+            fitToPage={fitToWidth}
+            onZoomChange={setZoom}
+            ocrResults={null}
+            showTextLayer={false}
+            showOCRComparison={false}
+            showAccuracy={false}
+            showMasking={false}
+            maskingData={[]}
+            highlightedLineIndex={null}
+            onEditOCRText={() => {}}
+            onPageDimensionsChange={() => {}}
+          />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <>

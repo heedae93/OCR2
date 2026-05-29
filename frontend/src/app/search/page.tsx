@@ -388,7 +388,7 @@ function ResultCard({ item }: { item: SearchResult }) {
         {/* 열기 버튼 */}
         {item.job_id && (
           <Link
-            href={`/editor/${item.job_id}`}
+            href={`/editor/${item.job_id}?mode=viewer`}
             className="shrink-0 flex items-center gap-1 rounded-lg border border-border-light px-3 py-1.5 text-xs text-text-secondary-light hover:border-primary hover:text-primary hover:bg-blue-50 transition-colors"
           >
             <span className="material-symbols-outlined text-sm">open_in_new</span>
