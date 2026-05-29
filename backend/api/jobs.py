@@ -61,6 +61,26 @@ async def list_jobs(
         # Pagination
         total = query.count()
         jobs = query.offset(offset).limit(limit).all()
+        job_ids = [job.job_id for job in jobs]
+        session_docs = db.query(SessionDocument).filter(
+            SessionDocument.job_id.in_(job_ids)
+        ).all() if job_ids else []
+        session_doc_by_job = {}
+        for session_doc in session_docs:
+            current = session_doc_by_job.get(session_doc.job_id)
+            if current is None or current.session_id == "default":
+                session_doc_by_job[session_doc.job_id] = session_doc
+        session_ids = {
+            session_doc.session_id
+            for session_doc in session_doc_by_job.values()
+            if session_doc.session_id
+        }
+        sessions_by_id = {
+            session.session_id: session
+            for session in db.query(DBSession).filter(
+                DBSession.session_id.in_(session_ids)
+            ).all()
+        } if session_ids else {}
 
         # Convert to response format
         job_responses = []
@@ -71,6 +91,9 @@ async def list_jobs(
             current_page = job.current_page or 0
             total_pages = job.total_pages or 0
             message = job.error_message if job.status == "failed" else None
+            session_doc = session_doc_by_job.get(job.job_id)
+            session = sessions_by_id.get(session_doc.session_id) if session_doc else None
+            session_name = session.session_name if session else None
 
             # Prefer file-based status for active jobs (and check for recent failures/completions)
             file_status = JobManager.read_status_from_file(job.job_id)
@@ -102,11 +125,14 @@ async def list_jobs(
                 pdf_url=f"/files/processed/{job.job_id}.pdf" if job.pdf_file_path else None,
                 raw_file_url=None,
                 created_at=job.created_at.strftime("%Y-%m-%d %H:%M:%S") if job.created_at else None,
+                started_at=job.started_at.strftime("%Y-%m-%d %H:%M:%S") if job.started_at else None,
                 completed_at=job.completed_at.strftime("%Y-%m-%d %H:%M:%S") if job.completed_at else None,
                 processing_time_seconds=job.processing_time_seconds,
                 total_text_blocks=job.total_text_blocks,
                 average_confidence=job.average_confidence,
-                is_double_column=job.is_double_column
+                is_double_column=job.is_double_column,
+                session_id=session_doc.session_id if session_doc else None,
+                session_name=session_name,
             ))
 
         logger.info(f"Listed {len(job_responses)} jobs (total: {total})")

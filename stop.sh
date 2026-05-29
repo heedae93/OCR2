@@ -72,11 +72,25 @@ stop_server() {
 stop_server "Backend"  "logs/backend.pid"  "$BACKEND_PORT"
 stop_server "Frontend" "logs/frontend.pid" "$FRONTEND_PORT"
 
+# ── Celery Worker Supervisor 종료 ─────────────────────────
+if [ -f "logs/worker_supervisor.pid" ]; then
+    WORKER_SUPERVISOR_PID=$(cat logs/worker_supervisor.pid)
+    if kill -0 "$WORKER_SUPERVISOR_PID" 2>/dev/null; then
+        kill "$WORKER_SUPERVISOR_PID" 2>/dev/null
+        sleep 0.5
+        kill -9 "$WORKER_SUPERVISOR_PID" 2>/dev/null
+        echo "[OK] Celery Worker Supervisor stopped (PID: $WORKER_SUPERVISOR_PID)"
+    fi
+    rm -f logs/worker_supervisor.pid
+fi
+
 # ── Celery Worker 종료 ────────────────────────────────────
 if [ -f "logs/worker.pid" ]; then
     WORKER_PID=$(cat logs/worker.pid)
     if kill -0 "$WORKER_PID" 2>/dev/null; then
         kill "$WORKER_PID" 2>/dev/null
+        sleep 0.5
+        kill -9 "$WORKER_PID" 2>/dev/null
         echo "[OK] Celery Worker stopped (PID: $WORKER_PID)"
     fi
     rm -f logs/worker.pid

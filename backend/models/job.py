@@ -55,8 +55,11 @@ class JobResponse(BaseModel):
     pdf_url: Optional[str] = None
     raw_file_url: Optional[str] = None
     created_at: Optional[str] = None
+    started_at: Optional[str] = None
     completed_at: Optional[str] = None
     processing_time_seconds: Optional[float] = None
     total_text_blocks: Optional[int] = None
     average_confidence: Optional[float] = None
     is_double_column: Optional[bool] = None
+    session_id: Optional[str] = None
+    session_name: Optional[str] = None

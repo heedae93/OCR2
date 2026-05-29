@@ -25,6 +25,40 @@ interface SessionSummary {
 
 interface JobListItem {
   job_id: string;
+  filename?: string | null;
+  status?: string;
+  progress_percent?: number;
+  current_page?: number;
+  total_pages?: number;
+  message?: string | null;
+  pdf_url?: string | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  processing_time_seconds?: number | null;
+  total_text_blocks?: number | null;
+  average_confidence?: number | null;
+  is_double_column?: boolean | null;
+  session_id?: string | null;
+  session_name?: string | null;
+}
+
+interface SessionDocumentItem {
+  job_id: string;
+  original_filename?: string | null;
+  status?: string;
+  progress_percent?: number;
+  current_page?: number;
+  total_pages?: number;
+  pdf_url?: string | null;
+  message?: string | null;
+  added_at?: string | null;
+}
+
+interface SessionWithDocuments {
+  session_id: string;
+  session_name: string;
+  documents?: SessionDocumentItem[];
 }
 
 type StatusFilter = "all" | "active" | "completed" | "failed" | "empty";
@@ -36,6 +70,7 @@ function JobsPageInner() {
   const router = useRouter();
 
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [jobs, setJobs] = useState<JobListItem[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -45,8 +80,8 @@ function JobsPageInner() {
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(0);
   const [deletingFailed, setDeletingFailed] = useState(false);
-  const [deletingSessions, setDeletingSessions] = useState(false);
-  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(
+  const [deletingJobs, setDeletingJobs] = useState(false);
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(
     new Set(),
   );
   const [focusSessionName, setFocusSessionName] = useState<string | null>(null);
@@ -60,10 +95,15 @@ function JobsPageInner() {
   const [osSearching, setOsSearching] = useState(false);
 
   const sessionsRef = useRef<SessionSummary[]>([]);
+  const jobsRef = useRef<JobListItem[]>([]);
 
   useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
+
+  useEffect(() => {
+    jobsRef.current = jobs;
+  }, [jobs]);
 
   useEffect(() => {
     loadData();
@@ -71,8 +111,8 @@ function JobsPageInner() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      const hasActive = sessionsRef.current.some(
-        (session) => getActiveCount(session) > 0,
+      const hasActive = jobsRef.current.some((job) =>
+        isActiveJobStatus(job.status || ""),
       );
       if (hasActive) {
         loadData(false);
@@ -157,20 +197,30 @@ function JobsPageInner() {
         user_id: userId,
         include_empty: "true",
       });
-      const response = await fetch(
+      const sessionResponse = await fetch(
         `${API_BASE_URL}/api/jobs/statistics/sessions?${params}`,
       );
 
-      if (!response.ok) {
-        throw new Error(`Failed to load session summaries: ${response.status}`);
+      if (!sessionResponse.ok) {
+        throw new Error(`Failed to load session summaries: ${sessionResponse.status}`);
       }
 
-      const data: SessionSummary[] = await response.json();
-      setSessions(data.map(normalizeSession));
+      const [sessionData, nextJobs, sessionJobMap] = await Promise.all([
+        sessionResponse.json() as Promise<SessionSummary[]>,
+        fetchAllJobs(userId),
+        fetchSessionJobMap(userId),
+      ]);
+      const nextSessions = sessionData.map(normalizeSession);
+
+      setSessions(nextSessions);
+      setJobs(
+        nextJobs.map((job) => normalizeJob(enrichJobWithSession(job, sessionJobMap))),
+      );
       setLoadError(null);
     } catch (error) {
       console.error("Failed to load session summaries:", error);
       setSessions([]);
+      setJobs([]);
       setLoadError(
         error instanceof Error
           ? error.message
@@ -179,6 +229,59 @@ function JobsPageInner() {
     } finally {
       if (showLoading) setLoading(false);
     }
+  };
+
+  const fetchAllJobs = async (userId: string) => {
+    const allJobs: JobListItem[] = [];
+    for (let offset = 0; ; offset += 100) {
+      const params = new URLSearchParams({
+        user_id: userId,
+        limit: "100",
+        offset: String(offset),
+      });
+      const response = await fetch(`${API_BASE_URL}/api/jobs?${params}`);
+
+      if (!response.ok) {
+        throw new Error(`Failed to load jobs: ${response.status}`);
+      }
+
+      const page: JobListItem[] = await response.json();
+      allJobs.push(...page);
+      if (page.length < 100) break;
+    }
+
+    return allJobs;
+  };
+
+  const fetchSessionJobMap = async (userId: string) => {
+    const params = new URLSearchParams({ user_id: userId });
+    const response = await fetch(`${API_BASE_URL}/api/sessions?${params}`);
+
+    if (!response.ok) {
+      throw new Error(`Failed to load sessions: ${response.status}`);
+    }
+
+    const sessionList: SessionWithDocuments[] = await response.json();
+    const sessionJobMap = new Map<
+      string,
+      {
+        session_id: string;
+        session_name: string;
+        document: SessionDocumentItem;
+      }
+    >();
+
+    for (const session of sessionList) {
+      for (const document of session.documents || []) {
+        sessionJobMap.set(document.job_id, {
+          session_id: session.session_id,
+          session_name: session.session_name,
+          document,
+        });
+      }
+    }
+
+    return sessionJobMap;
   };
 
   const normalizeSession = (session: SessionSummary): SessionSummary => {
@@ -199,6 +302,43 @@ function JobsPageInner() {
       uploaded: Number(session.uploaded || 0),
       total_pages: Number(session.total_pages || 0),
       completion_rate: Number(session.completion_rate || 0),
+    };
+  };
+
+  const normalizeJob = (job: JobListItem): JobListItem => ({
+    ...job,
+    status: job.status === "uploaded" ? "queued" : job.status || "queued",
+    progress_percent: Number(job.progress_percent || 0),
+    current_page: Number(job.current_page || 0),
+    total_pages: Number(job.total_pages || 0),
+  });
+
+  const enrichJobWithSession = (
+    job: JobListItem,
+    sessionJobMap: Map<
+      string,
+      {
+        session_id: string;
+        session_name: string;
+        document: SessionDocumentItem;
+      }
+    >,
+  ): JobListItem => {
+    const sessionInfo = sessionJobMap.get(job.job_id);
+    if (!sessionInfo) return job;
+    const document = sessionInfo.document;
+
+    return {
+      ...job,
+      filename: job.filename || document.original_filename,
+      status: document.status || job.status,
+      progress_percent: document.progress_percent ?? job.progress_percent,
+      current_page: document.current_page ?? job.current_page,
+      total_pages: document.total_pages ?? job.total_pages,
+      pdf_url: document.pdf_url || job.pdf_url,
+      message: document.message ?? job.message,
+      session_id: sessionInfo.session_id,
+      session_name: sessionInfo.session_name,
     };
   };
 
@@ -254,90 +394,67 @@ function JobsPageInner() {
     }
   };
 
-  const toggleSessionSelected = (sessionId: string, selected: boolean) => {
-    setSelectedSessionIds((prev) => {
+  const toggleJobSelected = (jobId: string, selected: boolean) => {
+    setSelectedJobIds((prev) => {
       const next = new Set(prev);
-      if (selected) next.add(sessionId);
-      else next.delete(sessionId);
+      if (selected) next.add(jobId);
+      else next.delete(jobId);
       return next;
     });
   };
 
-  const handleDeleteSessions = async (sessionIds: string[]) => {
-    if (sessionIds.length === 0) return;
-    if (!confirm(`세션 ${sessionIds.length}개를 삭제하시겠습니까?`)) return;
+  const handleDeleteJobs = async (jobIds: string[]) => {
+    if (jobIds.length === 0) return;
+    if (!confirm(`파일 ${jobIds.length}개를 삭제하시겠습니까?`)) return;
 
     try {
-      setDeletingSessions(true);
+      setDeletingJobs(true);
       await Promise.all(
-        sessionIds.map((sessionId) =>
-          fetch(
-            `${API_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}`,
-            { method: "DELETE" },
-          ).catch(() => null),
+        jobIds.map((jobId) =>
+          fetch(`${API_BASE_URL}/api/jobs/${jobId}`, { method: "DELETE" }).catch(() => null),
         ),
       );
-      setSelectedSessionIds((prev) => {
+      setSelectedJobIds((prev) => {
         const next = new Set(prev);
-        sessionIds.forEach((id) => next.delete(id));
+        jobIds.forEach((id) => next.delete(id));
         return next;
       });
       loadData(false);
     } catch (error) {
-      console.error("Failed to delete sessions:", error);
-      alert("세션 삭제 중 오류가 발생했습니다.");
+      console.error("Failed to delete jobs:", error);
+      alert("파일 삭제 중 오류가 발생했습니다.");
     } finally {
-      setDeletingSessions(false);
+      setDeletingJobs(false);
     }
   };
 
-  const handleBulkReprocessSessions = async () => {
-    for (const sessionId of selectedSessionIds) {
+  const handleBulkReprocessJobs = async () => {
+    for (const jobId of selectedJobIds) {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`);
-        if (!res.ok) continue;
-        const data = await res.json();
-        const jobs: JobListItem[] = (data.documents ?? []).filter((j: any) =>
-          ["completed", "failed"].includes(j.status),
-        );
-        for (const job of jobs) {
-          await fetch(`${API_BASE_URL}/api/process/${job.job_id}`, { method: "POST" });
-        }
+        await fetch(`${API_BASE_URL}/api/process/${jobId}`, { method: "POST" });
       } catch {}
     }
     await loadData();
-    setSelectedSessionIds(new Set());
+    setSelectedJobIds(new Set());
   };
 
-  const handleBulkDownloadSessions = async () => {
-    for (const sessionId of selectedSessionIds) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`);
-        if (!res.ok) continue;
-        const data = await res.json();
-        const jobs = (data.documents ?? []).filter(
-          (j: any) => j.status === "completed" && j.pdf_url,
-        );
-        for (const job of jobs) {
-          const a = document.createElement("a");
-          a.href = `${API_BASE_URL}${job.pdf_url}`;
-          a.download = job.original_filename ?? "download.pdf";
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-        }
-      } catch {}
+  const handleBulkDownloadJobs = () => {
+    const selectedJobs = jobs.filter(
+      (job) => selectedJobIds.has(job.job_id) && job.status === "completed" && job.pdf_url,
+    );
+
+    for (const job of selectedJobs) {
+      const a = document.createElement("a");
+      a.href = `${API_BASE_URL}${job.pdf_url}`;
+      a.download = job.filename || "download.pdf";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
   };
 
-  const openSession = (sessionId: string) => {
-    let url = `/jobs/${encodeURIComponent(sessionId)}`;
-
-    // 검색된 문서가 있다면 파라미터로 job_id 목록을 전달
-    if (osMatchedJobIds.size > 0) {
-      url += `?matched=${Array.from(osMatchedJobIds).join(",")}`;
-    }
-    router.push(url);
+  const openJob = (job: JobListItem) => {
+    router.push(`/editor/${job.job_id}`);
   };
 
   const totals = useMemo(() => {
@@ -413,6 +530,41 @@ function JobsPageInner() {
       });
   }, [sessions, searchQuery, statusFilter, sortBy, osMatchedSessionIds]);
 
+  const filteredJobs = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    return jobs
+      .filter((job) => {
+        const matchesName =
+          !query ||
+          (job.filename || "").toLowerCase().includes(query) ||
+          (job.session_name || "").toLowerCase().includes(query);
+        const matchesOs = osMatchedJobIds.size > 0 && osMatchedJobIds.has(job.job_id);
+        const matchesSearch = matchesName || matchesOs;
+
+        if (!matchesSearch) return false;
+
+        const status = job.status || "";
+        if (statusFilter === "active") return isActiveJobStatus(status);
+        if (statusFilter === "completed") return status === "completed";
+        if (statusFilter === "failed") return status === "failed";
+        return statusFilter === "empty" ? false : true;
+      })
+      .sort((a, b) => {
+        if (sortBy === "name") {
+          return (a.filename || "").localeCompare(b.filename || "", "ko-KR");
+        }
+
+        if (sortBy === "progress") {
+          return Number(b.progress_percent || 0) - Number(a.progress_percent || 0);
+        }
+
+        const aTime = getJobTime(a);
+        const bTime = getJobTime(b);
+        return sortBy === "oldest" ? aTime - bTime : bTime - aTime;
+      });
+  }, [jobs, osMatchedJobIds, searchQuery, sortBy, statusFilter]);
+
   useEffect(() => {
     setCurrentPage(0);
   }, [searchQuery, statusFilter, sortBy, pageSize]);
@@ -444,15 +596,15 @@ function JobsPageInner() {
     return () => clearTimeout(timer);
   }, [filteredSessions, focusSessionName, currentPage]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredSessions.length / pageSize));
-  const paginatedSessions = filteredSessions.slice(
+  const totalPages = Math.max(1, Math.ceil(filteredJobs.length / pageSize));
+  const paginatedJobs = filteredJobs.slice(
     currentPage * pageSize,
     (currentPage + 1) * pageSize,
   );
   const allPageSelected =
-    paginatedSessions.length > 0 &&
-    paginatedSessions.every((session) =>
-      selectedSessionIds.has(session.session_id),
+    paginatedJobs.length > 0 &&
+    paginatedJobs.every((job) =>
+      selectedJobIds.has(job.job_id),
     );
 
   return (
@@ -464,7 +616,7 @@ function JobsPageInner() {
                 작업 내역
               </h1>
               <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                작업을 선택하면 해당 작업의 파일 목록을 확인할 수 있습니다.
+                파일별 처리 내역과 각 파일이 속한 작업을 한 번에 확인할 수 있습니다.
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -478,7 +630,7 @@ function JobsPageInner() {
           <div className="relative mb-4">
             <input
               type="text"
-              placeholder="문서명, 메타데이터 키워드로 검색..."
+              placeholder="파일명, 작업명, 메타데이터 키워드로 검색..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={(e) => {
@@ -511,9 +663,9 @@ function JobsPageInner() {
                     {osTotal}건
                   </strong>{" "}
                   일치
-                  {osMatchedSessionIds.size > 0 && (
+                  {osMatchedJobIds.size > 0 && (
                     <span className="ml-1 text-cyan-600 dark:text-cyan-400">
-                      · {osMatchedSessionIds.size}개 작업에서 발견됨
+                      · {osMatchedJobIds.size}개 파일에서 발견됨
                     </span>
                   )}
                 </span>
@@ -541,9 +693,9 @@ function JobsPageInner() {
             <p className="text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark">
               총{" "}
               <span className="text-primary font-bold">
-                {filteredSessions.length}
+                {filteredJobs.length}
               </span>
-              개 작업
+              개 파일
               {focusSessionName && (
                 <span className="ml-2 text-xs font-medium text-primary">· 선택: {focusSessionName}</span>
               )}
@@ -558,7 +710,6 @@ function JobsPageInner() {
                 <option value="active">진행/대기</option>
                 <option value="completed">완료</option>
                 <option value="failed">실패 포함</option>
-                <option value="empty">빈 세션</option>
               </select>
               <select
                 value={sortBy}
@@ -581,28 +732,28 @@ function JobsPageInner() {
               </select>
               <div className="w-px h-4 bg-border-light dark:bg-border-dark" />
               <button
-                onClick={handleBulkDownloadSessions}
-                disabled={selectedSessionIds.size === 0}
+                onClick={handleBulkDownloadJobs}
+                disabled={selectedJobIds.size === 0}
                 className="inline-flex items-center gap-1 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-3 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <span className="material-symbols-outlined text-sm">download</span>
                 선택 다운로드
               </button>
               <button
-                onClick={handleBulkReprocessSessions}
-                disabled={selectedSessionIds.size === 0}
+                onClick={handleBulkReprocessJobs}
+                disabled={selectedJobIds.size === 0}
                 className="inline-flex items-center gap-1 h-8 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 px-3 text-xs font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <span className="material-symbols-outlined text-sm">refresh</span>
                 선택 재실행
               </button>
               <button
-                onClick={() => handleDeleteSessions(Array.from(selectedSessionIds))}
-                disabled={selectedSessionIds.size === 0 || deletingSessions}
+                onClick={() => handleDeleteJobs(Array.from(selectedJobIds))}
+                disabled={selectedJobIds.size === 0 || deletingJobs}
                 className="inline-flex items-center gap-1 h-8 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <span className="material-symbols-outlined text-sm">delete</span>
-                {deletingSessions ? "삭제 중..." : `선택 삭제 (${selectedSessionIds.size})`}
+                {deletingJobs ? "삭제 중..." : `선택 삭제 (${selectedJobIds.size})`}
               </button>
               {totals.failed > 0 && (
                 <button
@@ -623,7 +774,7 @@ function JobsPageInner() {
                 progress_activity
               </span>
             </div>
-          ) : filteredSessions.length === 0 ? (
+          ) : filteredJobs.length === 0 ? (
             <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-16 text-center text-text-secondary-light dark:text-text-secondary-dark">
               {loadError ? (
                 <>
@@ -633,21 +784,22 @@ function JobsPageInner() {
                   <p className="mt-2 text-sm opacity-90">{loadError}</p>
                 </>
               ) : (
-                "작업 내역이 없습니다"
+                "파일 내역이 없습니다"
               )}
             </div>
           ) : (
             <>
               <div className="bg-white dark:bg-white rounded-xl border border-border-light dark:border-border-dark overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1080px] table-fixed">
+                  <table className="w-full min-w-[1180px] table-fixed">
                     <colgroup>
                       <col style={{ width: "4%" }} />
                       <col style={{ width: "30%" }} />
+                      <col style={{ width: "20%" }} />
                       <col style={{ width: "11%" }} />
-                      <col style={{ width: "13%" }} />
-                      <col style={{ width: "18%" }} />
-                      <col style={{ width: "24%" }} />
+                      <col style={{ width: "14%" }} />
+                      <col style={{ width: "14%" }} />
+                      <col style={{ width: "7%" }} />
                     </colgroup>
                     <thead className="border-b border-primary/20 dark:border-primary/20 bg-primary/10 dark:bg-primary/10">
                       <tr>
@@ -656,64 +808,63 @@ function JobsPageInner() {
                             onClick={(e) => {
                               e.stopPropagation();
                               const checked = !allPageSelected;
-                              setSelectedSessionIds((prev) => {
+                              setSelectedJobIds((prev) => {
                                 const next = new Set(prev);
-                                paginatedSessions.forEach((session) => {
-                                  if (checked) next.add(session.session_id);
-                                  else next.delete(session.session_id);
+                                paginatedJobs.forEach((job) => {
+                                  if (checked) next.add(job.job_id);
+                                  else next.delete(job.job_id);
                                 });
                                 return next;
                               });
                             }}
                             className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${allPageSelected ? "border-primary bg-primary text-white" : "border-primary bg-surface-light"}`}
-                            aria-label="현재 페이지 세션 전체 선택"
+                            aria-label="현재 페이지 파일 전체 선택"
                           >
                             {allPageSelected && <span className="material-symbols-outlined text-[14px] leading-none">check</span>}
                           </button>
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
-                          작업
+                          파일명
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
+                          작업명
                         </th>
                         <th className="px-3 py-3 text-center text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
                           상태
                         </th>
-                        <th className="px-3 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
-                          문서
-                        </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
-                          완료율
+                          진행률
                         </th>
                         <th className="px-4 py-3 text-center text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider whitespace-nowrap">
                           작업시간
                         </th>
+                        <th className="px-3 py-3 text-center text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
+                          관리
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border-light dark:divide-border-dark">
-                      {paginatedSessions.map((session) => {
-                        const status = getSessionStatus(session);
-                        const activeCount = getActiveCount(session);
-                        const isOsMatch = osMatchedSessionIds.has(
-                          session.session_id,
-                        );
+                      {paginatedJobs.map((job) => {
+                        const status = getJobStatusMeta(job.status || "");
+                        const isOsMatch = osMatchedJobIds.has(job.job_id);
 
                         return (
                           <tr
-                            key={session.session_id}
-                            id={`session-${session.session_id}`}
-                            // className={`cursor-pointer transition-colors focus:outline-none focus:bg-primary/10 ${isFocused ? "bg-primary/10" : ""} ${isOsMatch ? "ring-1 ring-inset ring-cyan-300 dark:ring-cyan-400/40 bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/20 dark:hover:bg-cyan-900/40" : "hover:bg-primary/5 dark:hover:bg-primary/10"}`}
+                            key={job.job_id}
+                            id={`job-${job.job_id}`}
                             className={`transition-colors cursor-pointer ${isOsMatch ? "bg-cyan-50 dark:bg-cyan-900/20 border-l-4 border-l-cyan-400" : "hover:bg-primary/5 dark:hover:bg-primary/10"}`}
-                            onClick={() => openSession(session.session_id)}
+                            onClick={() => openJob(job)}
                           >
                             <td className="px-3 py-4 text-center">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  toggleSessionSelected(session.session_id, !selectedSessionIds.has(session.session_id));
+                                  toggleJobSelected(job.job_id, !selectedJobIds.has(job.job_id));
                                 }}
-                                className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${selectedSessionIds.has(session.session_id) ? "border-primary bg-primary text-white" : "border-primary bg-surface-light"}`}
-                                aria-label={`${session.session_name} 선택`}
+                                className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${selectedJobIds.has(job.job_id) ? "border-primary bg-primary text-white" : "border-primary bg-surface-light"}`}
+                                aria-label={`${job.filename || job.job_id} 선택`}
                               >
-                                {selectedSessionIds.has(session.session_id) && <span className="material-symbols-outlined text-[14px] leading-none">check</span>}
+                                {selectedJobIds.has(job.job_id) && <span className="material-symbols-outlined text-[14px] leading-none">check</span>}
                               </button>
                             </td>
                             <td className="px-6 py-4">
@@ -721,18 +872,18 @@ function JobsPageInner() {
                                 <span
                                   className={`material-symbols-outlined shrink-0 ${isOsMatch ? "text-cyan-600 dark:text-cyan-400" : "text-primary"}`}
                                 >
-                                  folder_open
+                                  description
                                 </span>
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-2 min-w-0">
                                     <button
                                       onClick={(event) => {
                                         event.stopPropagation();
-                                        openSession(session.session_id);
+                                        openJob(job);
                                       }}
                                       className="truncate text-left text-sm font-semibold text-text-primary-light dark:text-text-primary-dark hover:text-primary hover:underline transition-colors"
                                     >
-                                      {session.session_name}
+                                      {job.filename || job.job_id}
                                     </button>
                                     {isOsMatch && (
                                       <span className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-cyan-100 dark:bg-cyan-900/40 px-2 py-0.5 text-[10px] font-bold text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-800">
@@ -743,13 +894,17 @@ function JobsPageInner() {
                                       </span>
                                     )}
                                   </div>
-                                  {session.description && (
-                                    <p className="mt-1 truncate text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                                      {session.description}
-                                    </p>
-                                  )}
+                                  <p className="mt-1 truncate text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                                    {job.job_id}
+                                  </p>
                                 </div>
                               </div>
+                            </td>
+                            <td className="px-4 py-4 text-sm text-text-primary-light dark:text-text-primary-dark">
+                              <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                <span className="material-symbols-outlined text-sm text-primary">folder_open</span>
+                                <span className="truncate">{job.session_name || "미지정 작업"}</span>
+                              </span>
                             </td>
                             <td className="px-3 py-4 text-center">
                               <span
@@ -757,19 +912,6 @@ function JobsPageInner() {
                               >
                                 {status.label}
                               </span>
-                              {activeCount > 0 && (
-                                <p className="mt-1 text-[11px] text-text-secondary-light dark:text-text-secondary-dark">
-                                  {activeCount}개 진행
-                                </p>
-                              )}
-                            </td>
-                            <td className="px-3 py-4 text-left text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                              <div className="font-semibold text-text-primary-light dark:text-text-primary-dark">
-                                {session.total}개
-                              </div>
-                              <div className="text-xs">
-                                완료 {session.completed} · 실패 {session.failed}
-                              </div>
                             </td>
                             <td className="px-4 py-4">
                               <div className="flex items-center gap-3">
@@ -777,33 +919,73 @@ function JobsPageInner() {
                                   <div
                                     className="h-full bg-primary transition-all"
                                     style={{
-                                      width: `${Math.min(session.completion_rate, 100)}%`,
+                                      width: `${Math.min(Number(job.progress_percent || 0), 100)}%`,
                                     }}
                                   />
                                 </div>
                                 <span className="w-12 text-right text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">
-                                  {session.completion_rate.toFixed(0)}%
+                                  {Number(job.progress_percent || 0).toFixed(0)}%
                                 </span>
                               </div>
                               <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                                총 {session.total_pages || 0}p
+                                {job.total_pages ? `${job.total_pages}p` : "페이지 정보 없음"}
                               </p>
                             </td>
                             <td className="px-4 py-4 text-right text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                              <span
-                                className="inline-block max-w-full truncate align-middle whitespace-nowrap"
-                                title={formatDate(
-                                  session.last_activity ||
-                                    session.updated_at ||
-                                    session.created_at,
-                                )}
-                              >
-                                {formatDate(
-                                  session.last_activity ||
-                                    session.updated_at ||
-                                    session.created_at,
-                                )}
-                              </span>
+                              <div className="flex flex-col items-end gap-0.5">
+                                <span
+                                  className="inline-block max-w-full truncate align-middle whitespace-nowrap font-semibold text-text-primary-light dark:text-text-primary-dark"
+                                  title={formatJobDuration(job)}
+                                >
+                                  {formatJobDuration(job)}
+                                </span>
+                                <span
+                                  className="inline-block max-w-full truncate align-middle whitespace-nowrap text-xs"
+                                  title={formatDate(getJobDateValue(job))}
+                                >
+                                  {formatDate(getJobDateValue(job))}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-4">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (job.pdf_url) {
+                                      const a = document.createElement("a");
+                                      a.href = `${API_BASE_URL}${job.pdf_url}`;
+                                      a.download = job.filename || "download.pdf";
+                                      a.click();
+                                    }
+                                  }}
+                                  disabled={job.status !== "completed" || !job.pdf_url}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30"
+                                  title="다운로드"
+                                >
+                                  <span className="material-symbols-outlined text-base">download</span>
+                                </button>
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void fetch(`${API_BASE_URL}/api/process/${job.job_id}`, { method: "POST" }).then(() => loadData(false));
+                                  }}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-orange-600 hover:bg-orange-50"
+                                  title="재실행"
+                                >
+                                  <span className="material-symbols-outlined text-base">refresh</span>
+                                </button>
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void handleDeleteJobs([job.job_id]);
+                                  }}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
+                                  title="삭제"
+                                >
+                                  <span className="material-symbols-outlined text-base">delete</span>
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -914,6 +1096,29 @@ function getSessionStatus(session: SessionSummary) {
   return { label: "대기 중", color: "bg-gray-400 text-white" };
 }
 
+function isActiveJobStatus(status: string) {
+  return ["queued", "pending", "processing", "uploaded"].includes(status);
+}
+
+function getJobStatusMeta(status: string) {
+  switch (status) {
+    case "completed":
+      return { label: "완료", color: "bg-green-500 text-white" };
+    case "processing":
+      return { label: "진행중", color: "bg-blue-500 text-white" };
+    case "queued":
+    case "pending":
+    case "uploaded":
+      return { label: "대기", color: "bg-gray-500 text-white" };
+    case "failed":
+      return { label: "실패", color: "bg-red-500 text-white" };
+    case "cancelled":
+      return { label: "취소", color: "bg-slate-500 text-white" };
+    default:
+      return { label: "미확인", color: "bg-gray-400 text-white" };
+  }
+}
+
 function getSessionTime(session: SessionSummary) {
   const value =
     session.last_activity || session.updated_at || session.created_at;
@@ -921,6 +1126,49 @@ function getSessionTime(session: SessionSummary) {
 
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? 0 : time;
+}
+
+function getJobTime(job: JobListItem) {
+  const value = getJobDateValue(job);
+  if (!value) return 0;
+
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function getJobDateValue(job: JobListItem) {
+  return job.completed_at || job.started_at || job.created_at || null;
+}
+
+function formatJobDuration(job: JobListItem) {
+  if (typeof job.processing_time_seconds === "number") {
+    return formatDuration(job.processing_time_seconds);
+  }
+
+  if (isActiveJobStatus(job.status || "")) {
+    return "처리 중";
+  }
+
+  return "-";
+}
+
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "-";
+
+  const totalSeconds = Math.round(seconds);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}시간 ${minutes}분`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}분 ${remainingSeconds}초`;
+  }
+
+  return `${remainingSeconds}초`;
 }
 
 function formatDate(dateString?: string | null) {

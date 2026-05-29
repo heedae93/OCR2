@@ -45,14 +45,15 @@ def start_backend(python_exe):
         )
 
 def start_worker(python_exe):
-    print("Starting worker...")
+    print("Starting worker supervisor...")
     env = os.environ.copy()
     env["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
+    env["WORKER_QUEUES"] = "ocr,tika"
     
-    log_path = os.path.abspath("logs/worker.log")
+    log_path = os.path.abspath("logs/worker_supervisor.log")
     with open(log_path, "a") as log:
         subprocess.Popen(
-            [python_exe, "-m", "celery", "-A", "ocr_worker", "worker", "-Q", "ocr", "--loglevel=info", "--pool=solo"],
+            [python_exe, "scripts/worker_supervisor.py", "--queues", "ocr,tika"],
             cwd="backend",
             env=env,
             stdout=log,

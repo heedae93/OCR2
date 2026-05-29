@@ -53,6 +53,11 @@ interface TextElement {
   fontFamily: string;
 }
 
+const BASELINE_RENDER_ZOOM = 30;
+const ZOOM_DISPLAY_STEP = 5;
+const MIN_DISPLAY_ZOOM = 25;
+const MAX_DISPLAY_ZOOM = 300;
+
 export default function EditorPage() {
   const params = useParams();
   const router = useRouter();
@@ -66,7 +71,7 @@ export default function EditorPage() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportSidebarJobIds, setExportSidebarJobIds] = useState<string[]>([]);
   const [activeTool, setActiveTool] = useState<ToolType>(null);
-  const [zoom, setZoom] = useState(50);
+  const [zoom, setZoom] = useState(BASELINE_RENDER_ZOOM);
   const [fitToWidth, setFitToWidth] = useState(true); // Default: fit to width enabled
   const [showOCRComparison, setShowOCRComparison] = useState(false);
   const [showTextLayer, setShowTextLayer] = useState(false);
@@ -118,10 +123,11 @@ export default function EditorPage() {
   const [pageWidth, setPageWidth] = useState(0);
   const [pageHeight, setPageHeight] = useState(0);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<'files' | 'pages'>('files');
+  const [sidebarTab, setSidebarTab] = useState<'files' | 'pages'>('pages');
   const [showSmartTools, setShowSmartTools] = useState(false);
   const [editorUser, setEditorUser] = useState<{ name: string; username: string } | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const displayZoom = Math.round((zoom / BASELINE_RENDER_ZOOM) * 100);
 
   // Auto-save state
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
@@ -505,12 +511,24 @@ export default function EditorPage() {
 
   const handleZoomIn = () => {
     setFitToWidth(false);
-    setZoom((prev) => Math.min(200, prev + 5));
+    setZoom((prev) => {
+      const nextDisplayZoom = Math.min(
+        MAX_DISPLAY_ZOOM,
+        Math.round((prev / BASELINE_RENDER_ZOOM) * 100) + ZOOM_DISPLAY_STEP,
+      );
+      return (nextDisplayZoom / 100) * BASELINE_RENDER_ZOOM;
+    });
   };
 
   const handleZoomOut = () => {
     setFitToWidth(false);
-    setZoom((prev) => Math.max(10, prev - 5));
+    setZoom((prev) => {
+      const nextDisplayZoom = Math.max(
+        MIN_DISPLAY_ZOOM,
+        Math.round((prev / BASELINE_RENDER_ZOOM) * 100) - ZOOM_DISPLAY_STEP,
+      );
+      return (nextDisplayZoom / 100) * BASELINE_RENDER_ZOOM;
+    });
   };
 
   // 페이지 변경 시 마스킹 패널 해당 페이지로 스크롤
@@ -906,8 +924,8 @@ export default function EditorPage() {
         </header>
 
         {/* Main Content */}
-        <main className="flex flex-1 w-full overflow-hidden">
-          <div className="flex w-full h-full">
+        <main className="flex min-h-0 flex-1 w-full overflow-hidden">
+          <div className="flex min-h-0 w-full h-full">
             {/* Unified Left Sidebar */}
             <aside className={`relative flex h-full flex-shrink-0 flex-col border-r border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark transition-all duration-300 ${previewCollapsed ? "w-14" : "w-72"}`}>
               {previewCollapsed ? (
@@ -925,17 +943,6 @@ export default function EditorPage() {
                   </div>
                   <div className="flex flex-col items-center pt-2 gap-1">
                   <button
-                    onClick={() => { setSidebarTab('files'); setPreviewCollapsed(false); }}
-                    className={`w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
-                      sidebarTab === 'files'
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10'
-                    }`}
-                    title="작업 내역"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">description</span>
-                  </button>
-                  <button
                     onClick={() => { setSidebarTab('pages'); setPreviewCollapsed(false); }}
                     className={`w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
                       sidebarTab === 'pages'
@@ -950,30 +957,12 @@ export default function EditorPage() {
                 </div>
               ) : (
                 <div className="flex flex-col h-full min-h-0">
-                  {/* Tab bar */}
+                  {/* Header */}
                   <div className="flex items-center gap-1 p-1.5 border-b border-border-light dark:border-border-dark flex-shrink-0">
-                    <button
-                      onClick={() => setSidebarTab('files')}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors ${
-                        sidebarTab === 'files'
-                          ? 'bg-primary/15 text-primary'
-                          : 'text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[15px]">description</span>
-                      작업 내역
-                    </button>
-                    <button
-                      onClick={() => setSidebarTab('pages')}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors ${
-                        sidebarTab === 'pages'
-                          ? 'bg-primary/15 text-primary'
-                          : 'text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10'
-                      }`}
-                    >
+                    <div className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium bg-primary/15 text-primary">
                       <span className="material-symbols-outlined text-[15px]">auto_awesome_mosaic</span>
                       미리 보기
-                    </button>
+                    </div>
                     <button
                       onClick={() => setPreviewCollapsed(true)}
                       className="p-1.5 rounded-lg text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex-shrink-0"
@@ -985,35 +974,9 @@ export default function EditorPage() {
 
                   {/* Tab content */}
                   <div className="flex-1 min-h-0 overflow-hidden">
-                    {/* 작업 내역 tab */}
-                    <div className={`h-full ${sidebarTab === 'files' ? 'flex flex-col' : 'hidden'}`}>
-                      <div className="flex-1 min-h-0 overflow-hidden">
-                        <SessionSidebar
-                          currentJobId={jobId}
-                          filterToCurrentSession={true}
-                          embedded={true}
-                          onDocumentSelect={(newJobId) => router.push(`/editor/${newJobId}`)}
-                          onOpenExportModal={(ids) => {
-                            setExportSidebarJobIds(ids);
-                            setShowExportModal(true);
-                          }}
-                        />
-                      </div>
-                      {/* 작업 내역 페이지 이동 버튼 */}
-                      <div className="flex-shrink-0 p-3 border-t border-border-light dark:border-border-dark">
-                        <button
-                          onClick={() => router.push("/jobs")}
-                          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-                          작업 내역 페이지로 이동
-                        </button>
-                      </div>
-                    </div>
-
                     {/* 페이지 미리보기 tab */}
-                    <div className={`h-full ${sidebarTab === 'pages' ? 'flex flex-col overflow-y-auto' : 'hidden'}`}>
-                      <div className="flex-1 p-4 flex flex-col gap-4">
+                    <div className="h-full flex flex-col">
+                      <div className="flex-1 overflow-y-auto p-4">
                         <div className="grid grid-cols-2 gap-3">
                           {(() => {
                             const pageList = ocrResults?.pages
@@ -1068,16 +1031,15 @@ export default function EditorPage() {
                             ));
                           })()}
                         </div>
-                        <div className="flex flex-col gap-2">
-                          <button className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg bg-primary/20 text-sm font-bold text-primary hover:bg-primary/30">
-                            <span className="material-symbols-outlined">add</span>
-                            <span className="truncate">페이지 추가</span>
-                          </button>
-                          <button className="flex h-10 w-full items-center justify-center gap-2 rounded-lg text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10">
-                            <span className="material-symbols-outlined">map</span>
-                            <span>페이지 맵</span>
-                          </button>
-                        </div>
+                      </div>
+                      <div className="flex-shrink-0 p-3 border-t border-border-light dark:border-border-dark">
+                        <button
+                          onClick={() => router.push("/jobs")}
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+                          작업 내역 페이지로 이동
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1086,110 +1048,10 @@ export default function EditorPage() {
             </aside>
 
             {/* Center - PDF Viewer */}
-            <section className="flex flex-1 flex-col bg-background-light dark:bg-background-dark overflow-hidden">
-              {/* ── 툴바 ── */}
-              <div className="flex flex-shrink-0 items-center justify-end border-b border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark px-3 py-1.5">
-
-                {/* 줌 컨트롤 */}
-                <div className="flex items-center">
-                  <button
-                    onClick={handleZoomOut}
-                    className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
-                    title="축소"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">zoom_out</span>
-                  </button>
-                  <span className="min-w-[3rem] text-center text-xs font-medium text-text-primary-light dark:text-text-primary-dark select-none tabular-nums">
-                    {zoom}%
-                  </span>
-                  <button
-                    onClick={handleZoomIn}
-                    className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
-                    title="확대"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">zoom_in</span>
-                  </button>
-                </div>
-
-                {/* 우측 — 기능 버튼들 */}
-                <div className="flex items-center gap-0.5">
-                  <div className="w-px h-4 bg-border-light dark:bg-border-dark mx-1" />
-
-                  <button
-                    onClick={() => setShowOCRComparison(!showOCRComparison)}
-                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
-                      showOCRComparison ? "bg-primary/10 text-primary" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
-                    }`}
-                    title="OCR 비교"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">compare_arrows</span>
-                    <span className="hidden lg:inline whitespace-nowrap">OCR 비교</span>
-                  </button>
-
-                  <button
-                    onClick={() => setShowTextLayer(!showTextLayer)}
-                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
-                      showTextLayer ? "bg-primary/10 text-primary" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
-                    }`}
-                    title="텍스트 레이어"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">visibility</span>
-                    <span className="hidden lg:inline whitespace-nowrap">텍스트 레이어</span>
-                  </button>
-
-                  {hasOCRResults && (
-                    <button
-                      onClick={reprocessCurrentPage}
-                      disabled={isReprocessingPage}
-                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-40"
-                      title={`현재 페이지(${currentPage}) OCR 재처리`}
-                    >
-                      {isReprocessingPage ? (
-                        <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <span className="material-symbols-outlined text-[20px]">refresh</span>
-                      )}
-                      <span className="hidden lg:inline whitespace-nowrap">
-                        {isReprocessingPage ? "재처리 중..." : "현재 페이지 재처리"}
-                      </span>
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => setShowMasking(!showMasking)}
-                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
-                      showMasking ? "bg-primary/10 text-primary" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
-                    }`}
-                    title="개인정보 마스킹"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">gpp_maybe</span>
-                    <span className="hidden lg:inline whitespace-nowrap">개인정보 마스킹</span>
-                  </button>
-
-                  <button
-                    onClick={() => setShowAccuracy(!showAccuracy)}
-                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
-                      showAccuracy ? "bg-primary/10 text-primary" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
-                    }`}
-                    title="정확도 시각화"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">verified</span>
-                    <span className="hidden lg:inline whitespace-nowrap">정확도 시각화</span>
-                  </button>
-                  <button
-                    onClick={() => setShowDataViewer(true)}
-                    disabled={!ocrResults}
-                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="현재 파일 데이터"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">data_object</span>
-                    <span className="hidden lg:inline whitespace-nowrap">현재 파일 데이터</span>
-                  </button>
-                </div>
-              </div>{/* 툴바 끝 */}
-              {/* 툴바 아래: PDF 뷰어 + 마스킹 패널 나란히 */}
-              <div className="flex flex-1 overflow-hidden">
-                <div className="flex-1 overflow-hidden">
+            <section className="relative flex min-h-0 flex-1 flex-col bg-background-light dark:bg-background-dark overflow-hidden">
+              {/* PDF 뷰어 + 마스킹 패널 */}
+              <div className="relative flex min-h-0 flex-1 overflow-hidden">
+                <div className="min-h-0 flex-1 overflow-hidden">
                   <PDFViewer
                     pdfUrl={pdfUrl}
                     currentPage={currentPage}
@@ -1198,6 +1060,104 @@ export default function EditorPage() {
                     fitToWidth={fitToWidth}
                     fitToPage={fitToWidth}
                     onZoomChange={setZoom}
+                    topToolbar={
+                      <div className="pointer-events-auto flex max-w-full items-center gap-1.5 overflow-x-auto rounded-2xl border border-border-light/80 bg-surface-light/95 px-2 py-1.5 shadow-lg shadow-slate-900/10 backdrop-blur-md dark:border-border-dark/80 dark:bg-surface-dark/95">
+                        <div className="flex shrink-0 items-center rounded-xl bg-background-light/80 px-1 dark:bg-background-dark/80">
+                          <button
+                            onClick={handleZoomOut}
+                            className="p-1.5 rounded-lg text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                            title="축소"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">zoom_out</span>
+                          </button>
+                          <span className="min-w-[3rem] text-center text-xs font-bold text-text-primary-light dark:text-text-primary-dark select-none tabular-nums">
+                            {displayZoom}%
+                          </span>
+                          <button
+                            onClick={handleZoomIn}
+                            className="p-1.5 rounded-lg text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                            title="확대"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">zoom_in</span>
+                          </button>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-1">
+                          <div className="mx-0.5 h-5 w-px bg-border-light dark:bg-border-dark" />
+
+                          <button
+                            onClick={() => setShowOCRComparison(!showOCRComparison)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm transition-colors ${
+                              showOCRComparison ? "bg-primary text-white shadow-sm" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
+                            }`}
+                            title="OCR 비교"
+                          >
+                            <span className="material-symbols-outlined text-[20px]">compare_arrows</span>
+                            <span className="hidden lg:inline whitespace-nowrap">OCR 비교</span>
+                          </button>
+
+                          <button
+                            onClick={() => setShowTextLayer(!showTextLayer)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm transition-colors ${
+                              showTextLayer ? "bg-primary text-white shadow-sm" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
+                            }`}
+                            title="텍스트 레이어"
+                          >
+                            <span className="material-symbols-outlined text-[20px]">visibility</span>
+                            <span className="hidden lg:inline whitespace-nowrap">텍스트 레이어</span>
+                          </button>
+
+                          {hasOCRResults && (
+                            <button
+                              onClick={reprocessCurrentPage}
+                              disabled={isReprocessingPage}
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-40"
+                              title={`현재 페이지(${currentPage}) OCR 재처리`}
+                            >
+                              {isReprocessingPage ? (
+                                <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <span className="material-symbols-outlined text-[20px]">refresh</span>
+                              )}
+                              <span className="hidden lg:inline whitespace-nowrap">
+                                {isReprocessingPage ? "재처리 중..." : "현재 페이지 재처리"}
+                              </span>
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => setShowMasking(!showMasking)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm transition-colors ${
+                              showMasking ? "bg-primary text-white shadow-sm" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
+                            }`}
+                            title="개인정보 마스킹"
+                          >
+                            <span className="material-symbols-outlined text-[20px]">gpp_maybe</span>
+                            <span className="hidden lg:inline whitespace-nowrap">개인정보 마스킹</span>
+                          </button>
+
+                          <button
+                            onClick={() => setShowAccuracy(!showAccuracy)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm transition-colors ${
+                              showAccuracy ? "bg-primary text-white shadow-sm" : "text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10"
+                            }`}
+                            title="정확도 시각화"
+                          >
+                            <span className="material-symbols-outlined text-[20px]">verified</span>
+                            <span className="hidden lg:inline whitespace-nowrap">정확도 시각화</span>
+                          </button>
+                          <button
+                            onClick={() => setShowDataViewer(true)}
+                            disabled={!ocrResults}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm transition-colors text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="현재 파일 데이터"
+                          >
+                            <span className="material-symbols-outlined text-[20px]">data_object</span>
+                            <span className="hidden lg:inline whitespace-nowrap">현재 파일 데이터</span>
+                          </button>
+                        </div>
+                      </div>
+                    }
                     pageNavigation={
                       <div className="flex items-center gap-1">
                         <button
@@ -1255,43 +1215,76 @@ export default function EditorPage() {
                   </PDFViewer>
                 </div>
 
-                {/* Masking Results Panel — PDF 캔버스 오른쪽 */}
+                <aside className="flex h-full w-72 flex-shrink-0 flex-col border-l border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark">
+                  <SessionSidebar
+                    currentJobId={jobId}
+                    filterToCurrentSession={true}
+                    embedded={true}
+                    onDocumentSelect={(newJobId) => router.push(`/editor/${newJobId}`)}
+                    onOpenExportModal={(ids) => {
+                      setExportSidebarJobIds(ids);
+                      setShowExportModal(true);
+                    }}
+                  />
+                </aside>
+
+                {/* Masking Results Inspector */}
                 {showMasking && (
                   <aside
-                    className="h-full flex-shrink-0 flex-col border-l border-gray-200 bg-white p-4 flex relative"
-                    style={{ width: maskingPanelWidth }}
+                    className="relative flex h-full max-w-[calc(100%-2rem)] flex-shrink-0 flex-col overflow-hidden border-l border-border-light/80 bg-white/95 shadow-2xl shadow-slate-900/10 backdrop-blur-xl dark:border-border-dark/80 dark:bg-surface-dark/95"
+                    style={{
+                      width: maskingPanelWidth,
+                    }}
                   >
                     <div
-                      className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/50 active:bg-primary z-10 transition-colors"
+                      className="absolute bottom-6 left-0 top-6 z-10 w-1.5 cursor-col-resize rounded-r-full hover:bg-primary/50 active:bg-primary transition-colors"
                       onMouseDown={handleMaskingResizeStart}
                     />
-                    <div className="flex items-center justify-between mb-4">
-                      <span className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-base">shield_person</span>
-                        개인정보 마스킹 결과
-                      </span>
+                    <div className="flex items-start justify-between gap-3 border-b border-border-light/80 px-4 py-3 dark:border-border-dark/80">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                            <span className="material-symbols-outlined text-[18px]">shield_person</span>
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-black text-text-primary-light dark:text-text-primary-dark">
+                              개인정보 마스킹
+                            </p>
+                            <p className="mt-0.5 truncate text-[11px] font-medium text-text-secondary-light dark:text-text-secondary-dark">
+                              현재 파일에서 감지된 민감정보를 확인합니다
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                       <button
                         onClick={() => setShowMasking(false)}
-                        className="p-1 rounded-lg hover:bg-gray-100 text-gray-500"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl text-text-secondary-light transition-colors hover:bg-black/5 hover:text-text-primary-light dark:text-text-secondary-dark dark:hover:bg-white/10 dark:hover:text-text-primary-dark"
+                        title="마스킹 결과 닫기"
                       >
-                        <span className="material-symbols-outlined text-xl">close</span>
+                        <span className="material-symbols-outlined text-[18px]">close</span>
                       </button>
                     </div>
-                    <div className="flex flex-1 flex-col gap-3 overflow-y-auto">
+                    <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
                   {maskingData.length > 0 ? (
                     <>
                       {/* 요약 카드 */}
-                      <div className="grid grid-cols-2 gap-2 mb-1">
-                        <div className="flex flex-col items-center justify-center p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-                          <span className="text-[10px] text-slate-500 font-medium mb-0.5">전체</span>
-                          <span className="text-xl font-bold text-slate-700">{maskingData.length}<span className="text-xs font-medium ml-0.5">건</span></span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/90 p-3 dark:border-slate-700 dark:bg-slate-800/70">
+                          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">전체 감지</span>
+                          <div className="mt-1 flex items-end gap-1">
+                            <span className="text-2xl font-black leading-none text-slate-800 dark:text-slate-100">{maskingData.length}</span>
+                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">건</span>
+                          </div>
                         </div>
-                        <div className="flex flex-col items-center justify-center p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
-                          <span className="text-[10px] text-emerald-600 font-medium mb-0.5">마스킹 완료</span>
-                          <span className="text-xl font-bold text-emerald-700">{maskingSuccess.length}<span className="text-xs font-medium ml-0.5">건</span></span>
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-3 dark:border-emerald-800 dark:bg-emerald-950/50">
+                          <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">마스킹 완료</span>
+                          <div className="mt-1 flex items-end gap-1">
+                            <span className="text-2xl font-black leading-none text-emerald-700 dark:text-emerald-300">{maskingSuccess.length}</span>
+                            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">건</span>
+                          </div>
                         </div>
                       </div>
-                      <div ref={maskingScrollRef} className="flex flex-col gap-1.5 overflow-y-auto">
+                      <div ref={maskingScrollRef} className="flex flex-col gap-2 overflow-y-auto pr-1">
                         {(() => {
                           const sorted = [...maskingData].sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
                           const multiPage = new Set(sorted.map(b => b.page)).size > 1;
@@ -1303,30 +1296,30 @@ export default function EditorPage() {
                               lastPage = box.page;
                               items.push(
                                 <div key={`page-${box.page}`} data-masking-page={box.page} className="flex items-center gap-2 mt-1">
-                                  <span className="text-[11px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">{box.page}페이지</span>
-                                  <div className="flex-1 h-px bg-gray-200" />
+                                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-black text-primary">{box.page}페이지</span>
+                                  <div className="h-px flex-1 bg-border-light dark:bg-border-dark" />
                                 </div>
                               );
                             }
                             items.push(
                               <div
                                 key={idx}
-                                className="flex flex-col gap-0.5 p-2 rounded-md border border-gray-200 bg-white text-xs"
+                                className="group rounded-2xl border border-border-light bg-white p-3 text-xs shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/[0.03] dark:border-border-dark dark:bg-background-dark/80 dark:hover:border-primary/40"
                               >
-                                <div className="flex items-center justify-between">
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                                     {PII_LABELS[box.type] ?? box.type}
                                   </span>
-                                  <span className={`text-[10px] font-medium ${isSuccess ? "text-emerald-600" : "text-orange-500"}`}>
-                                    {isSuccess ? "✓ 완료" : "⚠ 확인필요"}
+                                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${isSuccess ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400" : "bg-orange-50 text-orange-500 dark:bg-orange-950/50 dark:text-orange-300"}`}>
+                                    {isSuccess ? "완료" : "확인 필요"}
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-1 mt-0.5 text-gray-800 w-full overflow-hidden">
-                                  <span className="truncate flex-1 min-w-0 text-gray-500" title={box.value}>{box.value}</span>
+                                <div className="mt-2 flex w-full items-center gap-1 overflow-hidden text-text-primary-light dark:text-text-primary-dark">
+                                  <span className="min-w-0 flex-1 truncate text-text-secondary-light dark:text-text-secondary-dark" title={box.value}>{box.value}</span>
                                   {box.masked_value && box.masked_value !== box.value && (
                                     <>
-                                      <span className="text-gray-400 flex-shrink-0">→</span>
-                                      <span className="truncate flex-1 min-w-0 font-semibold text-red-500" title={box.masked_value}>{box.masked_value}</span>
+                                      <span className="material-symbols-outlined shrink-0 text-[14px] text-text-secondary-light dark:text-text-secondary-dark">arrow_forward</span>
+                                      <span className="min-w-0 flex-1 truncate font-black text-red-500" title={box.masked_value}>{box.masked_value}</span>
                                     </>
                                   )}
                                 </div>
@@ -1338,8 +1331,10 @@ export default function EditorPage() {
                       </div>
                     </>
                   ) : (
-                    <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-gray-200">
-                      <p className="text-sm text-gray-500">감지된 개인정보가 없습니다</p>
+                    <div className="flex h-40 flex-col items-center justify-center rounded-2xl border border-dashed border-border-light bg-background-light/70 text-center dark:border-border-dark dark:bg-background-dark/70">
+                      <span className="material-symbols-outlined text-3xl text-text-secondary-light dark:text-text-secondary-dark">verified_user</span>
+                      <p className="mt-2 text-sm font-bold text-text-primary-light dark:text-text-primary-dark">감지된 개인정보가 없습니다</p>
+                      <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">마스킹할 항목이 발견되면 여기에 표시됩니다.</p>
                     </div>
                   )}
                     </div>
@@ -1348,40 +1343,51 @@ export default function EditorPage() {
                 {/* OCR 편집 패널 */}
                 {showOCRComparison && ocrResults && (
                   <aside
-                    className="h-full flex-shrink-0 flex flex-col border-l border-gray-200 bg-white relative"
+                    className="relative flex h-full flex-shrink-0 flex-col overflow-hidden border-l border-border-light/80 bg-white/95 shadow-2xl shadow-slate-900/10 backdrop-blur-xl dark:border-border-dark/80 dark:bg-surface-dark/95"
                     style={{ width: ocrPanelWidth }}
                   >
                     <div
-                      className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/50 active:bg-primary z-10 transition-colors"
+                      className="absolute bottom-6 left-0 top-6 z-10 w-1.5 cursor-col-resize rounded-r-full hover:bg-primary/50 active:bg-primary transition-colors"
                       onMouseDown={handleOcrPanelResizeStart}
                     />
-                    {/* 헤더 */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
-                      <span className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-base">edit_note</span>
-                        OCR 텍스트 편집
-                      </span>
+                    <div className="flex items-start justify-between gap-3 border-b border-border-light/80 px-4 py-3 dark:border-border-dark/80">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                            <span className="material-symbols-outlined text-[18px]">edit_note</span>
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-black text-text-primary-light dark:text-text-primary-dark">
+                              OCR 텍스트 편집
+                            </p>
+                            <p className="mt-0.5 truncate text-[11px] font-medium text-text-secondary-light dark:text-text-secondary-dark">
+                              현재 페이지의 OCR 라인을 확인하고 수정합니다
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                       <button
                         onClick={() => setShowOCRComparison(false)}
-                        className="p-1 rounded-lg hover:bg-gray-100 text-gray-500"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl text-text-secondary-light transition-colors hover:bg-black/5 hover:text-text-primary-light dark:text-text-secondary-dark dark:hover:bg-white/10 dark:hover:text-text-primary-dark"
+                        title="OCR 편집 닫기"
                       >
-                        <span className="material-symbols-outlined text-xl">close</span>
+                        <span className="material-symbols-outlined text-[18px]">close</span>
                       </button>
                     </div>
-                    {/* 안내 문구 */}
-                    <div className="px-4 py-2 bg-primary/5 border-b border-gray-200 flex-shrink-0">
-                      <p className="text-xs text-gray-500">
+                    <div className="border-b border-border-light/80 px-4 py-3 dark:border-border-dark/80">
+                      <p className="rounded-2xl border border-primary/15 bg-primary/5 px-3 py-2 text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">
                         텍스트를 클릭하면 수정할 수 있습니다. 수정 후 자동 저장됩니다.
                       </p>
                     </div>
-                    {/* 라인 목록 */}
-                    <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5">
+                    <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-4">
                       {(() => {
                         const currentLines = ocrResults.pages.find(p => p.page_number === currentPage)?.lines ?? [];
                         if (currentLines.length === 0) {
                           return (
-                            <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-gray-200">
-                              <p className="text-sm text-gray-500">이 페이지의 OCR 결과가 없습니다</p>
+                            <div className="flex h-40 flex-col items-center justify-center rounded-2xl border border-dashed border-border-light bg-background-light/70 text-center dark:border-border-dark dark:bg-background-dark/70">
+                              <span className="material-symbols-outlined text-3xl text-text-secondary-light dark:text-text-secondary-dark">text_snippet</span>
+                              <p className="mt-2 text-sm font-bold text-text-primary-light dark:text-text-primary-dark">이 페이지의 OCR 결과가 없습니다</p>
+                              <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">텍스트 라인이 감지되면 여기에 표시됩니다.</p>
                             </div>
                           );
                         }
@@ -1391,25 +1397,27 @@ export default function EditorPage() {
                           return (
                             <div
                               key={idx}
-                              className={`rounded-lg border p-2 transition-colors ${
+                              className={`group rounded-2xl border p-3 text-xs shadow-sm transition-colors ${
                                 isEditing
-                                  ? "border-primary bg-primary/5"
+                                  ? "border-primary bg-primary/5 shadow-primary/10"
                                   : isEdited
-                                  ? "border-green-400 bg-green-50"
-                                  : "border-gray-200 hover:border-primary/50 hover:bg-gray-50"
+                                  ? "border-emerald-300 bg-emerald-50/90 dark:border-emerald-800 dark:bg-emerald-950/40"
+                                  : "border-border-light bg-white hover:border-primary/40 hover:bg-primary/[0.03] dark:border-border-dark dark:bg-background-dark/80 dark:hover:border-primary/40"
                               }`}
                             >
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-[10px] text-gray-500 font-medium">#{idx + 1}</span>
+                              <div className="mb-2 flex items-center justify-between gap-2">
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                  #{idx + 1}
+                                </span>
                                 <div className="flex items-center gap-1">
                                   {isEdited && !isEditing && (
-                                    <span className="text-[10px] text-green-600 font-medium">수정됨</span>
+                                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400">수정됨</span>
                                   )}
                                   {line.confidence !== undefined && (
-                                    <span className={`text-[10px] font-medium ${
-                                      (line.confidence ?? 0) > 0.9 ? "text-green-600"
-                                      : (line.confidence ?? 0) > 0.7 ? "text-yellow-600"
-                                      : "text-red-500"
+                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
+                                      (line.confidence ?? 0) > 0.9 ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400"
+                                      : (line.confidence ?? 0) > 0.7 ? "bg-yellow-50 text-yellow-600 dark:bg-yellow-950/50 dark:text-yellow-400"
+                                      : "bg-red-50 text-red-500 dark:bg-red-950/50 dark:text-red-400"
                                     }`}>
                                       {((line.confidence ?? 0) * 100).toFixed(0)}%
                                     </span>
@@ -1423,7 +1431,7 @@ export default function EditorPage() {
                                     type="text"
                                     value={editingText}
                                     onChange={(e) => setEditingText(e.target.value)}
-                                    className="w-full text-xs p-1.5 rounded border border-primary bg-white text-gray-900 outline-none"
+                                    className="w-full rounded-xl border border-primary bg-white px-3 py-2 text-xs text-gray-900 outline-none ring-2 ring-primary/10 dark:bg-background-dark dark:text-text-primary-dark"
                                     onKeyDown={(e) => {
                                       if (e.key === "Enter") {
                                         handleEditOCRText(idx, editingText);
@@ -1436,13 +1444,13 @@ export default function EditorPage() {
                                   <div className="flex gap-1">
                                     <button
                                       onClick={() => { handleEditOCRText(idx, editingText); setEditingLineIndex(null); }}
-                                      className="flex-1 text-xs py-1 rounded bg-primary text-white hover:bg-primary/90 font-medium"
+                                      className="flex-1 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary/90"
                                     >
                                       확인
                                     </button>
                                     <button
                                       onClick={() => setEditingLineIndex(null)}
-                                      className="flex-1 text-xs py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-100"
+                                      className="flex-1 rounded-xl border border-border-light px-3 py-1.5 text-xs font-bold text-text-secondary-light hover:bg-black/5 dark:border-border-dark dark:text-text-secondary-dark dark:hover:bg-white/10"
                                     >
                                       취소
                                     </button>
@@ -1450,10 +1458,10 @@ export default function EditorPage() {
                                 </div>
                               ) : (
                                 <p
-                                  className="text-xs text-gray-900 cursor-pointer leading-relaxed"
+                                  className="cursor-pointer whitespace-pre-wrap break-words text-xs leading-relaxed text-text-primary-light dark:text-text-primary-dark"
                                   onClick={() => { setEditingLineIndex(idx); setEditingText(line.text); }}
                                 >
-                                  {line.text || <span className="text-gray-400 italic">빈 텍스트</span>}
+                                  {line.text || <span className="text-text-secondary-light italic dark:text-text-secondary-dark">빈 텍스트</span>}
                                 </p>
                               )}
                             </div>
@@ -1462,8 +1470,14 @@ export default function EditorPage() {
                       })()}
                     </div>
                     {/* 저장 상태 */}
-                    <div className="flex-shrink-0 px-4 py-2 border-t border-gray-200">
-                      <p className="text-xs text-gray-500 text-center">
+                    <div className="flex-shrink-0 border-t border-border-light/80 px-4 py-3 dark:border-border-dark/80">
+                      <p className={`rounded-2xl px-3 py-2 text-center text-xs font-bold ${
+                        saveStatus === "error"
+                          ? "bg-red-50 text-red-500 dark:bg-red-950/50 dark:text-red-400"
+                          : saveStatus === "saving" || saveStatus === "unsaved"
+                            ? "bg-yellow-50 text-yellow-600 dark:bg-yellow-950/50 dark:text-yellow-400"
+                            : "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400"
+                      }`}>
                         {saveStatus === "saving" ? "저장 중..." : saveStatus === "saved" ? "자동 저장 완료" : saveStatus === "unsaved" ? "저장 대기 중..." : "저장 실패"}
                       </p>
                     </div>

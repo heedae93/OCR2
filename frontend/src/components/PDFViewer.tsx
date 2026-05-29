@@ -40,6 +40,7 @@ interface PDFViewerProps {
   highlightedLineIndex?: number | null;
   onEditOCRText?: (lineIndex: number, newText: string) => void;
   children?: React.ReactNode;
+  topToolbar?: React.ReactNode;
   pageNavigation?: React.ReactNode;
   onPageDimensionsChange?: (width: number, height: number) => void;
 }
@@ -117,6 +118,7 @@ export default function PDFViewer({
   highlightedLineIndex = null,
   onEditOCRText,
   children,
+  topToolbar,
   onPageDimensionsChange,
 }: PDFViewerProps) {
   const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
@@ -142,17 +144,40 @@ export default function PDFViewer({
   // 마스킹 박스별 샘플링된 배경색 { boxIndex: "rgb(...)" }
   const [maskBgColors, setMaskBgColors] = useState<Record<number, string>>({});
 
+  const hasPageNavigation = Boolean(pageNavigation);
+  const hasTopToolbar = Boolean(topToolbar);
+
+  const calculateFitScale = useCallback(
+    (pageW: number, pageH: number) => {
+      const horizontalChrome = 32;
+      const verticalChrome = hasTopToolbar ? 88 : 32;
+      const fitSafety = 0.96;
+      const availableWidth = Math.max(containerWidth - horizontalChrome, 1);
+      const availableHeight = Math.max(containerHeight - verticalChrome, 1);
+
+      if (fitToPage && containerWidth > 0 && containerHeight > 0 && pageW > 0 && pageH > 0) {
+        return Math.min(availableWidth / pageW, availableHeight / pageH) * fitSafety;
+      }
+
+      if (fitToWidth && containerWidth > 0 && pageW > 0) {
+        return (availableWidth / pageW) * fitSafety;
+      }
+
+      return zoom / 100;
+    },
+    [containerHeight, containerWidth, fitToPage, fitToWidth, hasTopToolbar, zoom],
+  );
+
   // Calculate effective zoom
   const effectiveZoom = (() => {
-    const pad = 64; // p-8 = 32px × 2
-    if (fitToPage && containerWidth > 0 && containerHeight > 0 && nativePageWidth > 0 && nativePageHeight > 0) {
-      const zoomW = Math.round(((containerWidth - pad) / nativePageWidth) * 100);
-      const zoomH = Math.round(((containerHeight - pad) / nativePageHeight) * 100);
-      return Math.min(zoomW, zoomH);
+    if (
+      (fitToPage || fitToWidth) &&
+      nativePageWidth > 0 &&
+      nativePageHeight > 0
+    ) {
+      return Math.round(calculateFitScale(nativePageWidth, nativePageHeight) * 100);
     }
-    if (fitToWidth && containerWidth > 0 && nativePageWidth > 0) {
-      return Math.round(((containerWidth - pad) / nativePageWidth) * 100);
-    }
+
     return zoom;
   })();
 
@@ -293,16 +318,7 @@ export default function PDFViewer({
         const newNativeHeight = nativeViewport.height;
 
         // Calculate effective scale using fresh native dimensions (avoids stale-closure lag)
-        let resolvedScale = scale;
-        if (containerWidth > 0 && containerHeight > 0 && newNativeWidth > 0 && newNativeHeight > 0) {
-          const pad = 64; // p-8 = 32px × 2
-          const zW = (containerWidth - pad) / newNativeWidth;
-          const zH = (containerHeight - pad) / newNativeHeight;
-          resolvedScale = Math.min(zW, zH);
-        } else if (containerWidth > 0 && newNativeWidth > 0) {
-          const pad = 64;
-          resolvedScale = (containerWidth - pad) / newNativeWidth;
-        }
+        const resolvedScale = calculateFitScale(newNativeWidth, newNativeHeight);
 
         if (nativePageWidth !== newNativeWidth) setNativePageWidth(newNativeWidth);
         if (nativePageHeight !== newNativeHeight) setNativePageHeight(newNativeHeight);
@@ -388,9 +404,15 @@ export default function PDFViewer({
     currentPage,
     effectiveZoom,
     scale,
+    calculateFitScale,
+    fitToPage,
+    fitToWidth,
+    containerWidth,
+    containerHeight,
     ocrResults,
     totalPages,
     nativePageWidth,
+    nativePageHeight,
   ]);
 
   // 페이지 렌더 완료 후 마스킹 박스 주변 픽셀 샘플링 → 배경색 추정
@@ -531,9 +553,9 @@ export default function PDFViewer({
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-full w-full p-8 bg-background-light dark:bg-background-dark">
+      <div className="flex h-full w-full items-center justify-center p-4 bg-background-light dark:bg-background-dark">
         {/* Document skeleton */}
-        <div className="relative w-full max-w-2xl aspect-[3/4] bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+        <div className="relative h-full max-h-[calc(100vh-8rem)] w-auto min-w-[min(720px,calc(100vw-8rem))] aspect-[3/4] bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
           {/* Shimmer effect */}
           <div
             className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_2s_infinite] -translate-x-full"
@@ -601,17 +623,23 @@ export default function PDFViewer({
       : undefined;
 
   return (
-    <div
-      ref={containerRef}
-      className="flex flex-col items-center justify-start w-full h-full overflow-auto p-8 bg-background-light dark:bg-background-dark"
-    >
+    <div className="relative h-full w-full overflow-hidden bg-background-light dark:bg-background-dark">
       <div
-        className="relative shadow-lg"
-        style={{
-          width: pageWidth ? `${pageWidth}px` : "auto",
-          height: pageHeight ? `${pageHeight}px` : "auto",
-        }}
+        ref={containerRef}
+        className={`absolute left-0 right-0 top-0 flex min-h-0 items-center justify-center p-4 ${hasTopToolbar ? "pt-16" : ""} ${hasPageNavigation ? "bottom-16" : "bottom-0"} ${fitToPage ? "overflow-hidden" : "overflow-auto"}`}
       >
+        {topToolbar && (
+          <div className="pointer-events-none absolute left-1/2 top-3 z-20 flex w-full max-w-[calc(100%-2rem)] -translate-x-1/2 justify-center px-2">
+            {topToolbar}
+          </div>
+        )}
+        <div
+          className="relative shadow-lg"
+          style={{
+            width: pageWidth ? `${pageWidth}px` : "auto",
+            height: pageHeight ? `${pageHeight}px` : "auto",
+          }}
+        >
         <canvas ref={canvasRef} className="rounded-none" />
 
         {/* Page loading overlay */}
@@ -870,12 +898,15 @@ export default function PDFViewer({
 
         {/* Custom overlay content (e.g., TextEditor) */}
         {children}
+        </div>
       </div>
 
-      {/* 캔버스 바로 아래 페이지 네비게이션 */}
+      {/* Floating page navigation */}
       {pageNavigation && (
-        <div className="mt-3">
-          {pageNavigation}
+        <div className="pointer-events-none absolute bottom-4 left-1/2 z-20 -translate-x-1/2">
+          <div className="pointer-events-auto rounded-2xl border border-border-light/80 bg-surface-light/95 px-2 py-1 shadow-lg shadow-slate-900/10 backdrop-blur-md dark:border-border-dark/80 dark:bg-surface-dark/95">
+            {pageNavigation}
+          </div>
         </div>
       )}
     </div>

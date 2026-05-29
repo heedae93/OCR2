@@ -54,9 +54,9 @@ set CUDA_VISIBLE_DEVICES=0
 :: Start Backend
 start "BBOCR-Backend" /min cmd /c "set TIKA_JAVA_SERVER_URL=%TIKA_JAVA_SERVER_URL% && "%PYTHON_EXE%" -m uvicorn main:app --app-dir backend --host 0.0.0.0 --port 6015 --reload"
 
-:: Start Worker
+:: Start Worker Supervisor
 cd backend
-start "BBOCR-Worker" /min cmd /c "set TIKA_JAVA_SERVER_URL=%TIKA_JAVA_SERVER_URL% && set PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True && "%PYTHON_EXE%" -m celery -A tasks.celery_app worker -Q ocr,tika --loglevel=info --pool=solo"
+start "BBOCR-WorkerSupervisor" /min cmd /c "set TIKA_JAVA_SERVER_URL=%TIKA_JAVA_SERVER_URL% && set PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True && set WORKER_QUEUES=ocr,tika && "%PYTHON_EXE%" scripts\worker_supervisor.py --queues ocr,tika"
 cd ..
 
 :: 6. Start Frontend

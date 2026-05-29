@@ -303,22 +303,20 @@ else
     echo "[OK] Backend started (PID: $BACKEND_PID)"
 fi
 
-# ── Celery Worker 시작 ────────────────────────────────────
-echo "[INFO] Starting Celery OCR Worker..."
+# ── Celery Worker Supervisor 시작 ─────────────────────────
+echo "[INFO] Starting Celery Worker Supervisor..."
 cd backend
 PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
 TIKA_SERVER_URL="${TIKA_SERVER_URL:-}" \
 TIKA_JAVA_SERVER_URL="${TIKA_JAVA_SERVER_URL:-}" \
-nohup "$PYTHON_BIN" -m celery -A tasks.celery_app worker \
-    -Q ocr \
-    -n ocr_worker@%h \
-    --loglevel=info \
-    --pool=solo \
-    > ../logs/worker.log 2>&1 &
-WORKER_PID=$!
-echo "$WORKER_PID" > ../logs/worker.pid
+WORKER_QUEUES="${WORKER_QUEUES:-ocr,tika}" \
+nohup "$PYTHON_BIN" scripts/worker_supervisor.py \
+    --queues "${WORKER_QUEUES:-ocr,tika}" \
+    > ../logs/worker_supervisor.log 2>&1 &
+WORKER_SUPERVISOR_PID=$!
+echo "$WORKER_SUPERVISOR_PID" > ../logs/worker_supervisor.pid
 cd ..
-echo "[OK] Celery Worker started (PID: $WORKER_PID)"
+echo "[OK] Celery Worker Supervisor started (PID: $WORKER_SUPERVISOR_PID)"
 
 # ── Frontend 개발 모드로 시작 (hot reload 지원) ────────────────────
 echo "[INFO] Starting frontend server (dev mode with hot reload)..."
@@ -338,7 +336,7 @@ echo "  Servers started successfully!"
 echo "========================================"
 echo "  Backend:  http://${SERVER_IP}:${BACKEND_PORT}  (PID: $BACKEND_PID)"
 echo "  Frontend: http://${SERVER_IP}:${FRONTEND_PORT}  (PID: $FRONTEND_PID)"
-echo "  Worker:   Celery OCR Worker            (PID: $WORKER_PID)"
+echo "  Worker:   Celery Worker Supervisor     (PID: $WORKER_SUPERVISOR_PID)"
 if [ -n "${TIKA_JAVA_SERVER_URL:-}" ]; then
     echo "  TikaJava: ${TIKA_JAVA_SERVER_URL}  (logs/tika-java.log)"
 fi
@@ -348,6 +346,7 @@ fi
 echo ""
 echo "  Logs:     tail -f logs/backend.log"
 echo "            tail -f logs/frontend.log"
+echo "            tail -f logs/worker_supervisor.log"
 echo "            tail -f logs/worker.log"
 echo "            tail -f logs/redis.log"
 echo "            tail -f logs/tika.log"
