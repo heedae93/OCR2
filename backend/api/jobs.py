@@ -372,6 +372,13 @@ async def delete_job(job_id: str, db: Session = Depends(get_db)):
         db.delete(job)
         db.commit()
 
+        # Delete from OpenSearch index
+        try:
+            from core.search_engine import search_engine
+            search_engine.delete_document(job_id)
+        except Exception as e:
+            logger.warning(f"Failed to delete search index for job {job_id}: {e}")
+
         logger.info(f"Deleted job {job_id} ({deleted_files} files)")
         return {"message": f"Job deleted successfully ({deleted_files} files removed)"}
 
