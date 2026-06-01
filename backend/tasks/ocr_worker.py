@@ -91,6 +91,27 @@ def _restore_job_to_manager(job_id: str) -> bool:
         db.close()
 
 
+def _should_skip_terminal_job(job_id: str) -> bool:
+    """Ignore stale Redis deliveries for jobs that are already finished in DB."""
+    from database import SessionLocal, Job as DBJob
+
+    db = SessionLocal()
+    try:
+        db_job = db.query(DBJob).filter_by(job_id=job_id).first()
+        if not db_job:
+            return False
+        if db_job.status in {"completed", "failed", "cancelled"}:
+            logger.warning(
+                "[Worker] Skipping stale task for terminal job %s (status=%s)",
+                job_id,
+                db_job.status,
+            )
+            return True
+        return False
+    finally:
+        db.close()
+
+
 @celery_app.task(
     bind=True,
     name='ocr.process',
@@ -106,6 +127,9 @@ def process_ocr_task(self, job_id: str):
     상태 업데이트는 기존 파일/DB 방식 그대로 유지.
     """
     logger.info(f"[Worker] Task received: job_id={job_id}")
+
+    if _should_skip_terminal_job(job_id):
+        return
 
     # Worker 프로세스 job_manager에 job 복원
     if not _restore_job_to_manager(job_id):

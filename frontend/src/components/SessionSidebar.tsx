@@ -1315,7 +1315,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
                           a.click()
                         })
                       }}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-500 text-white border border-blue-600 hover:bg-blue-600 active:bg-blue-700 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 active:bg-blue-100 disabled:opacity-35 disabled:cursor-not-allowed transition-colors dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-900/30"
                     >
                       <Download className="w-3 h-3" />
                       내보내기
@@ -1328,7 +1328,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
                         }
                         fetchSessions()
                       }}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-orange-500 text-white border border-orange-600 hover:bg-orange-600 active:bg-orange-700 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 active:bg-orange-100 disabled:opacity-35 disabled:cursor-not-allowed transition-colors dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800 dark:hover:bg-orange-900/30"
                     >
                       <RefreshCw className="w-3 h-3" />
                       재처리
@@ -1343,7 +1343,7 @@ export default function SessionSidebar({ onDocumentSelect, currentJobId, filterT
                         setSidebarSelectedJobs(new Set())
                         fetchSessions()
                       }}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-red-500 text-white border border-red-600 hover:bg-red-600 active:bg-red-700 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 active:bg-red-100 disabled:opacity-35 disabled:cursor-not-allowed transition-colors dark:bg-red-900/20 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-900/30"
                     >
                       <Trash2 className="w-3 h-3" />
                       삭제

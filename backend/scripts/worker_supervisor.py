@@ -77,8 +77,16 @@ def recently_requeued(state: dict[str, Any], job_id: str, cooldown_seconds: int)
     return datetime.now() - last < timedelta(seconds=cooldown_seconds)
 
 
+def recovery_attempts(state: dict[str, Any], job_id: str) -> int:
+    try:
+        return int(state.get("attempts", {}).get(job_id, 0))
+    except Exception:
+        return 0
+
+
 def mark_requeued(state: dict[str, Any], job_id: str) -> None:
     state.setdefault("requeued_at", {})[job_id] = datetime.now().isoformat()
+    state.setdefault("attempts", {})[job_id] = recovery_attempts(state, job_id) + 1
 
 
 def redis_queue_length(queue_name: str) -> int | None:
@@ -102,6 +110,13 @@ def reset_job_for_retry(job: DBJob) -> None:
     job.processing_time_seconds = None
 
 
+def fail_job_after_recovery_limit(job: DBJob, attempts: int) -> None:
+    job.status = "failed"
+    job.progress_percent = 0.0
+    job.error_message = f"워커 복구를 {attempts}회 시도했지만 작업이 계속 중단되어 자동 실패 처리했습니다."
+    job.completed_at = datetime.now()
+
+
 def dispatch_ocr_job(job_id: str, queue_name: str) -> None:
     celery_app.send_task("ocr.process", args=[job_id], queue=queue_name)
 
@@ -114,6 +129,7 @@ def recover_jobs(
     min_processing_age_seconds: int,
     queued_age_seconds: int,
     cooldown_seconds: int,
+    max_recovery_attempts: int,
 ) -> int:
     """Requeue jobs that are safe enough to recover without a schema migration."""
     state = load_state()
@@ -132,6 +148,18 @@ def recover_jobs(
 
         for job in active_jobs:
             job_id = job.job_id
+            attempts = recovery_attempts(state, job_id)
+            if attempts >= max_recovery_attempts:
+                fail_job_after_recovery_limit(job, attempts)
+                recovered += 1
+                logger.error(
+                    "Marked job %s failed after %s recovery attempts during %s recovery",
+                    job_id,
+                    attempts,
+                    reason,
+                )
+                continue
+
             if recently_requeued(state, job_id, cooldown_seconds):
                 continue
 
@@ -186,6 +214,8 @@ def build_worker_command(args: argparse.Namespace) -> list[str]:
         args.loglevel,
         "--pool",
         args.pool,
+        "--prefetch-multiplier",
+        "1",
     ]
 
 
@@ -200,8 +230,11 @@ def start_worker(args: argparse.Namespace) -> subprocess.Popen:
     worker_log = worker_log_path.open("a", encoding="utf-8", buffering=1)
     command = build_worker_command(args)
     creationflags = 0
+    startupinfo = None
     if os.name == "nt":
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
     process = subprocess.Popen(
         command,
@@ -210,6 +243,7 @@ def start_worker(args: argparse.Namespace) -> subprocess.Popen:
         stdout=worker_log,
         stderr=subprocess.STDOUT,
         creationflags=creationflags,
+        startupinfo=startupinfo,
     )
     process._bbocr_log_handle = worker_log  # keep the log handle alive for the child process
     WORKER_PID_PATH.write_text(str(process.pid), encoding="utf-8")
@@ -246,6 +280,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--queued-recovery-age", type=int, default=env_int("WORKER_QUEUED_RECOVERY_SECONDS", 600))
     parser.add_argument("--recovery-cooldown", type=int, default=env_int("WORKER_RECOVERY_COOLDOWN_SECONDS", 1800))
+    parser.add_argument("--max-recovery-attempts", type=int, default=env_int("WORKER_MAX_RECOVERY_ATTEMPTS", 3))
     parser.add_argument(
         "--recover-queued",
         action="store_true",
@@ -291,6 +326,7 @@ def main() -> int:
         ),
         queued_age_seconds=args.queued_recovery_age,
         cooldown_seconds=args.recovery_cooldown,
+        max_recovery_attempts=args.max_recovery_attempts,
     )
 
     last_recovery = 0.0
@@ -306,6 +342,7 @@ def main() -> int:
                     min_processing_age_seconds=0,
                     queued_age_seconds=args.queued_recovery_age,
                     cooldown_seconds=args.recovery_cooldown,
+                    max_recovery_attempts=args.max_recovery_attempts,
                 )
                 time.sleep(3)
                 worker = start_worker(args)
@@ -319,6 +356,7 @@ def main() -> int:
                     min_processing_age_seconds=args.processing_recovery_age,
                     queued_age_seconds=args.queued_recovery_age,
                     cooldown_seconds=args.recovery_cooldown,
+                    max_recovery_attempts=args.max_recovery_attempts,
                 )
                 last_recovery = now
 

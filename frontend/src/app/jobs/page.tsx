@@ -41,6 +41,7 @@ interface JobListItem {
   is_double_column?: boolean | null;
   session_id?: string | null;
   session_name?: string | null;
+  doc_type?: string | null;
 }
 
 interface SessionDocumentItem {
@@ -53,6 +54,7 @@ interface SessionDocumentItem {
   pdf_url?: string | null;
   message?: string | null;
   added_at?: string | null;
+  doc_type?: string | null;
 }
 
 interface SessionWithDocuments {
@@ -79,7 +81,6 @@ function JobsPageInner() {
   const [sortBy, setSortBy] = useState<SortBy>("latest");
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(0);
-  const [deletingFailed, setDeletingFailed] = useState(false);
   const [deletingJobs, setDeletingJobs] = useState(false);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(
     new Set(),
@@ -339,59 +340,8 @@ function JobsPageInner() {
       message: document.message ?? job.message,
       session_id: sessionInfo.session_id,
       session_name: sessionInfo.session_name,
+      doc_type: document.doc_type ?? job.doc_type,
     };
-  };
-
-
-  const fetchAllFailedJobs = async () => {
-    const userId = getUserId();
-    const failedJobs: JobListItem[] = [];
-
-    for (let offset = 0; ; offset += 100) {
-      const params = new URLSearchParams({
-        user_id: userId,
-        status: "failed",
-        limit: "100",
-        offset: String(offset),
-      });
-      const response = await fetch(`${API_BASE_URL}/api/jobs?${params}`);
-
-      if (!response.ok) {
-        throw new Error(`Failed to load failed jobs: ${response.status}`);
-      }
-
-      const jobs: JobListItem[] = await response.json();
-      failedJobs.push(...jobs);
-
-      if (jobs.length < 100) break;
-    }
-
-    return failedJobs;
-  };
-
-  const handleDeleteAllFailed = async () => {
-    const failedCount = totals.failed;
-    if (failedCount === 0) return;
-    if (!confirm(`실패한 작업 ${failedCount}개를 모두 삭제하시겠습니까?`))
-      return;
-
-    try {
-      setDeletingFailed(true);
-      const failedJobs = await fetchAllFailedJobs();
-      await Promise.all(
-        failedJobs.map((job) =>
-          fetch(`${API_BASE_URL}/api/jobs/${job.job_id}`, {
-            method: "DELETE",
-          }).catch(() => null),
-        ),
-      );
-      loadData();
-    } catch (error) {
-      console.error("Failed to delete failed jobs:", error);
-      alert("실패 작업 삭제 중 오류가 발생했습니다.");
-    } finally {
-      setDeletingFailed(false);
-    }
   };
 
   const toggleJobSelected = (jobId: string, selected: boolean) => {
@@ -538,7 +488,8 @@ function JobsPageInner() {
         const matchesName =
           !query ||
           (job.filename || "").toLowerCase().includes(query) ||
-          (job.session_name || "").toLowerCase().includes(query);
+          (job.session_name || "").toLowerCase().includes(query) ||
+          (job.doc_type || "").toLowerCase().includes(query);
         const matchesOs = osMatchedJobIds.size > 0 && osMatchedJobIds.has(job.job_id);
         const matchesSearch = matchesName || matchesOs;
 
@@ -610,7 +561,7 @@ function JobsPageInner() {
   return (
       <main className="ml-64 p-6 lg:p-10">
         <div className="w-full max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-6 gap-4">
+          <div className="flex items-center justify-between mb-4 gap-4">
             <div>
               <h1 className="text-3xl font-bold text-text-primary-light">
                 작업 내역
@@ -619,15 +570,18 @@ function JobsPageInner() {
                 파일별 처리 내역과 각 파일이 속한 작업을 한 번에 확인할 수 있습니다.
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <SummaryCard icon="folder_open" label="총 작업" value={`${totals.sessions}개`} />
-              <SummaryCard icon="description" label="총 문서" value={`${totals.totalDocuments}개`} subValue={`${totals.totalPages}p`} />
-              <SummaryCard icon="sync" label="진행/대기" value={`${totals.active}개`} />
-              <SummaryCard icon="check_circle" label="완료율" value={`${totals.completionRate}%`} subValue={`완료 ${totals.completed}개`} />
+            <div className="flex items-center justify-end gap-2 shrink-0">
+              <button
+                onClick={() => router.push("/ocr-work")}
+                className="inline-flex h-12 items-center gap-2 rounded-xl bg-primary px-5 text-[15px] font-bold text-white shadow-sm transition-colors hover:bg-primary/90"
+              >
+                <span className="material-symbols-outlined text-xl">upload_file</span>
+                문서 작업하기
+              </button>
             </div>
           </div>
 
-          <div className="relative mb-4">
+          <div className="relative mb-8">
             <input
               type="text"
               placeholder="파일명, 작업명, 메타데이터 키워드로 검색..."
@@ -690,17 +644,36 @@ function JobsPageInner() {
           )}
 
           <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-            <p className="text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark">
-              총{" "}
-              <span className="text-primary font-bold">
-                {filteredJobs.length}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <span className="inline-flex items-baseline gap-1">
+                <span className="font-semibold text-text-secondary-light dark:text-text-secondary-dark">총 파일</span>
+                <span className="font-bold text-primary">{filteredJobs.length}개</span>
               </span>
-              개 파일
+              <span className="text-border-light dark:text-border-dark">|</span>
+              <span className="inline-flex items-baseline gap-1">
+                <span className="font-semibold text-text-secondary-light dark:text-text-secondary-dark">작업</span>
+                <span className="font-bold text-indigo-600 dark:text-indigo-400">{totals.sessions}개</span>
+              </span>
+              <span className="text-border-light dark:text-border-dark">|</span>
+              <span className="inline-flex items-baseline gap-1">
+                <span className="font-semibold text-text-secondary-light dark:text-text-secondary-dark">전체 문서</span>
+                <span className="font-bold text-sky-600 dark:text-sky-400">{totals.totalDocuments}개</span>
+              </span>
+              <span className="text-border-light dark:text-border-dark">|</span>
+              <span className="inline-flex items-baseline gap-1">
+                <span className="font-semibold text-text-secondary-light dark:text-text-secondary-dark">진행/대기</span>
+                <span className="font-bold text-amber-600 dark:text-amber-400">{totals.active}개</span>
+              </span>
+              <span className="text-border-light dark:text-border-dark">|</span>
+              <span className="inline-flex items-baseline gap-1">
+                <span className="font-semibold text-text-secondary-light dark:text-text-secondary-dark">완료율</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">{totals.completionRate}%</span>
+              </span>
               {focusSessionName && (
-                <span className="ml-2 text-xs font-medium text-primary">· 선택: {focusSessionName}</span>
+                <span className="text-xs font-medium text-primary">· 선택: {focusSessionName}</span>
               )}
-            </p>
-            <div className="flex items-center gap-2 flex-wrap">
+            </div>
+            <div className="flex items-center gap-2 flex-wrap justify-end">
               <select
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
@@ -755,16 +728,6 @@ function JobsPageInner() {
                 <span className="material-symbols-outlined text-sm">delete</span>
                 {deletingJobs ? "삭제 중..." : `선택 삭제 (${selectedJobIds.size})`}
               </button>
-              {totals.failed > 0 && (
-                <button
-                  onClick={handleDeleteAllFailed}
-                  disabled={deletingFailed}
-                  className="inline-flex items-center gap-1 h-8 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <span className="material-symbols-outlined text-sm">delete_sweep</span>
-                  {deletingFailed ? "삭제 중..." : "실패 작업 전체 삭제"}
-                </button>
-              )}
             </div>
           </div>
 
@@ -794,12 +757,12 @@ function JobsPageInner() {
                   <table className="w-full min-w-[1180px] table-fixed">
                     <colgroup>
                       <col style={{ width: "4%" }} />
-                      <col style={{ width: "30%" }} />
-                      <col style={{ width: "20%" }} />
-                      <col style={{ width: "11%" }} />
-                      <col style={{ width: "14%" }} />
-                      <col style={{ width: "14%" }} />
-                      <col style={{ width: "7%" }} />
+                      <col style={{ width: "18%" }} />
+                      <col style={{ width: "32%" }} />
+                      <col style={{ width: "9%" }} />
+                      <col style={{ width: "9%" }} />
+                      <col style={{ width: "15%" }} />
+                      <col style={{ width: "12%" }} />
                     </colgroup>
                     <thead className="border-b border-primary/20 dark:border-primary/20 bg-primary/10 dark:bg-primary/10">
                       <tr>
@@ -823,11 +786,11 @@ function JobsPageInner() {
                             {allPageSelected && <span className="material-symbols-outlined text-[14px] leading-none">check</span>}
                           </button>
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
-                          파일명
-                        </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
                           작업명
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
+                          파일명
                         </th>
                         <th className="px-3 py-3 text-center text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
                           상태
@@ -836,10 +799,10 @@ function JobsPageInner() {
                           진행률
                         </th>
                         <th className="px-4 py-3 text-center text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider whitespace-nowrap">
-                          작업시간
+                          시작시간
                         </th>
-                        <th className="px-3 py-3 text-center text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider">
-                          관리
+                        <th className="px-4 py-3 text-center text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark uppercase tracking-wider whitespace-nowrap">
+                          소요시간
                         </th>
                       </tr>
                     </thead>
@@ -866,6 +829,14 @@ function JobsPageInner() {
                               >
                                 {selectedJobIds.has(job.job_id) && <span className="material-symbols-outlined text-[14px] leading-none">check</span>}
                               </button>
+                            </td>
+                            <td className="px-4 py-4 text-sm text-text-primary-light dark:text-text-primary-dark">
+                              <span className="flex min-w-0 items-center gap-2">
+                                <span className="material-symbols-outlined shrink-0 text-base text-primary">folder_open</span>
+                                <span className="truncate text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">
+                                  {job.session_name || "미지정 작업"}
+                                </span>
+                              </span>
                             </td>
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3 min-w-0">
@@ -894,17 +865,8 @@ function JobsPageInner() {
                                       </span>
                                     )}
                                   </div>
-                                  <p className="mt-1 truncate text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                                    {job.job_id}
-                                  </p>
                                 </div>
                               </div>
-                            </td>
-                            <td className="px-4 py-4 text-sm text-text-primary-light dark:text-text-primary-dark">
-                              <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                                <span className="material-symbols-outlined text-sm text-primary">folder_open</span>
-                                <span className="truncate">{job.session_name || "미지정 작업"}</span>
-                              </span>
                             </td>
                             <td className="px-3 py-4 text-center">
                               <span
@@ -914,8 +876,11 @@ function JobsPageInner() {
                               </span>
                             </td>
                             <td className="px-4 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="h-2 flex-1 rounded-full bg-background-light dark:bg-background-dark overflow-hidden">
+                              <div className="mb-1 text-left text-xs font-bold text-text-primary-light dark:text-text-primary-dark tabular-nums">
+                                {Number(job.progress_percent || 0).toFixed(0)}%
+                              </div>
+                              <div className="flex items-center">
+                                <div className="h-2 w-20 rounded-full bg-background-light dark:bg-background-dark overflow-hidden">
                                   <div
                                     className="h-full bg-primary transition-all"
                                     style={{
@@ -923,69 +888,23 @@ function JobsPageInner() {
                                     }}
                                   />
                                 </div>
-                                <span className="w-12 text-right text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">
-                                  {Number(job.progress_percent || 0).toFixed(0)}%
-                                </span>
                               </div>
-                              <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                                {job.total_pages ? `${job.total_pages}p` : "페이지 정보 없음"}
-                              </p>
                             </td>
                             <td className="px-4 py-4 text-right text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                              <div className="flex flex-col items-end gap-0.5">
-                                <span
-                                  className="inline-block max-w-full truncate align-middle whitespace-nowrap font-semibold text-text-primary-light dark:text-text-primary-dark"
-                                  title={formatJobDuration(job)}
-                                >
-                                  {formatJobDuration(job)}
-                                </span>
-                                <span
-                                  className="inline-block max-w-full truncate align-middle whitespace-nowrap text-xs"
-                                  title={formatDate(getJobDateValue(job))}
-                                >
-                                  {formatDate(getJobDateValue(job))}
-                                </span>
-                              </div>
+                              <span
+                                className="inline-block max-w-full truncate align-middle whitespace-nowrap"
+                                title={formatDate(getJobStartDateValue(job))}
+                              >
+                                {formatDate(getJobStartDateValue(job))}
+                              </span>
                             </td>
-                            <td className="px-3 py-4">
-                              <div className="flex items-center justify-center gap-1">
-                                <button
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    if (job.pdf_url) {
-                                      const a = document.createElement("a");
-                                      a.href = `${API_BASE_URL}${job.pdf_url}`;
-                                      a.download = job.filename || "download.pdf";
-                                      a.click();
-                                    }
-                                  }}
-                                  disabled={job.status !== "completed" || !job.pdf_url}
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30"
-                                  title="다운로드"
-                                >
-                                  <span className="material-symbols-outlined text-base">download</span>
-                                </button>
-                                <button
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    void fetch(`${API_BASE_URL}/api/process/${job.job_id}`, { method: "POST" }).then(() => loadData(false));
-                                  }}
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-orange-600 hover:bg-orange-50"
-                                  title="재실행"
-                                >
-                                  <span className="material-symbols-outlined text-base">refresh</span>
-                                </button>
-                                <button
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    void handleDeleteJobs([job.job_id]);
-                                  }}
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
-                                  title="삭제"
-                                >
-                                  <span className="material-symbols-outlined text-base">delete</span>
-                                </button>
-                              </div>
+                            <td className="px-4 py-4 text-right text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                              <span
+                                className="inline-block max-w-full truncate align-middle whitespace-nowrap font-semibold text-text-primary-light dark:text-text-primary-dark"
+                                title={formatJobDuration(job)}
+                              >
+                                {formatJobDuration(job)}
+                              </span>
                             </td>
                           </tr>
                         );
@@ -1138,6 +1057,10 @@ function getJobTime(job: JobListItem) {
 
 function getJobDateValue(job: JobListItem) {
   return job.completed_at || job.started_at || job.created_at || null;
+}
+
+function getJobStartDateValue(job: JobListItem) {
+  return job.started_at || job.created_at || null;
 }
 
 function formatJobDuration(job: JobListItem) {

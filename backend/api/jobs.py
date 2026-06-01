@@ -133,6 +133,7 @@ async def list_jobs(
                 is_double_column=job.is_double_column,
                 session_id=session_doc.session_id if session_doc else None,
                 session_name=session_name,
+                doc_type=job.doc_type,
             ))
 
         logger.info(f"Listed {len(job_responses)} jobs (total: {total})")

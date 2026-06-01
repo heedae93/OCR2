@@ -125,8 +125,11 @@ def _start_worker_supervisor_if_needed(reason: str) -> bool:
     env.setdefault("WORKER_QUEUES", "ocr,tika")
 
     creationflags = 0
+    startupinfo = None
     if os.name == "nt":
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
     log = (LOG_DIR / "worker_supervisor_autostart.log").open("a", encoding="utf-8", buffering=1)
     process = subprocess.Popen(
@@ -136,6 +139,7 @@ def _start_worker_supervisor_if_needed(reason: str) -> bool:
         stdout=log,
         stderr=subprocess.STDOUT,
         creationflags=creationflags,
+        startupinfo=startupinfo,
     )
     WORKER_SUPERVISOR_PID_PATH.write_text(str(process.pid), encoding="utf-8")
     logger.warning(

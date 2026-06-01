@@ -63,3 +63,4 @@ class JobResponse(BaseModel):
     is_double_column: Optional[bool] = None
     session_id: Optional[str] = None
     session_name: Optional[str] = None
+    doc_type: Optional[str] = None

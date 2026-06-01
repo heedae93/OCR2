@@ -20,7 +20,8 @@ import {
 
 const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:6015'}/api`
 
-const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타', '미분류']
+const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타']
+const HIDDEN_DOC_TYPES = ['미분류']
 const UNNAMED_SESSION_LABEL = '__UNNAMED_SESSION__'
 const SESSION_KEY_SEP = '__#sid#__'
 
@@ -136,6 +137,7 @@ export default function OcrWorkPage() {
   const [restartingSessionKeys, setRestartingSessionKeys] = useState<Set<string>>(new Set())
   const [queueStatusTab, setQueueStatusTab] = useState<QueueStatusTab>('pending')
   const [sessionPage, setSessionPage] = useState(1)
+  const [docTypeRequiredModalOpen, setDocTypeRequiredModalOpen] = useState(false)
   const SESSIONS_PER_PAGE = 8
 
   const jobIdsKey = useMemo(() => {
@@ -236,7 +238,8 @@ export default function OcrWorkPage() {
           const data = await res.json()
           const defaultSet = new Set(DEFAULT_DOC_TYPES)
           const uniqueKoreanCats = (Array.isArray(data) ? data : []).filter(
-            (cat: { id: number; name: string }) => cat?.name && !defaultSet.has(cat.name),
+            (cat: { id: number; name: string }) =>
+              cat?.name && !defaultSet.has(cat.name) && !HIDDEN_DOC_TYPES.includes(cat.name),
           )
           setCategories(uniqueKoreanCats)
         }
@@ -517,6 +520,12 @@ export default function OcrWorkPage() {
     const pendingFiles = queue.filter(file => file.status === 'pending' && !file.trackedOnly && Boolean(file.file))
     if (pendingFiles.length === 0) {
       alert('업로드할 파일이 없습니다.')
+      return
+    }
+
+    if (pendingFiles.some(file => !file.docType.trim())) {
+      setQueueStatusTab('pending')
+      setDocTypeRequiredModalOpen(true)
       return
     }
 
@@ -801,7 +810,7 @@ export default function OcrWorkPage() {
   )
 
   const allDocTypes = useMemo(() => {
-    const dbTypeNames = categories.map(c => c.name)
+    const dbTypeNames = categories.map(c => c.name).filter(name => !HIDDEN_DOC_TYPES.includes(name))
     return [
       ...DEFAULT_DOC_TYPES,
       ...dbTypeNames.filter(name => !DEFAULT_DOC_TYPES.includes(name))
@@ -1505,9 +1514,9 @@ export default function OcrWorkPage() {
 
                                       {/* 2. 파일명 */}
                                       <div className="min-w-0 flex-1 space-y-0.5">
-                                        {effectiveStatus === 'completed' ? (
+                                        {effectiveStatus === 'completed' && file.jobId ? (
                                           <Link
-                                            href="/jobs"
+                                            href={`/editor/${file.jobId}`}
                                             className="block truncate text-[13px] font-bold leading-snug text-slate-600 hover:underline underline-offset-2"
                                           >
                                             {file.displayName}
@@ -1701,6 +1710,35 @@ export default function OcrWorkPage() {
           </div>
         </div>
       </main>
+      {docTypeRequiredModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-3xl border border-primary/10 bg-white shadow-2xl shadow-slate-950/20">
+            <div className="bg-gradient-to-br from-primary/10 via-white to-sky-50 px-7 pb-5 pt-7">
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-white shadow-lg shadow-primary/25">
+                <FileText className="h-7 w-7" aria-hidden />
+              </div>
+              <h2 className="text-xl font-black tracking-tight text-slate-900">
+                문서 유형을 선택해 주세요
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                우측 대기 파일 리스트에서 각 파일의 문서 유형을 선택하면 문서 작업을 시작할 수 있습니다.
+              </p>
+            </div>
+            <div className="px-7 pb-7 pt-5">
+              <div className="mb-5 rounded-2xl border border-primary/10 bg-primary/[0.04] px-4 py-3 text-sm font-semibold text-primary">
+                문서 유형별 추출 설정에 맞춰 메타데이터가 자동 추출됩니다.
+              </div>
+              <button
+                type="button"
+                onClick={() => setDocTypeRequiredModalOpen(false)}
+                className="h-12 w-full rounded-2xl bg-primary text-sm font-bold text-white shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

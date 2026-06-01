@@ -1940,8 +1940,12 @@ async def get_job_status(job_id: str):
         db = SessionLocal()
         try:
             db_job = db.query(DBJob).filter_by(job_id=job_id).first()
-            if db_job and db_job.status in {"completed", "failed", "cancelled"} and file_status.get("status") != "failed":
-                # Fall through to DB check if DB is already finished and file isn't failed
+            file_status_value = file_status.get("status")
+            if db_job and db_job.status in {"completed", "failed", "cancelled"}:
+                # DB terminal state is authoritative; status files can be stale after retries.
+                pass
+            elif db_job and db_job.status in {"queued", "processing"} and file_status_value in {"completed", "failed", "cancelled"}:
+                # A stale terminal status file must not override a DB job that was requeued.
                 pass
             else:
                 return build_response(

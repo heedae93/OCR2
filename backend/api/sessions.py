@@ -64,6 +64,7 @@ class DocumentInSession(BaseModel):
     pdf_url: Optional[str] = None
     message: Optional[str] = None
     added_at: str
+    doc_type: Optional[str] = None
 
 
 class SessionResponse(BaseModel):
@@ -277,7 +278,8 @@ async def list_sessions(
                     is_selected=sess_doc.is_selected,
                     pdf_url=pdf_url,
                     message=message,
-                    added_at=sess_doc.added_at.strftime("%Y-%m-%d %H:%M:%S") if sess_doc.added_at else None
+                    added_at=sess_doc.added_at.strftime("%Y-%m-%d %H:%M:%S") if sess_doc.added_at else None,
+                    doc_type=job.doc_type
                 ))
 
             result.append(SessionResponse(
@@ -364,7 +366,8 @@ async def get_session(
                 is_selected=sess_doc.is_selected,
                 pdf_url=pdf_url,
                 message=message,
-                added_at=sess_doc.added_at.strftime("%Y-%m-%d %H:%M:%S") if sess_doc.added_at else None
+                added_at=sess_doc.added_at.strftime("%Y-%m-%d %H:%M:%S") if sess_doc.added_at else None,
+                doc_type=job.doc_type
             ))
 
         return SessionResponse(

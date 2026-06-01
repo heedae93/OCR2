@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { API_BASE_URL } from '@/lib/api'
 import {
-  CheckCircle2, AlertCircle, RefreshCw, Save, Plus, Trash2, Tag, X, FileText
+  CheckCircle2, AlertCircle, RefreshCw, Plus, Trash2, Tag, X, FileText
 } from 'lucide-react'
 
 const DEFAULT_DOC_TYPES = ['공문서', '계약서', '보고서', '학술논문', '법령문서', '회의록', '영수증', '신분증', '기타']
@@ -155,14 +155,7 @@ export default function MetadataV3Page() {
   ]
   const currentPiiTypes = rules[selectedDocType] ?? []
 
-  const togglePii = (piiKey: string) => {
-    const updated = currentPiiTypes.includes(piiKey)
-      ? currentPiiTypes.filter(k => k !== piiKey)
-      : [...currentPiiTypes, piiKey]
-    setRules(prev => ({ ...prev, [selectedDocType]: updated }))
-  }
-
-  const saveRules = async () => {
+  const saveRulesFor = async (docType: string, piiTypes: string[], showSuccess = false) => {
     setSaving(true)
     try {
       const res = await fetch(
@@ -170,15 +163,24 @@ export default function MetadataV3Page() {
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ doc_type: selectedDocType, pii_types: currentPiiTypes }),
+          body: JSON.stringify({ doc_type: docType, pii_types: piiTypes }),
         }
       )
-      showToast(res.ok ? '저장되었습니다' : '저장 실패', res.ok)
+      if (!res.ok) throw new Error('Failed to save extraction rules')
+      if (showSuccess) showToast('저장되었습니다')
     } catch (e) {
-      showToast('오류가 발생했습니다', false)
+      showToast('자동 저장에 실패했습니다', false)
     } finally {
       setSaving(false)
     }
+  }
+
+  const togglePii = (piiKey: string) => {
+    const updated = currentPiiTypes.includes(piiKey)
+      ? currentPiiTypes.filter(k => k !== piiKey)
+      : [...currentPiiTypes, piiKey]
+    setRules(prev => ({ ...prev, [selectedDocType]: updated }))
+    void saveRulesFor(selectedDocType, updated)
   }
 
   // Combine default fields with custom fields
@@ -276,9 +278,6 @@ export default function MetadataV3Page() {
                 </h2>
                 <p className="text-sm text-text-secondary-light mt-2 font-medium">이 카테고리로 분류된 문서를 분석할 때, 활성화된 데이터 항목을 자동으로 추출하여 색인화합니다.</p>
               </div>
-              <button onClick={() => setIsAddingField(true)} className="flex items-center gap-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 px-4 py-2 rounded-full transition-colors shadow-sm">
-                <Plus size={16} /> 커스텀 추출 필드 추가
-              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-10">
@@ -292,9 +291,8 @@ export default function MetadataV3Page() {
                     <h3 className="text-base font-bold text-text-primary-light dark:text-text-primary-dark tracking-widest uppercase">
                       추출 필드 설정
                     </h3>
-                    <button onClick={saveRules} disabled={saving || loading} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 shadow-md transition-all active:scale-95 disabled:opacity-50">
-                      {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
-                      추출 설정 저장
+                    <button onClick={() => setIsAddingField(true)} className="flex h-10 items-center text-[15px] font-bold text-white bg-primary hover:bg-primary/90 px-6 rounded-full transition-colors shadow-sm">
+                      추출 필드 추가
                     </button>
                   </div>
 

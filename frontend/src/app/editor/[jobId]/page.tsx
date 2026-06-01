@@ -960,7 +960,7 @@ export default function EditorPage() {
               ) : (
                 <div className="flex flex-col h-full min-h-0">
                   {/* Header */}
-                  <div className="h-11 flex items-center gap-1 px-1.5 border-b border-border-light dark:border-border-dark flex-shrink-0">
+                  <div className="h-14 flex items-center gap-1 px-3 py-1.5 border-b border-border-light dark:border-border-dark flex-shrink-0">
                     <div className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium bg-primary/15 text-primary">
                       <span className="material-symbols-outlined text-[15px]">auto_awesome_mosaic</span>
                       미리 보기
@@ -1052,8 +1052,8 @@ export default function EditorPage() {
             {/* Center - PDF Viewer */}
             <section className="relative flex min-h-0 flex-1 flex-col bg-background-light dark:bg-background-dark overflow-hidden">
               {/* 툴바 */}
-              <header className="flex h-11 w-full flex-shrink-0 items-center border-b border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark">
-                <div className="flex w-full items-center justify-center gap-1 px-3 overflow-x-auto">
+              <header className="flex h-14 w-full flex-shrink-0 items-center border-b border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark px-3 py-1.5">
+                <div className="flex w-full items-center justify-center gap-1.5 overflow-x-auto">
                   {/* 줌 */}
                   <div className="flex shrink-0 items-center rounded-lg border border-border-light dark:border-border-dark bg-background-light/60 dark:bg-background-dark/60 px-0.5">
                     <button onClick={handleZoomOut} className="p-1.5 rounded-md text-text-secondary-light dark:text-text-secondary-dark hover:bg-black/5 dark:hover:bg-white/10 transition-colors" title="축소">
