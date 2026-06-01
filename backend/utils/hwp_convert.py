@@ -14,7 +14,9 @@ import shutil
 import subprocess
 import tempfile
 import logging
+import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -209,3 +211,52 @@ def convert_office_to_pdf(
             logger.info("Office→PDF ok (first pdf): %s -> %s", office_path, out_pdf)
             return
         raise HwpConversionError("LibreOffice가 Office 파일에서 PDF를 생성하지 않았습니다.")
+
+
+def extract_docx_text(docx_path: Path) -> str:
+    """Extract readable text from a DOCX file without LibreOffice."""
+    docx_path = docx_path.resolve()
+    if not docx_path.is_file():
+        raise HwpConversionError(f"입력 파일이 없습니다: {docx_path}")
+
+    try:
+        with zipfile.ZipFile(docx_path) as zf:
+            xml_bytes = zf.read("word/document.xml")
+    except (KeyError, zipfile.BadZipFile, OSError) as exc:
+        raise HwpConversionError(f"DOCX 본문을 읽을 수 없습니다: {exc}") from exc
+
+    try:
+        root = ElementTree.fromstring(xml_bytes)
+    except ElementTree.ParseError as exc:
+        raise HwpConversionError(f"DOCX XML 파싱에 실패했습니다: {exc}") from exc
+
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    paragraphs: list[str] = []
+
+    for para in root.findall(".//w:p", ns):
+        parts: list[str] = []
+        for node in para.iter():
+            tag = node.tag.rsplit("}", 1)[-1]
+            if tag == "t" and node.text:
+                parts.append(node.text)
+            elif tag == "tab":
+                parts.append("\t")
+            elif tag in {"br", "cr"}:
+                parts.append("\n")
+        text = "".join(parts).strip()
+        if text:
+            paragraphs.append(text)
+
+    return "\n\n".join(paragraphs).strip()
+
+
+def convert_docx_to_text_pdf(docx_path: Path, out_pdf: Path) -> None:
+    """DOCX fallback: render extracted text to PDF when LibreOffice is unavailable."""
+    text = extract_docx_text(docx_path)
+    if not text:
+        raise HwpConversionError("DOCX에서 추출할 텍스트를 찾지 못했습니다.")
+
+    from utils.text_to_pdf import convert_plain_page_texts_to_pdf
+
+    convert_plain_page_texts_to_pdf([text], out_pdf)
+    logger.info("DOCX text fallback PDF ok: %s -> %s", docx_path, out_pdf)

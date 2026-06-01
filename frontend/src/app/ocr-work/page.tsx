@@ -643,7 +643,12 @@ export default function OcrWorkPage() {
                   reject(new Error('응답 파싱 실패'))
                 }
               } else {
-                reject(new Error(`업로드 실패 (${xhr.status})`))
+                let detail = ''
+                try {
+                  const payload = JSON.parse(xhr.responseText || '{}')
+                  detail = payload?.detail ? String(payload.detail) : ''
+                } catch {}
+                reject(new Error(detail ? `업로드 실패 (${xhr.status}): ${detail}` : `업로드 실패 (${xhr.status})`))
               }
             }
 

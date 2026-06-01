@@ -7,11 +7,17 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-PYTHON_BIN="${PYTHON_BIN:-python}"
+if [ -n "${PYTHON_BIN:-}" ]; then
+    PYTHON_CMD=("$PYTHON_BIN")
+elif [ -x "$HOME/AppData/Local/Programs/Python/Python311/python.exe" ]; then
+    PYTHON_CMD=("$HOME/AppData/Local/Programs/Python/Python311/python.exe")
+else
+    PYTHON_CMD=(python)
+fi
 
 # ── config.yaml에서 설정 읽기 ──────────────────────────────
 read_config() {
-    "$PYTHON_BIN" -c "
+    "${PYTHON_CMD[@]}" -c "
 import yaml, sys
 with open('config.yaml', 'r', encoding='utf-8') as f:
     cfg = yaml.safe_load(f)
@@ -103,7 +109,7 @@ echo "[INFO] Checking Redis..."
 REDIS_URL="${REDIS_URL:-redis://localhost:6379/0}"
 
 redis_running() {
-    "$PYTHON_BIN" -c "
+    "${PYTHON_CMD[@]}" -c "
 import redis, sys
 try:
     r = redis.from_url('${REDIS_URL}')
@@ -293,7 +299,7 @@ else
     PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
     TIKA_SERVER_URL="${TIKA_SERVER_URL:-}" \
     TIKA_JAVA_SERVER_URL="${TIKA_JAVA_SERVER_URL:-}" \
-    nohup "$PYTHON_BIN" -m uvicorn main:app \
+    nohup "${PYTHON_CMD[@]}" -m uvicorn main:app \
         --host "$BACKEND_HOST" \
         --port "$BACKEND_PORT" \
         > ../logs/backend.log 2>&1 &
@@ -310,7 +316,7 @@ PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
 TIKA_SERVER_URL="${TIKA_SERVER_URL:-}" \
 TIKA_JAVA_SERVER_URL="${TIKA_JAVA_SERVER_URL:-}" \
 WORKER_QUEUES="${WORKER_QUEUES:-ocr,tika,opensearch}" \
-nohup "$PYTHON_BIN" scripts/worker_supervisor.py \
+nohup "${PYTHON_CMD[@]}" scripts/worker_supervisor.py \
     --queues "${WORKER_QUEUES:-ocr,tika,opensearch}" \
     > ../logs/worker_supervisor.log 2>&1 &
 WORKER_SUPERVISOR_PID=$!

@@ -52,7 +52,7 @@ class JobManager:
                 "updated_at": datetime.now().isoformat()
             }
             # Atomic write with file locking (Unix only)
-            with open(status_file, 'w') as f:
+            with open(status_file, 'w', encoding='utf-8') as f:
                 if _HAS_FCNTL:
                     fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                 json.dump(status_data, f)
@@ -67,7 +67,7 @@ class JobManager:
         try:
             status_file = STATUS_DIR / f"{job_id}.json"
             if status_file.exists():
-                with open(status_file, 'r') as f:
+                with open(status_file, 'r', encoding='utf-8') as f:
                     if _HAS_FCNTL:
                         fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                     data = json.load(f)

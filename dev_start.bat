@@ -2,8 +2,8 @@
 setlocal
 title BBOCR GPU Starter
 
-:: Set Python Path
-set PYTHON_EXE=C:\Users\glgld\.conda\envs\bbocr\python.exe
+:: Set Python Path (GPU Paddle is installed in Python 3.11)
+set PYTHON_EXE=C:\Users\USER\AppData\Local\Programs\Python\Python311\python.exe
 
 echo ========================================
 echo   BBOCR Integrated Starter (GPU)
@@ -50,6 +50,8 @@ echo [5/6] Starting Backend and Worker (GPU)...
 set PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
 set KMP_DUPLICATE_LIB_OK=True
 set CUDA_VISIBLE_DEVICES=0
+set SOFFICE_PATH=C:\Program Files\LibreOffice\program\soffice.exe
+set LIBREOFFICE_PATH=C:\Program Files\LibreOffice\program\soffice.exe
 
 :: Start Backend
 start "BBOCR-Backend" /min cmd /c "set TIKA_JAVA_SERVER_URL=%TIKA_JAVA_SERVER_URL% && "%PYTHON_EXE%" -m uvicorn main:app --app-dir backend --host 0.0.0.0 --port 6015 --reload"

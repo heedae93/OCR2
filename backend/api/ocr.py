@@ -402,16 +402,30 @@ def upload_file(
                     pass
                 raise HTTPException(status_code=400, detail=str(e)) from e
         elif file_ext in OFFICE_EXTENSIONS:
-            from utils.hwp_convert import convert_office_to_pdf, HwpConversionError
+            from utils.hwp_convert import convert_docx_to_text_pdf, convert_office_to_pdf, HwpConversionError
             ocr_input = job_dir / "ocr_input.pdf"
             try:
                 convert_office_to_pdf(file_path, ocr_input)
             except HwpConversionError as e:
-                try:
-                    shutil.rmtree(job_dir, ignore_errors=True)
-                except OSError:
-                    pass
-                raise HTTPException(status_code=400, detail=str(e)) from e
+                if file_ext == ".docx":
+                    try:
+                        logger.warning("LibreOffice Office conversion failed; using DOCX text fallback: %s", e)
+                        convert_docx_to_text_pdf(file_path, ocr_input)
+                    except HwpConversionError as fallback_error:
+                        try:
+                            shutil.rmtree(job_dir, ignore_errors=True)
+                        except OSError:
+                            pass
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"{e} DOCX 텍스트 fallback도 실패했습니다: {fallback_error}",
+                        ) from fallback_error
+                else:
+                    try:
+                        shutil.rmtree(job_dir, ignore_errors=True)
+                    except OSError:
+                        pass
+                    raise HTTPException(status_code=400, detail=str(e)) from e
 
         # Create job
         job = job_manager.create_job(
@@ -449,7 +463,6 @@ def upload_file(
             # For PDF files, copy original directly for fast preview
             # High-resolution conversion (300 DPI) will be done during OCR processing only
             try:
-                import shutil
                 shutil.copy2(file_path, output_pdf)
                 logger.info(f"Created preview PDF (original copy): {output_pdf}")
             except Exception as e:
