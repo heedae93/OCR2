@@ -30,7 +30,7 @@ from core.reading_order_sorter import ReadingOrderSorter
 from utils.job_manager import JobManager
 from utils.file_utils import save_uploaded_file, generate_unique_id, cleanup_temp_files
 from utils.smart_layers import apply_smart_layers_to_image
-from utils.ocr_storage import resolve_ocr_json_path
+from utils.ocr_storage import ensure_text_fallback_artifacts, resolve_ocr_json_path
 from utils.cancel_helper import is_job_cancelled as _is_job_cancelled, set_cancel_flag as _set_cancel_flag, clear_cancel_flag as _clear_cancel_flag
 from database import SessionLocal, Job as DBJob, DownloadHistory, FileVersion
 
@@ -2126,6 +2126,11 @@ async def update_job_status_manual(
 async def get_ocr_results(job_id: str):
     """Get OCR results for a job"""
     ocr_json_path = resolve_ocr_json_path(job_id)
+    if not ocr_json_path:
+        try:
+            ocr_json_path = ensure_text_fallback_artifacts(job_id)
+        except Exception as e:
+            logger.warning("Failed to rebuild OCR fallback artifacts for %s: %s", job_id, e)
 
     if not ocr_json_path:
         db = SessionLocal()
